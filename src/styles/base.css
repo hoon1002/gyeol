@@ -1,0 +1,91 @@
+/* 결 — 기본 스타일 · 레이어 규칙
+   레이어: html이 바탕색(--bg-0)을 칠하고, body는 투명, 필드 캔버스(src/fx)는 fixed z-0,
+   앱 루트(#root > .app)는 position:relative; z-index:1.
+   body에 배경을 칠하면 필드가 가려진다(프로토타입에서 실제로 난 버그). */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  background: var(--bg-0);
+  color: var(--text-1);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scrollbar-gutter: stable;
+  overflow-x: clip;
+}
+body {
+  margin: 0;
+  min-height: 100svh;
+  background: transparent;
+  color: var(--text-1);
+  font-family: var(--f-kr);
+  font-size: var(--fs-md);
+  line-height: var(--lh-ui);
+  letter-spacing: var(--ls-body);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overflow-x: clip;
+  -webkit-tap-highlight-color: transparent;
+}
+#root { position: relative; z-index: 1; isolation: isolate; }
+.app { position: relative; z-index: 1; min-height: 100svh; }
+
+h1, h2, h3, h4, p, ul, ol, figure, blockquote { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+img, svg, canvas { display: block; max-width: 100%; }
+svg { flex-shrink: 0; }
+a { color: inherit; text-decoration: none; }
+button, input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
+button { background: none; border: 0; padding: 0; margin: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+input::placeholder { color: var(--text-3); }
+::selection { background: var(--accent-soft); color: var(--text-1); }
+
+/* 포커스 링: 키보드일 때만, 인주 2px + 3px 간격 */
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 8px; }
+
+/* 한글 타이포 규칙 */
+h1, h2, h3 { text-wrap: balance; font-weight: 600; }
+p { text-wrap: pretty; }
+.num, time { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--f-mono); letter-spacing: 0; }
+
+.sr-only {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+.kbd {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px;
+  font-family: var(--f-mono); font-size: 11px; line-height: 1; letter-spacing: 0;
+  border-radius: var(--r-xs); border: 1px solid var(--border-strong); color: var(--text-3);
+  background: color-mix(in srgb, var(--surface) 50%, transparent);
+}
+
+/* 스크롤바: 얇고 조용하게 */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+
+/* ===== 동작 줄이기: OS 설정 또는 앱 설정 '끔' =====
+   0s로 둔다(1ms면 너비 변화 측정이 틀어지는 버그가 v1에서 확인됨). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0s !important; transition-delay: 0s !important;
+    animation-duration: 1ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+:root[data-motion="off"] *, :root[data-motion="off"] *::before, :root[data-motion="off"] *::after {
+  transition-duration: 0s !important; transition-delay: 0s !important;
+  animation-duration: 1ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+}
+/* 절제: 위치 이동 없이 opacity만, 짧게 */
+:root[data-motion="calm"] .enter, :root[data-motion="calm"] .rv { transform: none !important; }
+
+/* 테마 원형 리빌 (View Transitions) — 이 클래스가 붙어 있는 동안에만 */
+:root.theme-vt::view-transition-old(root),
+:root.theme-vt::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+:root.theme-vt::view-transition-new(root) { z-index: 2; }

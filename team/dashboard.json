@@ -1,0 +1,93 @@
+{
+  "project": "결 GYEOL · v4 기획 완료",
+  "subtitle": "통합 기획서 완료 · 결정 6가지 대기 → M0 3D 품질부터",
+  "phases": [
+    {
+      "name": "은하수 v3 · 은하 카메라",
+      "status": "done"
+    },
+    {
+      "name": "조사 · 기능 재검토 · 3D 디자인 · 3D 시제품",
+      "status": "done",
+      "members": [
+        "research",
+        "planner",
+        "ad",
+        "fx"
+      ]
+    },
+    {
+      "name": "통합 기획서 v4",
+      "status": "done",
+      "members": [
+        "planner"
+      ]
+    },
+    {
+      "name": "리더 검수 · 3D 시제품 확인",
+      "status": "done"
+    },
+    {
+      "name": "기획 보고 → 구현 결정",
+      "status": "active"
+    }
+  ],
+  "members": [
+    {
+      "key": "research",
+      "label": "조사원",
+      "task": "3D·우주 웹 수상작 · 못 끊는 학습 앱 · 학습 과학"
+    },
+    {
+      "key": "planner",
+      "label": "기획자",
+      "task": "더할 것·뺄 것 · 핵심 루프 · 가치 축적 · 로드맵"
+    },
+    {
+      "key": "ad",
+      "label": "아트 디렉터",
+      "task": "3D 은하 아트 · 3D 공간 지도 · 회전 모션 · 생동감"
+    },
+    {
+      "key": "fx",
+      "label": "모션 개발자",
+      "task": "3D 은하 기술 설계 + 실제로 도는 시제품"
+    }
+  ],
+  "forecast": {
+    "note": "예측은 실측(팀원 10만 토큰 ≈ 5시간 한도 6.5%) 기준이에요. 구현 마일스톤은 기획서의 범위 가운데 값이에요.",
+    "pctPer100k": 6.5,
+    "items": [
+      {
+        "phase": "v4 기획",
+        "label": "기획 v4 (완료)",
+        "estimate": 434985
+      },
+      {
+        "phase": "3D 시제품",
+        "label": "3D 시제품 1·2차 (완료)",
+        "estimate": 129422
+      },
+      {
+        "phase": "M0 3D 품질",
+        "label": "M0 3D 품질 관문 (상한 40만)",
+        "estimate": 400000
+      },
+      {
+        "phase": "M1-M4",
+        "label": "M1–M4 첫 공개판 (3D 앱 이식·입구·기억 엔진·리듬)",
+        "estimate": 4300000
+      },
+      {
+        "phase": "M5",
+        "label": "M5 펜과 PDF",
+        "estimate": 1500000
+      },
+      {
+        "phase": "M6",
+        "label": "M6 녹음·공유·학기 비행",
+        "estimate": 900000
+      }
+    ]
+  }
+}

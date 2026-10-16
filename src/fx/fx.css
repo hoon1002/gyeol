@@ -1,0 +1,231 @@
+/* 결 모션 엔진 — 컴포넌트 스타일 (접두사 gx-). 색은 앱 토큰(--accent, --text-*)을 따른다. */
+
+/* 필드: 레이어 규칙은 FieldProvider.tsx 주석 참고 */
+.gx-field {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  contain: strict;
+  transition: opacity 300ms cubic-bezier(.2, 0, 0, 1);
+}
+
+.gx-hud {
+  position: fixed;
+  left: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 2147483000;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(11, 12, 14, .72);
+  color: #F3F1EC;
+  font: 500 11px/1.4 "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  white-space: nowrap;
+  max-width: calc(100vw - 24px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* View Transition (useFieldTransition): 하늘 캔버스는 스냅숏에서 빠지고(html 이름 없음) 계속 그려진다.
+   내용만 한 타임라인 450ms (design-v3-motion §3): A 나감 0→180ms, B 들어옴 170→390ms. opacity만 */
+html[data-gx-vt] { view-transition-name: none; }
+::view-transition-group(gx-content) { animation: none; }
+::view-transition-old(gx-content),
+::view-transition-new(gx-content) { mix-blend-mode: normal; }
+::view-transition-old(gx-content) { animation: gx-fade-out var(--sky-out-ms, 180ms) cubic-bezier(.4, 0, 1, 1) both; }
+::view-transition-new(gx-content) { animation: gx-fade-in var(--sky-in-ms, 220ms) cubic-bezier(0, 0, .2, 1) var(--sky-in-delay-ms, 170ms) both; }
+html[data-gx-vt="calm"]::view-transition-old(gx-content) { animation: gx-fade-out 200ms linear both; }
+html[data-gx-vt="calm"]::view-transition-new(gx-content) { animation: gx-fade-in 200ms linear both; }
+@keyframes gx-fade-out { to { opacity: 0; } }
+@keyframes gx-fade-in { from { opacity: 0; } }
+
+/* RevealText: 줄 마스크 */
+.gx-reveal .gx-ln {
+  display: block;
+  overflow: hidden;
+  padding-bottom: .1em;
+  margin-bottom: -.1em;
+}
+.gx-reveal .gx-ln-i {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.gx-count { font-variant-numeric: tabular-nums; }
+
+/* FocusRing (v1 W3) */
+.gx-ring {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: var(--text-1, #F3F1EC);
+}
+.gx-ring > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+.gx-ring .gx-track { fill: none; stroke: currentColor; stroke-opacity: .1; stroke-width: 2; }
+.gx-ring .gx-prog { fill: none; stroke: var(--gx-ring-c); stroke-width: 2.5; stroke-linecap: round; transition: stroke .4s, opacity .4s; }
+.gx-ring .gx-orb { fill: var(--gx-ring-c); }
+.gx-ring .gx-orb-glow { fill: var(--gx-ring-c); opacity: .28; transform-box: fill-box; transform-origin: center; }
+.gx-ring .gx-halo { fill: none; stroke: var(--gx-ring-c); stroke-width: 1.5; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.gx-ring[data-state="running"] .gx-orb-glow { animation: gx-orb 2.4s ease-in-out infinite; }
+.gx-ring[data-state="paused"] .gx-prog { opacity: .5; }
+.gx-ring[data-state="paused"] .gx-orbit { animation: gx-blink 1.6s ease-in-out infinite; }
+.gx-ring[data-state="idle"] .gx-orb-glow { opacity: .14; }
+.gx-ring[data-state="done"] .gx-orbit { opacity: 0; transition: opacity .3s; }
+.gx-ring[data-state="done"] .gx-halo { animation: gx-halo 1100ms cubic-bezier(.22, 1, .36, 1) both; }
+.gx-ring-c {
+  position: relative;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 4px;
+  text-align: center;
+}
+@keyframes gx-orb { 0%, 100% { transform: scale(1); opacity: .28; } 50% { transform: scale(1.7); opacity: .1; } }
+@keyframes gx-blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@keyframes gx-halo { 0% { opacity: .55; transform: scale(1); } 100% { opacity: 0; transform: scale(1.22); } }
+
+/* Stamp (v1 W5 인주 도장) */
+.gx-stamp {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 5;
+  width: 112px;
+  height: 112px;
+  margin: -56px 0 0 -56px;
+  display: grid;
+  place-items: center;
+  color: var(--accent, #FF5B2E);
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(1.7) rotate(-14deg);
+}
+.gx-stamp > svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.gx-stamp-face {
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent, #FF5B2E) 9%, transparent);
+}
+.gx-stamp-t {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  font-family: var(--f-kr-d, "Hahmlet", serif);
+  font-weight: 800;
+  font-size: 17px;
+  line-height: 1.15;
+  letter-spacing: -.02em;
+  text-align: center;
+  max-width: 84px;
+  word-break: keep-all;
+}
+.gx-stamp-t small {
+  display: block;
+  font-family: var(--f-mono, "JetBrains Mono", monospace);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: .06em;
+}
+.gx-stamp-splash {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent, #FF5B2E);
+  opacity: 0;
+}
+.gx-stamp[data-on="1"] { animation: gx-stamp 520ms cubic-bezier(.55, 0, 1, .45) forwards; }
+.gx-stamp[data-on="1"] .gx-stamp-splash { animation: gx-splash 620ms cubic-bezier(.22, 1, .36, 1) 300ms both; }
+.gx-stamp[data-on="still"] { opacity: 1; transform: rotate(-12deg); }
+.gx-stamp[data-on="0"] { opacity: 1; transform: rotate(-12deg); animation: gx-stamp-out 280ms ease-in forwards; }
+@keyframes gx-stamp {
+  0% { opacity: 0; transform: scale(1.7) rotate(-14deg); }
+  60% { opacity: 1; transform: scale(.94) rotate(-12deg); }
+  75% { transform: scale(1.02) rotate(-12deg) translateX(2px); }
+  100% { opacity: 1; transform: scale(1) rotate(-12deg); }
+}
+@keyframes gx-splash { 0% { opacity: .45; transform: scale(.96); } 100% { opacity: 0; transform: scale(1.45); } }
+@keyframes gx-stamp-out { to { opacity: 0; transform: scale(.96) rotate(-12deg); } }
+
+.gx-stamp-layer { position: fixed; inset: 0; z-index: 80; pointer-events: none; }
+.gx-stamp-at { position: absolute; width: 0; height: 0; }
+
+/* GyeolRings (이번 주 결) */
+.gx-rings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: clamp(10px, 2vw, 28px);
+}
+.gx-rings svg { display: block; overflow: visible; }
+.gx-rings path { fill: none; stroke-width: 1.3; stroke-linecap: round; }
+.gx-rings[data-grow="1"] path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: gx-draw 900ms cubic-bezier(.22, 1, .36, 1) forwards;
+}
+@keyframes gx-draw { to { stroke-dashoffset: 0; } }
+
+/* ContourRibbon (오늘의 흐름) */
+.gx-ribbon { display: block; width: 100%; }
+.gx-ribbon svg { display: block; width: 100%; overflow: visible; }
+.gx-ribbon .gx-rb-base { fill: none; stroke: var(--text-3, #8A8D95); stroke-width: 1; }
+.gx-ribbon .gx-rb-cls { fill: none; stroke-width: 1.4; stroke-linecap: round; }
+.gx-ribbon .gx-rb-core { fill: none; stroke-width: 2.4; stroke-linecap: round; }
+.gx-ribbon .gx-rb-dot { fill: var(--accent, #FF5B2E); }
+.gx-ribbon .gx-rb-now { stroke: var(--text-1, #F3F1EC); stroke-width: 1.4; }
+.gx-ribbon .gx-rb-now-dot { fill: var(--text-1, #F3F1EC); }
+.gx-ribbon text { font-family: var(--f-mono, "JetBrains Mono", monospace); font-size: 11px; fill: var(--text-3, #8A8D95); letter-spacing: 0; }
+.gx-ribbon .gx-rb-nowlbl { fill: var(--text-1, #F3F1EC); }
+
+@media (prefers-reduced-motion: reduce) {
+  .gx-ring .gx-orb-glow, .gx-ring .gx-orbit, .gx-ring .gx-halo { animation: none !important; }
+  .gx-rings[data-grow="1"] path { animation: none; stroke-dashoffset: 0; }
+}
+
+/* ---------- v3 하늘 ---------- */
+/* 하늘이 준비되기 전에는 같은 색의 그라디언트 → 준비되는 순간 200ms 크로스페이드 (흰 번쩍임 0) */
+.gx-sky-host { background: linear-gradient(180deg, #04060C 0%, #0A0E19 100%); }
+/* 하늘이 보이기 전에는 별자리 선도 숨긴다 (review #2) */
+.gx-sky-host:not(.is-ready) .gx-sky-links { opacity: 0; }
+.gx-sky-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; transition: opacity 200ms cubic-bezier(.4, 0, .2, 1); }
+.gx-sky-host.is-ready .gx-sky-canvas { opacity: 1; }
+.gx-sky-links { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.gx-link { stroke: #F3D29A; stroke-width: 1px; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+html.theme-light .gx-link { stroke: #3A3428; }
+
+.gx-caption-layer { position: fixed; inset: 0; z-index: 3; pointer-events: none; }
+.gx-caption {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 12px));
+  font: 500 12px/1.3 "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-2, rgba(243, 241, 236, .72));
+  white-space: nowrap;
+  animation: gx-caption 3s linear both;
+}
+@keyframes gx-caption { 0% { opacity: 0; } 7% { opacity: 1; } 91% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ProgressLine: 1px 진행선 + 지금 표시 1×7px */
+.gx-progress { position: relative; height: 7px; }
+.gx-progress::before { content: ""; position: absolute; left: 0; right: 0; top: 3px; height: 1px; background: currentColor; opacity: .18; }
+.gx-progress-fill { position: absolute; left: 0; top: 3px; height: 1px; width: 100%; background: var(--star-gold, #F3D29A); transform-origin: 0 50%; transform: scaleX(var(--gx-pl, 0)); transition: transform 1s linear; }
+.gx-progress.is-quiet .gx-progress-fill { background: var(--text-2, rgba(243, 241, 236, .6)); }
+.gx-progress-now { position: absolute; top: 0; width: 1px; height: 7px; left: calc(var(--gx-pl, 0) * 100%); background: var(--star-gold, #F3D29A); transition: left 1s linear; }
+.gx-progress.is-quiet .gx-progress-now { background: var(--text-1, #F3F1EC); }
+@media (prefers-reduced-motion: reduce) {
+  .gx-progress-fill, .gx-progress-now { transition: none; }
+  .gx-caption { animation-duration: 3s; }
+}

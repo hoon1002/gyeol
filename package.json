@@ -1,0 +1,32 @@
+{
+  "name": "gyeol",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "결(GYEOL) — 학생용 올인원 학습 웹앱 (로컬 우선 PWA)",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/react-router": "^1.170.44",
+    "cmdk": "^1.1.1",
+    "dexie": "^4.4.6",
+    "dexie-react-hooks": "^4.4.0",
+    "motion": "^14.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vite-plugin-pwa": "^2.0.0"
+  }
+}

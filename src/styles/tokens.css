@@ -1,0 +1,122 @@
+/* =========================================================
+   결 GYEOL — 디자인 토큰 (team/design.md 3·4·5·6장 값 그대로)
+   다크가 기본. html[data-theme="light"]면 같은 이름의 값만 바뀐다.
+   data-theme 값은 index.html의 초기 스크립트와 앱(useApplyTheme)이
+   '실제 적용 테마'(dark | light)로만 넣는다. 시스템 선택은 JS가 풀어서 넣는다.
+   ========================================================= */
+:root {
+  color-scheme: dark;
+  --bg-0: #0B0C0E; --bg-1: #111316; --bg-2: #171A1E;
+  --surface: #1C1F24; --surface-2: #23272D; --surface-3: #2B3037;
+  --border: #2A2E35; --border-strong: #3A3F47; --border-input: #6B707A;
+  --text-1: #F3F1EC; --text-2: #B4B6BC; --text-3: #8A8D95;
+  --accent: #FF5B2E; --accent-hover: #FF7A55; --accent-soft: rgba(255, 91, 46, .14); --on-accent: #0B0C0E;
+  --success: #3DD68C; --warning: #FFB547; --danger: #FF5C7A; --info: #62B0FF;
+  --s-phys: #5CB8FF; --s-math: #8F9BFF; --s-chem: #3ED6C0; --s-bio: #8EDB6B;
+  --s-econ: #F5C451; --s-writing: #FF8DB5; --s-eng: #C29BFF; --s-hist: #D9B38C;
+  --paper: #141619; --paper-line: rgba(243, 241, 236, .055); --ink: #EEECE6;
+  --grain-minor: rgba(243, 241, 236, .10); --grain-major: rgba(243, 241, 236, .24);
+  --scrim: rgba(5, 6, 7, .72); --glass: rgba(17, 19, 22, .66);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .5);
+  --shadow-2: 0 10px 30px -10px rgba(0, 0, 0, .65), 0 2px 8px -2px rgba(0, 0, 0, .4);
+  --shadow-3: 0 30px 80px -20px rgba(0, 0, 0, .75), 0 12px 24px -12px rgba(0, 0, 0, .55);
+  --hairline: inset 0 1px 0 rgba(255, 255, 255, .045);
+  --top-scrim: rgba(11, 12, 14, .78);
+
+  /* 글꼴 */
+  --f-kr: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --f-kr-d: "Hahmlet", "Noto Serif KR", "AppleMyungjo", serif;
+  --f-en-d: "Fraunces", "Hahmlet", Georgia, serif;
+  --f-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* 유동 크기 */
+  --fs-mega: clamp(9rem, 4rem + 30vw, 26rem);
+  --fs-display: clamp(2.75rem, 1.4rem + 5.6vw, 6.5rem);
+  --fs-h1: clamp(2.25rem, 1.3rem + 3.6vw, 4.5rem);
+  --fs-h2: clamp(1.625rem, 1.2rem + 1.7vw, 2.5rem);
+  --fs-h3: clamp(1.1875rem, 1.05rem + .6vw, 1.5rem);
+  --fs-lg: clamp(1.0625rem, 1rem + .35vw, 1.3125rem);
+  --fs-md: 1rem; --fs-sm: .875rem; --fs-xs: .75rem; --fs-2xs: .6875rem;
+  /* 초점 문장: --fs-display를 기준으로, 한 줄(약 10자)이 초점 열에 들어가게 상한만 낮춤 */
+  --fs-focus: clamp(2.4rem, 1rem + 4.3vw, 5.6rem);
+  --lh-tight: 1.04; --lh-head: 1.18; --lh-body: 1.7; --lh-ui: 1.5;
+  --ls-mega: -.06em; --ls-display: -.045em; --ls-head: -.03em; --ls-body: -.01em; --ls-label: .12em;
+
+  /* 간격 · 반경 */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-7: 32px;
+  --sp-8: 40px; --sp-9: 48px; --sp-10: 64px; --sp-11: 80px; --sp-12: 96px; --sp-13: 128px;
+  --gutter: clamp(16px, 4vw, 56px);
+  --section: clamp(96px, 13vw, 190px);
+  --maxw: 1320px;
+  --r-xs: 6px; --r-sm: 10px; --r-md: 14px; --r-lg: 20px; --r-xl: 28px; --r-2xl: 40px; --r-pill: 999px;
+
+  /* 셸 치수 */
+  --top-h: 56px;
+  --dock-h: 60px;
+  --rail-w: 56px;
+  --dock-gap: 16px;
+  --chrome-left: 0px; /* 데스크톱에서 레일만큼 본문을 민다 */
+
+  /* 모션 */
+  --dur-instant: 80ms; --dur-fast: 140ms; --dur-base: 240ms; --dur-slow: 420ms; --dur-xslow: 700ms; --dur-epic: 1200ms;
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  --ease-in: cubic-bezier(.55, 0, 1, .45);
+  --ease-std: cubic-bezier(.2, 0, 0, 1);
+  --ease-spring: linear(0, .009, .035 2.1%, .141, .281 6.7%, .723 12.9%, .938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, .991, .977 51%, .974 53.8%, .975 57.1%, .997 69.8%, 1.003 76.9%, 1.004 83.8%, 1);
+  --stagger: 40ms;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-0: #F6F4EF; --bg-1: #EFECE6; --bg-2: #E6E2DA;
+  --surface: #FFFFFF; --surface-2: #F3F0EA; --surface-3: #E9E5DD;
+  --border: #DCD7CD; --border-strong: #C7C1B5; --border-input: #8C8579;
+  --text-1: #15161A; --text-2: #474A52; --text-3: #5C5F67;
+  --accent: #C23A10; --accent-hover: #A93210; --accent-soft: rgba(194, 58, 16, .10); --on-accent: #FFFFFF;
+  --success: #13784A; --warning: #9A5F00; --danger: #C42347; --info: #1F66C2;
+  --s-phys: #1167B8; --s-math: #4B55D6; --s-chem: #0A7C6E; --s-bio: #3A7A1E;
+  --s-econ: #8A6200; --s-writing: #B8326A; --s-eng: #7A43D1; --s-hist: #8A5A2E;
+  --paper: #FFFFFF; --paper-line: rgba(21, 22, 26, .07); --ink: #1B1D22;
+  --grain-minor: rgba(21, 22, 26, .085); --grain-major: rgba(21, 22, 26, .2);
+  --scrim: rgba(240, 237, 231, .74); --glass: rgba(246, 244, 239, .76);
+  --shadow-1: 0 1px 2px rgba(30, 25, 15, .08);
+  --shadow-2: 0 10px 30px -12px rgba(30, 25, 15, .2), 0 2px 6px -2px rgba(30, 25, 15, .08);
+  --shadow-3: 0 30px 80px -24px rgba(30, 25, 15, .28), 0 12px 24px -12px rgba(30, 25, 15, .12);
+  --hairline: inset 0 1px 0 rgba(255, 255, 255, .85);
+  --top-scrim: rgba(246, 244, 239, .82);
+}
+
+@media (max-width: 599px) {
+  :root { --top-h: 48px; --dock-h: 58px; }
+}
+@media (min-width: 1200px) {
+  :root { --chrome-left: calc(var(--rail-w) + var(--dock-gap) + 8px); }
+}
+
+/* ===== v3 은하수 (design-v3 3장): 별빛 금 강조, 인주는 시험 별·낙관에만 ===== */
+:root {
+  --bg-0: #070A14; --bg-1: #0C1222; --bg-2: #111829;
+  --surface: #121A2C; --surface-2: #18213A; --surface-3: #202B48;
+  --border: rgba(220, 228, 255, .10); --border-strong: rgba(220, 228, 255, .18);
+  --text-1: #F2EFE8; --text-2: #B9BDCB; --text-3: #8E94A8;
+  --accent: #F3D29A; --accent-hover: #F8E0B4; --accent-soft: rgba(243, 210, 154, .14); --on-accent: #0A0D16;
+  --seal: #FF8F78;
+  --glass: rgba(10, 14, 26, .55);
+  --hairline: inset 0 1px 0 rgba(255, 255, 255, .07);
+  --line-star: rgba(220, 228, 255, .28);
+  --top-scrim: rgba(7, 10, 20, .55);
+  --scrim: rgba(4, 6, 12, .62);
+  --sky-text-shadow: 0 1px 14px rgba(4, 6, 12, .7);
+}
+:root[data-theme="light"] {
+  --bg-0: #F3F1EC; --bg-1: #EAE7E0; --bg-2: #E2DED5;
+  --surface: #FBFAF7; --surface-2: #F1EEE8; --surface-3: #E6E2DA;
+  --border: #DCD7CD; --border-strong: #C7C1B5;
+  --text-1: #141720; --text-2: #454B58; --text-3: #5A6070;
+  --accent: #1B2340; --accent-hover: #26305A; --accent-soft: rgba(27, 35, 64, .10); --on-accent: #F3D29A;
+  --seal: #A8402C;
+  --glass: rgba(243, 241, 236, .72);
+  --top-scrim: rgba(243, 241, 236, .7);
+  --sky-text-shadow: none;
+}

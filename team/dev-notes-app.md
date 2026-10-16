@@ -1,0 +1,121 @@
+# 개발 노트 — 앱
+
+## 검수 반영 (team/review.md, 2026-10-17)
+
+| # | 반영 |
+|---|---|
+| ① 집중 | 왼쪽 글자 구역: 과목 Hahmlet 300 32px `--text-2`, 타이머 Fraunces 200 ≈168px(iPad)/104px(폰), 진행선 폭 480, 버튼·시간 칩 왼쪽. 위 여백 iPad 30svh(≈y250) · 폰 51svh(≈y430). 별 좌석(0.64, 0.42)은 비워 둠. 별 위치·크기는 fx 몫 |
+| ③ 셸 | 심볼 v3(57° 사선 별 5개 + 인주 점), 아이콘 선 1.5px, 오늘 = 지평선 + 별, 집중 = 모래시계. 독/레일 활성 = 아이콘 `--text-1` + 아래 6px 별빛 점 3px(원형 배경 없음). ⑯ 상단 왼쪽은 심볼만(공간 이름은 sr-only) |
+| ④ 복습 | 가운데 → 왼쪽(가로 화면 y≈35svh, 최대 46vw). 진행 중 카드도 왼쪽, ⑲ 카드 메타("● 영어 · 1 / 13")는 카드 안. ⑪ 평가 글자 `--text-2`, 누름만 별빛 금 |
+| ⑦ 글자 박자 | `useGo`가 출발·도착 장소(design-v3-camera §1)로 `flightMs`를 계산해 `--enter-base = max(170, D − 320)ms`. 다시 보이는 공간 전체가 그 지연 뒤 290ms opacity로 들어온다(keep-alive라 공간 단위). 짧게·끔·절제면 170ms. fx가 비행 길이를 직접 알려 주면 그 값으로 바꾸면 된다 |
+| ⑧ 노트·설정 | 종이 면 `--paper`(밤 #10141F) 92%, 블러 없음. 노트 글자는 가로 화면에서 위쪽(띠 꼬리 밖). 설정은 한 열 왼쪽 정렬 |
+| ⑨⑩⑫⑬㉑ | 주 버튼 화살표 제거 · 지평선 줄은 첫 항목만 점, 나머지 '·' · 노트 '최근'은 스크롤 아래 장으로 · 플래너 칸 배경 제거, 메타 "마감 n" = 목록 수 · 개발용 문구 "상황 바꾸기", "별 탄생 시험" |
+| 공통 | `--gutter` = clamp(24px, 5.4vw, 64px) → iPad x64 · 폰 x24 |
+
+- 시드 되돌림: 샘플 다시 넣기 → 복습 13장 · 8분 확인.
+- 측정(1180×820, 앞 탭, 120Hz): 10회 이동 maxFrameMs 9.4 × 9, 16.8 × 1, 긴 작업 0. (숨은 탭에서는 rAF가 느려져 수백 ms로 찍힌다 — 앞에 띄워 재야 한다.)
+- `npm run build` 통과, 콘솔 에러 0, 1180 가로 스크롤 0.
+- 남김: ②⑤⑥⑭⑳(fx 담당), ㉒(리더 확인), 유성 켬·끔(fx API 필요). Figma 07의 아이콘 SVG 원본은 로컬에 없어(figma-assets엔 하늘 렌더만) 설명대로 새로 그렸다 — 원본과 다르면 교체 필요.
+
+---
+
+## v3 재개: 카메라 연결 · keep-alive (2026-10-17)
+
+**고친 것**
+- 집중 화면 `<line> NaN`: 집중 끝의 별자리 선을 DB의 '마지막 세션'(하늘에 없을 수 있음)이 아니라 **하늘에 이미 떠 있는 오늘의 마지막 세트**에서만 긋는다(없으면 긋지 않음). 집중 장면에도 오늘의 별 층(`stars.today`)을 선언해 직전 별이 늘 하늘에 있게 했다. 시작·일시정지·끝내기를 돌려 콘솔 NaN 0 확인.
+- 빈 상태 메타를 작은 줄로(`EmptyState` = 명사구 + `.meta`), 상단 바 '검색·명령' 글자 → ⌕ 아이콘(읽기용 이름은 유지), 날짜 표기 `10.16`.
+
+**은하 카메라 연결**
+- 설정 > 움직임 > **공간 이동: 비행 · 짧게 · 끔** (`settings.travel`, persist) → `FieldProvider travel`. 움직임 '정지'나 OS 동작 줄이기면 `off`, OS일 때는 선택지 비활성 + "기기 설정 · 동작 줄이기". ⌘K 명령 "공간 이동 비행/짧게/끔".
+- `src/shell/StarPress.tsx`: 빈 하늘을 누르면 `useSkyPick().pick(x, y, 손가락 22 / 포인터 14)` → 맞으면 `useSkyCamera().flyTo({ scene, focus: 별, zoom })`로 다가가 왼쪽 글자 구역에 명사구 / 메타 / 동작(design-v3-camera §3), 보던 화면 글은 opacity로 물러남. 오늘의 별(×2.4: 과목 / `10.16 06:50 · 25분` / 노트 열기) · 시험 별(×2.4: 제목 / `10.22 · D-6 · 범위 42` / 범위 복습) · 복습 별(3.0: 카드 앞면 / 과목 · 내일 다시 / 이 카드 복습) · 그래프 별(3.4: 개념 / 과목 · 링크 n / 열기). 별 → 별은 옆으로, 닫기(× · Esc · 빈 하늘) = `back()`(여러 번 옮겼으면 처음 자리로 `flyTo`). 동작을 누르면 그 공간으로 이어서 난다. 포인터가 별 위면 커서가 바뀐다(rAF당 pick 1회). 1180에서 오늘의 별을 눌러 다가감·한 줄·Esc 복귀 확인.
+- 아직: 키보드 Tab으로 별 고르기, 호버 캡션(연결 지도 33·44행), '나의 별(지난 날)'.
+
+**전환 성능 (keep-alive)**
+- `src/app/keepAlive.tsx` + `RootLayout.KeepAlive`: 처음 연 공간만 바로 마운트, 나머지는 1.4초 뒤 유휴 시간에 숨긴 채 하나씩 마운트(라우트 컴포넌트는 빈 것, 화면은 RootLayout이 그림). 비활성 공간 = `visibility:hidden; position:absolute` + `inert` + `aria-hidden` — **배치를 유지**해서 다시 보일 때 레이아웃 계산이 없다(`hidden`/display:none은 25–33ms가 남았음).
+- 하늘에 말하는 것(FieldMood·데이터 별 값·데이터 별 층·떠날 때 정리)은 잎 컴포넌트 `ActiveMood`로만: 활성일 때만 렌더, 화면 전체는 활성 여부로 다시 그려지지 않는다(`Space`가 화면 요소를 메모). 같은 별 층은 다시 활성화될 때 재동기화하지 않음.
+- **측정(1180×820, 앞에 띄운 탭, 120Hz, `__gyeolPerf.navs()`), 7개 공간 16회 이동: maxFrameMs 9.4ms × 15회, 15.7ms × 1회(전부 ≤ 20ms), p95 ≤ 9.3ms, 긴 작업 0, 굽기 0.** (keep-alive 전 25–49ms, display:none 방식 9.3–33ms)
+- 주의: HMR로 fx만 바뀐 뒤에는 옛 엔진 인스턴스와 새 hooks가 섞여 `eng.holdFlight is not a function`이 날 수 있다 → 새로고침하면 0.
+
+**검증:** `npm run build` 통과(타입 오류 0). 390/820/1180/1440에서 7개 공간 가로 스크롤 0, 콘솔 에러 0(NaN·TypeError 패턴 포함).
+
+**남은 일:** 설정 '유성: 켬 · 끔'(fx에 끄는 API 없음 → 모션 개발자에게 prop 요청 필요), 별 키보드 선택·호버 캡션, '나의 은하' 시트, 오프라인 새로고침 확인(preview 서버 필요).
+
+---
+
+## v3 은하수 통합 (2026-10-17, 사용량 91%에서 정리)
+
+**바뀐 점**
+- 토큰: 별빛 금 `--accent #F3D29A`(낮은 버튼 면 `#1B2340` + 금 글자), `--seal #FF8F78`(시험 별만), 하늘 바탕 `#070A14`(theme-color·매니페스트 포함), 유리 `rgba(10,14,26,.55)` + blur 20 + saturate 1.2, 하늘 위 글자 그림자. `tokens.css` 끝의 v3 덮어쓰기 블록.
+- 글꼴 굵기: 명사구 Hahmlet 300(40→72px), 집중 숫자 Fraunces 200 opsz 144, 메타·지평선 줄 JetBrains Mono 300 13px.
+- 글 다이어트(design-v3 4-2): `lib/situation.ts`를 `title / meta / progress / primary / quiet / peri(지평선 ≤ 3)` 형식으로 다시 씀. 상황 9개 문구가 표와 같음(예: 수업 중 `일반물리 / 09:00 – 10:15 · 공학관 302` + 진행선 / 노트 열기 · [마이크] / `13:00 공업수학 · 복습 13 · 중간고사 D-6`). 머리말·"~요" 문장·자랑·비교·% 없음. 노트·그래프·복습·플래너·집중·설정·⌘K·토스트 문구도 표대로("M1에서 열림", "샘플 넣음", "결과 없음 · 예: 물리 25분", 하늘: 밤·낮·시스템, 움직임: 풍부·절제·정지).
+- 원형 모티프 제거: 화면에서 FocusRing·GyeolRings·ContourRibbon·Stamp·CountUp 사용 0. 오늘 아래 장은 '최근' 하나(제목 3 + 과목·시각 + 모두 →). 집중은 큰 숫자 + `ProgressLine`(star), 수업 중은 `ProgressLine`(quiet). 그래프의 SVG 별자리 삭제 → 하늘이 그림.
+
+**연결한 하늘 사건**
+| 기능 | 사건 |
+|---|---|
+| 집중 시작 · 진행 · 세트 끝 · 포기 | `birthStar(small, level .08)` → 1초마다 `growStar` → `birthStar(set)` + 직전 세션 별과 `drawLink(today)` → `fadeStar` (5분 넘게 했으면 작은 별로 기록) |
+| 복습 | 오늘 카드 = `useSkyStars({review})`(희미 .3), 평가 = `relight`(다시 .35 · 어려움 .6 · 좋음 .85 · 쉬움 1 + glint), 복습 끝 = `swellBand` + `meteor(signal)` |
+| 오늘 | `useSkyStars({ today: 오늘 세션, exam: 가장 가까운 시험(D-14 이내) })`, `useFieldData`(rings·load·pressure·tint), 하늘의 별 영역을 누르면 `SkyCaption` "10.17 · 5세트 · 2:10" |
+| 그래프 | `useSkyStars({ graph })` 노드 54 · 선 87, 누르면 캡션 "별 54 · 선 87" |
+| 시간대 · 렌즈 · 첫 진입 | `useSkyPhase`(실시간 auto, 시각 고정이면 night/dawn/blue), `useSkyLens(lens, 과목색)`, `<SkyEntrance once="session"/>` |
+| ⌘K | 기존 `useFieldPause(open, 'overlay')` 그대로(노출 ×0.6) |
+
+**검증:** `npm run build` 통과(타입 오류 0, precache 12). 새 탭에서 7개 화면 이동 + 390 폭: 콘솔 error/warn 0, 가로 스크롤 0. 1180에서 오늘(새벽)·집중 화면 눈으로 확인.
+
+**남은 일 (사용량 한도로 멈춤)**
+1. **전환 성능(목표 최장 프레임 ≤ 20ms) 손대지 못함.** 계획: RootLayout에서 7개 공간 keep-alive(한 번 마운트, `hidden`/`inert`로 보이기만 전환) + 각 화면의 `FieldMood`·`useSkyStars`·전역 키 처리를 '활성 공간일 때만' 켜는 `ActiveSpace` 컨텍스트. 그래프·시간표 격자는 첫 프레임 뒤 렌더. `__gyeolPerf.navs()` maxFrameMs로 측정.
+2. **은하 카메라 미연결:** `useSkyCamera`가 아직 fx에 없음. 생기면 별 누르기(오늘의 별·복습 별·노트 별) → `flyTo` + 한 줄 캡션, 닫기 → `back()`, 설정 '공간 이동: 비행 · 짧게 · 끔' → FieldProvider 전달.
+3. 설정 '유성: 켬 · 끔', 별자리 길게 눌러 '나의 은하' 시트, 노트 `drawLink` 보류(편집기 M1), `gatherDust` 미사용.
+4. 빈 상태(`EmptyState`)는 명사구·메타가 둘 다 큰 글자로 나온다 → 메타를 작은 줄로 바꾸기. 상단 바 '검색·명령' 글자 → [⌕] 아이콘. 독 아이콘 v3 선 굵기 조정은 Figma 확인 뒤.
+5. 오프라인 새로고침(preview 서버)은 이번에도 실행하지 않음.
+
+---
+
+## (이전) M0 기반 셸
+
+작성: 앱 개발자 · 2026-10-16 · 범위: `src/**`(fx 제외) · `index.html` · `vite.config.ts` · `public/**`
+
+## 구조
+
+| 위치 | 내용 |
+|---|---|
+| `src/main.tsx` | 진입점. 루트는 한 번만 만든다(`#root.__gyeolRoot` 재사용 → HMR 중복 `createRoot` 방지) |
+| `src/app/router.tsx` · `RootLayout.tsx` | TanStack Router 코드 기반 7개 라우트(`/ /notes /graph /review /planner /focus /settings` + 404). 루트: `FieldProvider`(level·theme·tier·debug는 설정 스토어) → `MotionConfig` → 상단 바 · `RippleSurface as="main"`(+`data-gx-vt-root`) · 독 · ⌘K · 토스트. 1분마다 + `visibilitychange` 시계 갱신, 첫 실행 시드, `navigator.storage.persist()` |
+| `src/shell/` | `Chrome.tsx`(상단 바·과목 렌즈·독/레일·토스트), `CommandPalette.tsx`(cmdk), `hooks.ts`(`useGo` = `useFieldTransition`으로 감싼 이동 + origin, 스크롤 숨김, 미디어 쿼리), `spaces.ts`, `icons.tsx` |
+| `src/screens/` | `Today` `Notes` `Graph` `Review` `Planner` `Focus` `Settings` `NotFound` + 공용 `parts.tsx`(Hero·FocusLines(RevealText)·주 버튼·조용한 버튼·주변부+선반·장·Reveal), `actions.ts` |
+| `src/db/` | `schema.ts`(Dexie 4: subjects·courseSlots·tasks·notes(메타)·cards·focusSessions·dailyStats·meta, 획 `t` 저장 주석), `seed.ts`(도윤·2학기 7주차), `hooks.ts`(useLiveQuery: `useNow` `useToday` `useReview` `usePlanner` `useNotes` …) |
+| `src/stores/` | `settings.ts`(zustand persist, 키 `gyeol-settings`, localStorage try/catch), `ui.ts`(팔레트·렌즈·토스트·크롬 숨김·의도), `focus.ts`(타이머, 시각 차 계산, persist) |
+| `src/lib/` | `situation.ts`(상황 엔진 8개 + 예외), `parser.ts`(v1 자연어 파서 이식), `hangul.ts`(초성 검색), `time.ts`(새벽 4시 경계), `theme.ts`(원형 리빌), `ai.ts`(AiClient 인터페이스만) |
+| `src/styles/` | `tokens.css`(design.md 값 그대로, 다크 기본/라이트), `base.css`(레이어 규칙·포커스 링·동작 줄이기), `shell.css`, `screens.css` |
+| `public/` | `favicon.svg/.ico`, `icon.svg`, `pwa-192/512.png`, `pwa-maskable-512.png`, `apple-touch-icon.png`(결 심볼: 동심 고리 3겹 + 인주 점, 의존성 없는 스크립트로 생성) |
+
+## 실행
+
+- 개발: `npm run dev` → http://127.0.0.1:5173 · 빌드(타입 체크 포함): `npm run build` · 미리보기(PWA 확인): `npm run preview`
+- 시연: 설정 > 개발용(개발 서버 또는 `?dev`) > **시각 고정** — 실시간 / 아침 08:10 / 수업 중 09:32 / 공강 11:00 / 수업 직전 12:50 / 밤 22:10 / 새벽 01:40 / 시험 D-3 / 빈 상태. 같은 곳에 필드 등급 강제, FPS 표시, 완료 연출(인주+도장) 시험, 샘플 다시 넣기.
+- ⌘K 예: `물리 25분`(→ 집중 화면 자동 시작), `ㅇㅌㄹㅍ`(초성), `과제 추가 공업수학 금요일 23:59`(→ DB에 저장, 플래너·오늘 D-day에 반영), `라이트`, `모션 끔`.
+
+## M0 완료 기준
+
+| # | 기준 | 상태 |
+|---|---|---|
+| 1 | build 성공·타입 오류 0, dev 콘솔 에러 0 | **충족** — `npm run build` 통과. 390/820/1180/1440에서 7개 화면·⌘K·테마·집중·복습을 돌린 뒤 콘솔 error/warn 0 |
+| 2 | 6개 공간 이동·URL 라우팅·새로고침 유지 | **충족** — 독/레일/⌘K/링크 이동, 각 URL 직접 열기·새로고침 확인 |
+| 3 | 4개 폭에서 셸 전환·가로 스크롤 0 | **충족** — 390: 아래 독 6칸(그래프는 노트 위 토글), 820·1180: 아래 독 7칸, 1440: 왼쪽 레일(호버 시 이름). 모든 화면 `scrollWidth = innerWidth` |
+| 4 | 화면마다 필드 분위기·누르면 물결·전환 연출 | **충족** — 화면마다 `FieldMood`, `RippleSurface`, `useFieldTransition` + 누른 아이콘 origin. 크롬은 `view-transition-name`(topbar·dock)으로 전환 중 흐려지지 않게 |
+| 5 | 오늘 = 한 초점 + 시드 | **충족** — 상황 엔진 8개 확인(예: 09:32 "일반물리 수업 중이에요. / 43분 남았어요." + 다음 13:00 공업수학 · 복습 13장·8분 · 중간고사 D-6). 상자 0·큰 숫자 1·인주 버튼 1. 아래 3개 장(ContourRibbon·GyeolRings·이어서 하기) |
+| 6 | ⌘K 어디서나·이동·테마 | **충족** — ⌘K/Ctrl+K·독 ⌘·상단 바 버튼. 이동/명령/렌즈/노트 그룹, 해석 칩+미리보기, 초성, IME Enter 보호, 폰은 아래 시트 |
+| 7 | 테마·모션 설정 동작·저장, OS 동작 줄이기 즉시 | **충족(OS 부분은 코드 경로만)** — 다크/라이트/시스템 원형 리빌, 새로고침 유지·깜빡임 방지 스크립트. OS `prefers-reduced-motion`은 미디어 쿼리 구독으로 즉시 'off' + 안내 문구·선택 비활성. OS 설정은 직접 바꿔 보지 못함 |
+| 8 | Dexie 스키마·시드·새로고침 후 유지 | **충족** — 첫 실행 시드, ⌘K로 넣은 과제·집중 기록이 새로고침 뒤에도 남음 |
+| 9 | PWA 설치·오프라인 셸 | **부분** — 매니페스트(이름 '결', 테마색 #0B0C0E, PNG·SVG·maskable 아이콘), 자동 업데이트 SW, precache 12개(index.html·JS·CSS·아이콘, 중복 0), `navigateFallback`, Google Fonts 런타임 캐시를 빌드로 확인. **`npm run preview`에서 오프라인 새로고침은 '다른 서버 띄우지 말 것' 지시로 실행하지 않음** → 리더 확인 필요 |
+| 10 | 숨은 탭 정지·4ms 예산 | **fx 소관** — 앱은 FieldProvider 하나만 두고 프레임마다 React를 다시 그리지 않음(타이머 1초 갱신). 실기 측정은 dev-notes-fx 참고 |
+
+## 남은 문제
+
+1. 번들 1개 734KB(gzip 241KB) — 경고만. M1에서 라우트별 `lazy` 분할 권장.
+2. 미리보기 탭이 백그라운드일 때는 합성이 멈춰 WAAPI·CSS 애니메이션이 스크린샷 순간에만 진행됨(타임라인 0 고정 확인). 앱 버그 아님, 실제 브라우저 앞 탭에서 모션 품질 확인 필요.
+3. 시각 고정은 '시드 기준일'로 시계를 옮긴다. 그 상태에서 새로 기록한 집중·복습(실제 시각)은 고정 화면에 안 보인다.
+4. M1로 미룬 것: 노트 편집기·필기(이어서 쓰기·새 노트는 안내 토스트), 시간표 편집, 백업/복원, FSRS(복습은 고정 간격 1/2/4/7일 임시판), 스크롤 연동 옹이(0.3배), 펜 필기 시 3px 결 줄.
+5. 그래프 별자리는 개념 목록에서 결정적으로 생성한 M0 표시용(노드 54·링크 87). 실제 링크 색인은 이후.
+
+- (모션 개발자, 2026-10-17) 전환 뒤 하늘이 검게 꺼지는 버그는 fx 쪽에서 고쳤다(옛 WebGL 컨텍스트 반납·잃으면 다시 붙임·전환 안전장치). 앱 파일(`src/shell/hooks.ts`, RootLayout keep-alive)은 고치지 않았다 — 원인이 아니었다. 상태 확인은 `__gyeolPerf.debug()`.

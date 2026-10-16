@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#020308" />
+    <title>결 — 3D 은하 시제품</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #020308; overflow: hidden; color: #EDE7DA; font: 400 13px/1.4 -apple-system, "Noto Sans KR", system-ui, sans-serif; }
+      #cv { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+      #cv:active { cursor: grabbing; }
+      .ui { position: fixed; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; gap: 6px; max-width: calc(100vw - 32px); z-index: 2; }
+      .ui button { appearance: none; border: 1px solid rgba(237, 231, 218, .16); background: rgba(8, 10, 18, .55); color: inherit; font: inherit; padding: 7px 12px; border-radius: 999px; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+      .ui button[aria-pressed="true"] { border-color: #F3D29A; color: #F3D29A; }
+      .ui .sep { width: 1px; background: rgba(237, 231, 218, .16); margin: 4px 4px; }
+      #hud { position: fixed; right: 16px; top: 14px; font: 500 11px/1.5 ui-monospace, Menlo, monospace; color: rgba(237, 231, 218, .7); text-align: right; z-index: 2; white-space: pre; pointer-events: none; }
+      #title { position: fixed; left: 20px; top: 16px; z-index: 2; pointer-events: none; }
+      #title b { font-weight: 500; letter-spacing: .02em; }
+      #title span { display: block; opacity: .6; font-size: 12px; }
+      body.clean .ui, body.clean #hud, body.clean #title { display: none; }
+    </style>
+  </head>
+  <body>
+    <canvas id="cv" aria-label="3D 은하"></canvas>
+    <div id="title"><b id="place">오늘</b><span id="placeSub">은하 전체를 비스듬히</span></div>
+    <div id="hud"></div>
+    <div class="ui" id="ui"></div>
+    <script type="module" src="/src/galaxy3d/main.ts"></script>
+  </body>
+</html>
