@@ -341,6 +341,21 @@ export interface SkyEvents {
   swellBand: (o?: { amount?: number; ms?: number; at?: 'seat' | 'cluster' }) => void
   gatherDust: (target: Element | { x: number; y: number } | 'next' | null) => void
   select: (id: string | null) => void
+  /* ---- M2 (design-m2 10장) ---- */
+  /** D1 메모 저장 → 나의 자리 둘레 별가루 한 점 (45%, 모이지 않는다) */
+  dust: (o: { id: string; subjectId?: string }) => void
+  /** D2 별가루 수 — 보이는 점은 min(n, 24) */
+  setDust: (n: number) => void
+  /** D3–D5 나누기: 'note'(기본) 그 과목 성운 쪽으로 흘러감 · 'task' 반짝 뒤 사라짐 · 'archive' 사라짐 */
+  fileDust: (id: string, subjectId: string | null, to?: 'note' | 'task' | 'archive') => void
+  /** D8 검색 결과 별 반짝 뒤 고정(+25%, 나머지 ×0.5). []이면 원래대로 */
+  glintNotes: (ids: string[]) => void
+  /** D9 과목 성운 피기 (순간 ①). 카메라는 움직이지 않는다 */
+  bloomNebula: (subjectId: string, color: string) => void
+  /** D10 은하 보이기: 첫 실행 자세(FieldMood 'onboarding') → 오늘, 회전 0 · 2.6초. 끝나면 resolve */
+  revealGalaxy: () => Promise<void>
+  /** D11 가져오기 끝: 새 노트 별 앞 12개만 V1s(80ms 간격) */
+  importNotes: (ids: string[]) => void
 }
 
 const NOOP_EVENTS: SkyEvents = {
@@ -354,6 +369,13 @@ const NOOP_EVENTS: SkyEvents = {
   swellBand: () => {},
   gatherDust: () => {},
   select: () => {},
+  dust: () => {},
+  setDust: () => {},
+  fileDust: () => {},
+  glintNotes: () => {},
+  bloomNebula: () => {},
+  revealGalaxy: () => Promise.resolve(),
+  importNotes: () => {},
 }
 
 /** 하늘 사건 묶음. 모든 함수는 멱등이고 실패하지 않는다(WebGL이 없으면 아무 일도 안 함). 모드별 대체는 엔진이 한다 */
@@ -372,6 +394,13 @@ export function useSkyEvent(): SkyEvents {
       swellBand: (o) => eng.swellBand?.(o),
       gatherDust: (t) => eng.gatherDust?.(t),
       select: (id) => eng.select?.(id),
+      dust: (o) => eng.dust?.(o),
+      setDust: (n) => eng.setDust?.(n),
+      fileDust: (id, sj, to) => eng.fileDust?.(id, sj, to),
+      glintNotes: (ids) => eng.glintNotes?.(ids),
+      bloomNebula: (sj, c) => eng.bloomNebula?.(sj, c),
+      revealGalaxy: () => eng.revealGalaxy?.() ?? Promise.resolve(),
+      importNotes: (ids) => eng.importNotes?.(ids),
     }
   }, [eng])
 }
@@ -398,6 +427,12 @@ export interface SkyStarsSpec {
   exam?: { id: string; dday: number } | null
   review?: Array<{ id: string; subject: string; level: number }>
   graph?: { nodes: Array<{ id: string; subject: string; links: number }>; links: Array<[string, string]> }
+  /** M2 노트 별: 지도의 과목 성운 둘레에 노트마다 별 하나(id 해시로 자리 고정). links = 링크 수(크기·밝기) */
+  notes?: Array<{ id: string; subjectId: string; links: number }>
+  /** M2 빛줄기: 노트 사이 링크 쌍(정적 버퍼, 바뀔 때만 다시 올린다) */
+  noteLinks?: Array<[string, string]>
+  /** M2 과목 색 (빛줄기·노트 별 색 섞기·성운 색) */
+  subjects?: Array<{ id: string; color: string }>
 }
 
 /** 데이터 층 선언형 동기화 — 사건 없이 최종 상태만 맞춘다(새로고침·이동 뒤) */

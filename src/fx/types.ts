@@ -19,6 +19,8 @@ export type MoodName =
   /** M1: 지도(← 그래프) · 계획(← 플래너). 옛 이름도 같은 장소로 간다 */
   | 'map'
   | 'plan'
+  /** M2: 첫 실행(순간 ①) — 오늘과 같은 방향·롤에서 지도 성운에 다가간 자세 */
+  | 'onboarding'
 
 /** 필드 분위기. 좌표는 화면 비율(0..1). */
 export interface Mood {

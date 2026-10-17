@@ -7,7 +7,6 @@ import { MotionConfig } from 'motion/react'
 import { memo, useEffect, useMemo, useState, type ComponentType } from 'react'
 import { FieldProvider, RippleSurface, SkyEntrance, useSkyLens, useSkyPhase, type SkyPhase } from '@/fx'
 import { requestPersistence } from '@/db/schema'
-import { ensureSeed } from '@/db/seed'
 import { applyTheme, resolveTheme, type Eff } from '@/lib/theme'
 import { CommandPalette } from '@/shell/CommandPalette'
 import { Dock, Toaster, TopBar } from '@/shell/Chrome'
@@ -26,6 +25,10 @@ import { ReviewScreen } from '@/screens/Review'
 import { PlanScreen } from '@/screens/Plan'
 import { FocusScreen } from '@/screens/Focus'
 import { useUi } from '@/stores/ui'
+import { MemoSheet } from '@/capture/MemoSheet'
+import { DustSheet } from '@/capture/DustBox'
+import { CaptureSky } from '@/capture/CaptureSky'
+import { Onboarding } from '@/onboarding/Onboarding'
 
 /**
  * 1분마다(분 경계에 맞춰) + 앱이 다시 보일 때 시계를 갱신 → 상황 엔진 재평가.
@@ -152,6 +155,7 @@ export function RootLayout() {
   const travelPref = useSettings((s) => s.travel)
   const travel = level === 'off' ? 'off' : travelPref
   const rotation = useEffectiveRotation()
+  const land = useMediaQuery('(min-width: 600px) and (min-aspect-ratio: 1/1)')
   useClockTicker()
   useScrollHide()
 
@@ -164,7 +168,7 @@ export function RootLayout() {
   }, [level])
 
   useEffect(() => {
-    void ensureSeed().catch(() => {})
+    // M2: 첫 실행은 자동 시드 대신 첫 실행 2분(src/onboarding)이 맡는다
     void requestPersistence()
   }, [])
 
@@ -177,6 +181,7 @@ export function RootLayout() {
   return (
     <FieldProvider level={level} theme={theme} tier={tier} debug={fps} travel={travel} rotation={rotation}>
       <SkyLink />
+      <CaptureSky />
       <MotionConfig reducedMotion={level === 'off' ? 'always' : 'never'}>
         <div className="app" data-space={path === '/' ? 'today' : path.slice(1)}>
           <a className="skip" href="#stage">본문으로 건너뛰기</a>
@@ -188,6 +193,9 @@ export function RootLayout() {
             </div>
           </RippleSurface>
           <Dock />
+          <MemoSheet />
+          <DustSheet inlineOnToday={land && path === '/'} />
+          <Onboarding />
           <StarPress />
           <SettingsSheet />
           <CommandPalette />

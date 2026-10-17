@@ -3,18 +3,19 @@
  * 기준일(anchor) = 시드를 넣는 날. 시간표·시험·집중 기록은 모두 이 날을 기준으로 놓는다.
  * 설정 > 개발용 '시각 고정'은 이 기준일의 특정 시각으로 시계를 옮긴다.
  */
-import { db, type Card, type CourseSlot, type DailyStat, type FocusSession, type Note, type Subject, type Task } from './schema'
+import type Dexie from 'dexie'
+import { db, type Card, type CourseSlot, type DailyStat, type FocusSession, type Memo, type Note, type NoteBody, type NoteLink, type Subject, type Task } from './schema'
 import { addDays, atTime, dayKey, startOfDay, startOfWeek, MIN, HOUR, DAY } from '@/lib/time'
 
-export const SEED_VERSION = 1
+export const SEED_VERSION = 2
 
 const SUBJECTS: Array<Omit<Subject, 'createdAt' | 'updatedAt'>> = [
-  { id: 'phys', name: '일반물리', short: '물리', color: 'phys', aliases: ['일반물리', '열역학', '물리', '역학', 'physics', 'phys'], order: 0 },
-  { id: 'math', name: '공업수학', short: '공수', color: 'math', aliases: ['공업수학', '공수', '수학', '라플라스', 'math'], order: 1 },
-  { id: 'chem', name: '일반화학', short: '화학', color: 'chem', aliases: ['일반화학', '화학', '화실', 'chem'], order: 2 },
-  { id: 'econ', name: '경제학원론', short: '경제', color: 'econ', aliases: ['경제학원론', '경제학', '경제', '경원', 'econ'], order: 3 },
-  { id: 'writing', name: '글쓰기', short: '글쓰기', color: 'writing', aliases: ['글쓰기', '작문', '국어', 'writing'], order: 4 },
-  { id: 'eng', name: '영어', short: '영어', color: 'eng', aliases: ['영어', '영작', '토익', 'english', 'eng'], order: 5 },
+  { id: 'seed-phys', name: '일반물리', short: '물리', color: 'phys', aliases: ['일반물리', '열역학', '물리', '역학', 'physics', 'phys'], order: 0 },
+  { id: 'seed-math', name: '공업수학', short: '공수', color: 'math', aliases: ['공업수학', '공수', '수학', '라플라스', 'math'], order: 1 },
+  { id: 'seed-chem', name: '일반화학', short: '화학', color: 'chem', aliases: ['일반화학', '화학', '화실', 'chem'], order: 2 },
+  { id: 'seed-econ', name: '경제학원론', short: '경제', color: 'econ', aliases: ['경제학원론', '경제학', '경제', '경원', 'econ'], order: 3 },
+  { id: 'seed-writing', name: '글쓰기', short: '글쓰기', color: 'writing', aliases: ['글쓰기', '작문', '국어', 'writing'], order: 4 },
+  { id: 'seed-eng', name: '영어', short: '영어', color: 'eng', aliases: ['영어', '영작', '토익', 'english', 'eng'], order: 5 },
 ]
 
 const PHYS_CARDS: Array<[string, string]> = [
@@ -59,13 +60,13 @@ export async function isSeeded(): Promise<boolean> {
   }
 }
 
-/** 첫 실행이면 샘플을 넣는다. 이미 있으면 아무것도 하지 않는다. */
+/** (M2부터 첫 실행은 온보딩이 맡는다 — 자동 시드 안 함) 이미 있으면 아무것도 하지 않는다. */
 export async function ensureSeed(): Promise<void> {
   if (await isSeeded()) return
   await seedSample()
 }
 
-/** 모든 표를 비우고 샘플을 다시 넣는다 (설정 > 개발용, 빈 상태 '샘플로 둘러보기') */
+/** 샘플을 넣는다(이전 샘플 행만 바꾸고 사용자 데이터는 그대로). 첫 실행 '샘플로 시작' · 설정 > 개발용 */
 export async function seedSample(anchorInput: Date = new Date()): Promise<void> {
   const now = Date.now()
   // 새벽 4시 전이면 어제를 기준일로 (학습일 경계)
@@ -84,18 +85,18 @@ export async function seedSample(anchorInput: Date = new Date()): Promise<void> 
   const before = others.filter((d) => d < wd)
   const ordered = [...after, ...before]
   const slotDefs: Array<[number, string, string, string, string, CourseSlot['kind']?]> = [
-    [wd, 'phys', '09:00', '10:15', '공학관 302'],
-    [wd, 'math', '13:00', '14:15', '공학관 412'],
-    [wd, 'chem', '15:00', '17:00', '실험동 1층', 'lab'],
-    [ordered[0] ?? 1, 'econ', '09:00', '10:15', '사회관 105'],
-    [ordered[0] ?? 1, 'writing', '11:00', '12:15', '인문관 210'],
-    [ordered[1] ?? 2, 'phys', '10:30', '11:45', '공학관 302'],
-    [ordered[1] ?? 2, 'eng', '14:00', '15:15', '어학관 403'],
-    [ordered[2] ?? 3, 'math', '10:30', '11:45', '공학관 412'],
-    [ordered[2] ?? 3, 'econ', '15:00', '16:15', '사회관 105'],
+    [wd, 'seed-phys', '09:00', '10:15', '공학관 302'],
+    [wd, 'seed-math', '13:00', '14:15', '공학관 412'],
+    [wd, 'seed-chem', '15:00', '17:00', '실험동 1층', 'lab'],
+    [ordered[0] ?? 1, 'seed-econ', '09:00', '10:15', '사회관 105'],
+    [ordered[0] ?? 1, 'seed-writing', '11:00', '12:15', '인문관 210'],
+    [ordered[1] ?? 2, 'seed-phys', '10:30', '11:45', '공학관 302'],
+    [ordered[1] ?? 2, 'seed-eng', '14:00', '15:15', '어학관 403'],
+    [ordered[2] ?? 3, 'seed-math', '10:30', '11:45', '공학관 412'],
+    [ordered[2] ?? 3, 'seed-econ', '15:00', '16:15', '사회관 105'],
   ]
   const slots: CourseSlot[] = slotDefs.map(([weekday, subjectId, start, end, room, kind], i) => ({
-    id: `slot-${i}`,
+    id: `seed-slot-${i}`,
     subjectId,
     weekday,
     start,
@@ -106,11 +107,11 @@ export async function seedSample(anchorInput: Date = new Date()): Promise<void> 
   }))
 
   // ---- 시험 · 마감 ----
-  const midterm: Task = { id: 'task-midterm', subjectId: 'phys', kind: 'exam', title: '일반물리 중간고사', dueAt: atTime(addDays(A, 6), '10:00').getTime(), done: 0, ...stamp }
+  const midterm: Task = { id: 'seed-task-midterm', subjectId: 'seed-phys', kind: 'exam', title: '일반물리 중간고사', dueAt: atTime(addDays(A, 6), '10:00').getTime(), done: 0, ...stamp }
   const tasks: Task[] = [
     midterm,
-    { id: 'task-hw3', subjectId: 'math', kind: 'assignment', title: '공업수학 과제 3', dueAt: atTime(addDays(A, 1), '23:59').getTime(), done: 0, ...stamp },
-    { id: 'task-quiz', subjectId: 'econ', kind: 'quiz', title: '경제학원론 퀴즈', dueAt: atTime(addDays(A, 9), '10:30').getTime(), done: 0, ...stamp },
+    { id: 'seed-task-hw3', subjectId: 'seed-math', kind: 'assignment', title: '공업수학 과제 3', dueAt: atTime(addDays(A, 1), '23:59').getTime(), done: 0, ...stamp },
+    { id: 'seed-task-quiz', subjectId: 'seed-econ', kind: 'quiz', title: '경제학원론 퀴즈', dueAt: atTime(addDays(A, 9), '10:30').getTime(), done: 0, ...stamp },
   ]
 
   // ---- 노트 (메타) ----
@@ -119,14 +120,14 @@ export async function seedSample(anchorInput: Date = new Date()): Promise<void> 
     return addDays(A, -back).getTime() + 20 * HOUR
   })()
   const notes: Note[] = [
-    { id: 'note-entropy', title: '엔트로피와 열역학 제2법칙', subjectId: 'phys', kind: 'ink', pages: 4, page: 4, excerpt: 'ΔS ≥ Q/T', createdAt: A - 6 * DAY, updatedAt: now - 2 * MIN },
-    { id: 'note-carnot', title: '카르노 기관과 효율', subjectId: 'phys', kind: 'doc', createdAt: A - 8 * DAY, updatedAt: A - DAY + 21 * HOUR },
-    { id: 'note-laplace', title: '라플라스 변환 정리', subjectId: 'math', kind: 'doc', createdAt: A - 9 * DAY, updatedAt: A - DAY + 22 * HOUR },
-    { id: 'note-equil', title: '화학 평형과 르샤틀리에', subjectId: 'chem', kind: 'pdf', page: 12, pages: 40, createdAt: A - 12 * DAY, updatedAt: lastMonday },
-    { id: 'note-pitch', title: '발표 표현 50선', subjectId: 'eng', kind: 'deck', createdAt: A - 20 * DAY, updatedAt: A + 7 * HOUR },
-    { id: 'note-ode', title: '미분방정식 연습 2주차', subjectId: 'math', kind: 'ink', pages: 6, createdAt: A - 14 * DAY, updatedAt: A - 3 * DAY + 19 * HOUR },
-    { id: 'note-elastic', title: '수요와 공급의 탄력성', subjectId: 'econ', kind: 'doc', createdAt: A - 10 * DAY, updatedAt: A - 2 * DAY + 15 * HOUR },
-    { id: 'note-essay', title: '논증적 글쓰기 초안', subjectId: 'writing', kind: 'doc', createdAt: A - 5 * DAY, updatedAt: A - 4 * DAY + 23 * HOUR },
+    { id: 'seed-note-entropy', title: '엔트로피와 열역학 제2법칙', subjectId: 'seed-phys', kind: 'ink', pages: 4, page: 4, excerpt: 'ΔS ≥ Q/T', createdAt: A - 6 * DAY, updatedAt: now - 2 * MIN },
+    { id: 'seed-note-carnot', title: '카르노 기관과 효율', subjectId: 'seed-phys', kind: 'doc', createdAt: A - 8 * DAY, updatedAt: A - DAY + 21 * HOUR },
+    { id: 'seed-note-laplace', title: '라플라스 변환 정리', subjectId: 'seed-math', kind: 'doc', createdAt: A - 9 * DAY, updatedAt: A - DAY + 22 * HOUR },
+    { id: 'seed-note-equil', title: '화학 평형과 르샤틀리에', subjectId: 'seed-chem', kind: 'pdf', page: 12, pages: 40, createdAt: A - 12 * DAY, updatedAt: lastMonday },
+    { id: 'seed-note-pitch', title: '발표 표현 50선', subjectId: 'seed-eng', kind: 'deck', createdAt: A - 20 * DAY, updatedAt: A + 7 * HOUR },
+    { id: 'seed-note-ode', title: '미분방정식 연습 2주차', subjectId: 'seed-math', kind: 'ink', pages: 6, createdAt: A - 14 * DAY, updatedAt: A - 3 * DAY + 19 * HOUR },
+    { id: 'seed-note-elastic', title: '수요와 공급의 탄력성', subjectId: 'seed-econ', kind: 'doc', createdAt: A - 10 * DAY, updatedAt: A - 2 * DAY + 15 * HOUR },
+    { id: 'seed-note-essay', title: '논증적 글쓰기 초안', subjectId: 'seed-writing', kind: 'doc', createdAt: A - 5 * DAY, updatedAt: A - 4 * DAY + 23 * HOUR },
   ]
 
   // ---- 카드: 오늘 13장(물리 6 · 공수 4 · 영어 3), 내일 2장, 시험 범위 42장 중 18장 미학습 ----
@@ -134,7 +135,7 @@ export async function seedSample(anchorInput: Date = new Date()): Promise<void> 
   const dueToday = A + 4 * HOUR + 30 * MIN
   const tomorrow = A + DAY + 6 * HOUR
   const mk = (subjectId: string, i: number, pair: [string, string], due: number, extra: Partial<Card> = {}): Card => ({
-    id: `card-${subjectId}-${i}`,
+    id: `seed-card-${subjectId.slice(5)}-${i}`,
     subjectId,
     noteId: null,
     examId: null,
@@ -154,31 +155,31 @@ export async function seedSample(anchorInput: Date = new Date()): Promise<void> 
     const label: [string, string] = [i < PHYS_CARDS.length ? pair[0] : `${pair[0]} · ${Math.floor(i / PHYS_CARDS.length) + 1}`, pair[1]]
     if (i < 24) {
       const due = i < 6 ? dueToday : i === 6 ? tomorrow : A + (2 + (i % 8)) * DAY
-      cards.push(mk('phys', i, label, due, { examId: midterm.id, noteId: i % 2 ? 'note-carnot' : 'note-entropy' }))
+      cards.push(mk('seed-phys', i, label, due, { examId: midterm.id, noteId: i % 2 ? 'seed-note-carnot' : 'seed-note-entropy' }))
     } else {
-      cards.push(mk('phys', i, label, A + (3 + (i % 3)) * DAY, { examId: midterm.id, state: 'new', reps: 0, lapses: 0, lastReview: null, noteId: 'note-entropy' }))
+      cards.push(mk('seed-phys', i, label, A + (3 + (i % 3)) * DAY, { examId: midterm.id, state: 'new', reps: 0, lapses: 0, lastReview: null, noteId: 'seed-note-entropy' }))
     }
   }
   for (let i = 0; i < 12; i++) {
     const due = i < 4 ? dueToday : i === 4 ? tomorrow : A + (2 + (i % 9)) * DAY
-    cards.push(mk('math', i, MATH_CARDS[i % MATH_CARDS.length]!, due, { noteId: 'note-laplace' }))
+    cards.push(mk('seed-math', i, MATH_CARDS[i % MATH_CARDS.length]!, due, { noteId: 'seed-note-laplace' }))
   }
   for (let i = 0; i < 15; i++) {
     const due = i < 3 ? dueToday : A + (2 + (i % 7)) * DAY
-    cards.push(mk('eng', i, ENG_CARDS[i % ENG_CARDS.length]!, due, { noteId: 'note-pitch' }))
+    cards.push(mk('seed-eng', i, ENG_CARDS[i % ENG_CARDS.length]!, due, { noteId: 'seed-note-pitch' }))
   }
 
   // ---- 집중: 기준일 5세트 2시간 10분 ----
   const sess = (i: number, subjectId: string, start: string, min: number): FocusSession => {
     const s = atTime(A, start).getTime()
-    return { id: `focus-seed-${i}`, subjectId, plannedMs: min * MIN, startedAt: s, endedAt: s + min * MIN, completed: true, createdAt: now }
+    return { id: `seed-focus-${i}`, subjectId, plannedMs: min * MIN, startedAt: s, endedAt: s + min * MIN, completed: true, createdAt: now }
   }
   const sessions: FocusSession[] = [
-    sess(0, 'phys', '06:50', 25),
-    sess(1, 'eng', '07:20', 25),
-    sess(2, 'phys', '10:30', 25),
-    sess(3, 'math', '11:05', 25),
-    sess(4, 'phys', '19:00', 30),
+    sess(0, 'seed-phys', '06:50', 25),
+    sess(1, 'seed-eng', '07:20', 25),
+    sess(2, 'seed-phys', '10:30', 25),
+    sess(3, 'seed-math', '11:05', 25),
+    sess(4, 'seed-phys', '19:00', 30),
   ]
 
   // ---- 일별 기록: 지난 7주. 이번 주(어제까지) + 오늘 = 11시간 40분, 지난주 같은 구간 대비 +18% ----
@@ -189,7 +190,7 @@ export async function seedSample(anchorInput: Date = new Date()): Promise<void> 
   const THIS_WEEK = 700
   const restThis = Math.max(0, THIS_WEEK - TODAY_MIN)
   const lastSpanTotal = Math.round(THIS_WEEK / 1.18)
-  const topOf = () => (['phys', 'math', 'phys', 'eng', 'chem', 'econ', 'phys'] as const)[Math.floor(rand() * 7)] ?? 'phys'
+  const topOf = () => (['seed-phys', 'seed-math', 'seed-phys', 'seed-eng', 'seed-chem', 'seed-econ', 'seed-phys'] as const)[Math.floor(rand() * 7)] ?? 'seed-phys'
   const distribute = (total: number, n: number): number[] => {
     if (n <= 0) return []
     const w = Array.from({ length: n }, () => 0.7 + rand() * 0.8)
@@ -220,18 +221,55 @@ export async function seedSample(anchorInput: Date = new Date()): Promise<void> 
 
   const termStart = addDays(startOfWeek(anchor), -42).getTime()
 
-  await db.transaction('rw', [db.subjects, db.courseSlots, db.tasks, db.notes, db.cards, db.focusSessions, db.dailyStats, db.meta], async () => {
-    await Promise.all([
-      db.subjects.clear(), db.courseSlots.clear(), db.tasks.clear(), db.notes.clear(),
-      db.cards.clear(), db.focusSessions.clear(), db.dailyStats.clear(), db.meta.clear(),
-    ])
-    await db.subjects.bulkAdd(subjects)
-    await db.courseSlots.bulkAdd(slots)
-    await db.tasks.bulkAdd(tasks)
-    await db.notes.bulkAdd(notes)
-    await db.cards.bulkAdd(cards)
-    await db.focusSessions.bulkAdd(sessions)
-    await db.dailyStats.bulkAdd(stats)
+  // ---- 글 노트 12개 더(합계 20) + 본문 + 링크 + 별가루 3 (design-m2 9장 '샘플로 시작') ----
+  const DOCS: Array<[string, string, string, string[]]> = [
+    ['heat-engine', 'seed-phys', '열기관의 순환 과정', ['카르노 순환은 등온 팽창 → 단열 팽창 → 등온 압축 → 단열 압축.', '[[카르노 기관과 효율]]과 [[엔트로피와 열역학 제2법칙]]을 같이 본다.']],
+    ['ideal-gas', 'seed-phys', '이상기체 상태 방정식', ['PV = nRT. 등온·등압·등적 과정의 일을 구분한다.', '[[열기관의 순환 과정]]에서 쓰인다.']],
+    ['first-law', 'seed-phys', '열역학 제1법칙', ['ΔU = Q − W. 부호 약속을 헷갈리지 말 것.', '[[이상기체 상태 방정식]]', '[[엔트로피와 열역학 제2법칙]]']],
+    ['inverse-laplace', 'seed-math', '라플라스 역변환', ['부분분수로 쪼갠 뒤 표를 본다.', '[[라플라스 변환 정리]]']],
+    ['convolution', 'seed-math', '합성곱 정리', ['L{f*g} = F(s)G(s).', '[[라플라스 변환 정리]] · [[라플라스 역변환]]']],
+    ['le-chatelier', 'seed-chem', '르샤틀리에 원리 예제', ['압력을 올리면 기체 몰수가 적은 쪽으로.', '[[화학 평형과 르샤틀리에]]']],
+    ['acid-base', 'seed-chem', '산·염기 평형', ['Ka · Kb · Kw = Ka × Kb.', '[[르샤틀리에 원리 예제]]']],
+    ['market-eq', 'seed-econ', '시장 균형과 잉여', ['소비자 잉여 + 생산자 잉여 = 총잉여.', '[[수요와 공급의 탄력성]]']],
+    ['tax-burden', 'seed-econ', '조세의 귀착', ['탄력성이 작은 쪽이 더 많이 부담한다.', '[[수요와 공급의 탄력성]] · [[시장 균형과 잉여]]']],
+    ['claim-evidence', 'seed-writing', '주장과 근거', ['주장 → 근거 → 반론 → 재반박.', '[[논증적 글쓰기 초안]]']],
+    ['signpost', 'seed-eng', '발표 연결 표현', ['Moving on to … / To sum up, …', '[[발표 표현 50선]]']],
+    ['qna', 'seed-eng', '질의응답 표현', ['That is a great question. Let me get back to you on that.', '[[발표 연결 표현]]']],
+  ]
+  DOCS.forEach(([key, subjectId, title], i) => {
+    notes.push({ id: `seed-note-${key}`, title, subjectId, kind: 'doc', createdAt: A - (15 - i) * DAY, updatedAt: A - (12 - i) * DAY + 20 * HOUR })
+  })
+  const byTitle = new Map(notes.map((n) => [n.title, n.id]))
+  const bodies: NoteBody[] = []
+  const links: NoteLink[] = []
+  DOCS.forEach(([key, , , paras]) => {
+    const noteId = `seed-note-${key}`
+    const text = paras.map((x) => x.replace(/\[\[|\]\]/g, '')).join('\n')
+    bodies.push({ noteId, doc: { type: 'doc', content: paras.map((x) => ({ type: 'paragraph', content: [{ type: 'text', text: x }] })) }, text, version: 1, updatedAt: now })
+    let k = 0
+    paras.join(' ').replace(/\[\[([^\]]+)\]\]/g, (_m, t: string) => {
+      links.push({ id: `seed-link-${key}-${k++}`, from: noteId, to: byTitle.get(t) ?? null, toTitle: t, createdAt: now })
+      return ''
+    })
+  })
+  const memos: Memo[] = [
+    { id: 'seed-memo-0', text: '물리 엔트로피 예제 3번 다시 풀기', subjectId: 'seed-phys', state: 'inbox', filedTo: null, createdAt: now - 3 * HOUR, updatedAt: now - 3 * HOUR },
+    { id: 'seed-memo-1', text: '공수 과제 범위: 6.1–6.4', subjectId: 'seed-math', state: 'inbox', filedTo: null, createdAt: now - 2 * HOUR, updatedAt: now - 2 * HOUR },
+    { id: 'seed-memo-2', text: '발표 때 그래프 설명 표현 찾아보기', subjectId: 'seed-eng', state: 'inbox', filedTo: null, createdAt: now - 40 * MIN, updatedAt: now - 40 * MIN },
+  ]
+
+  await removeSamples()
+  await db.transaction('rw', [db.subjects, db.courseSlots, db.tasks, db.notes, db.cards, db.focusSessions, db.dailyStats, db.meta, db.noteBodies, db.links, db.memos], async () => {
+    await db.subjects.bulkPut(subjects)
+    await db.courseSlots.bulkPut(slots)
+    await db.tasks.bulkPut(tasks)
+    await db.notes.bulkPut(notes)
+    await db.noteBodies.bulkPut(bodies)
+    await db.links.bulkPut(links)
+    await db.memos.bulkPut(memos)
+    await db.cards.bulkPut(cards)
+    await db.focusSessions.bulkPut(sessions)
+    await db.dailyStats.bulkPut(stats)
     await db.meta.bulkPut([
       { key: 'seed', value: { version: SEED_VERSION, at: now } },
       { key: 'anchor', value: A },
@@ -239,6 +277,39 @@ export async function seedSample(anchorInput: Date = new Date()): Promise<void> 
       { key: 'term', value: { label: '2학기', start: termStart } },
       { key: 'goalMin', value: 240 },
       { key: 'retention', value: 0.91 },
+      { key: 'onboarded', value: true },
     ])
   })
+}
+
+/** 샘플 행 표시 = id 접두어 (리더 결정 2: 스키마 그대로) */
+export const SEED_PREFIX = 'seed-'
+
+/** 샘플 지우기: 테이블마다 id가 'seed-'로 시작하는 행만. 사용자 데이터는 건드리지 않는다 */
+export async function removeSamples(): Promise<number> {
+  let n = 0
+  await db.transaction('rw', [db.subjects, db.courseSlots, db.tasks, db.notes, db.cards, db.focusSessions, db.dailyStats, db.meta, db.noteBodies, db.links, db.memos, db.assets], async () => {
+    for (const t of [db.subjects, db.courseSlots, db.tasks, db.notes, db.cards, db.focusSessions, db.links, db.memos, db.assets] as const) {
+      n += await (t as unknown as Dexie.Table<{ id: string }, string>).where('id').startsWith(SEED_PREFIX).delete()
+    }
+    n += await db.noteBodies.where('noteId').startsWith(SEED_PREFIX).delete()
+    // M1 샘플(v1, 접두어 없던 id): 알려진 id만 지운다
+    if (((await db.meta.get('seed'))?.value as { version?: number } | undefined)?.version === 1) {
+      const V1 = ['phys', 'math', 'chem', 'econ', 'writing', 'eng']
+      n += await db.subjects.where('id').anyOf(V1).delete()
+      n += await db.courseSlots.where('id').anyOf(Array.from({ length: 9 }, (_, i) => `slot-${i}`)).delete()
+      n += await db.tasks.where('id').anyOf(['task-midterm', 'task-hw3', 'task-quiz']).delete()
+      n += await db.notes.where('id').anyOf(['note-entropy', 'note-carnot', 'note-laplace', 'note-equil', 'note-pitch', 'note-ode', 'note-elastic', 'note-essay']).delete()
+      n += await db.cards.filter((c) => /^card-(phys|math|eng)-\d+$/.test(c.id)).delete()
+      n += await db.focusSessions.where('id').startsWith('focus-seed-').delete()
+    }
+    // 일별 기록은 샘플만 만든다(앱이 쓰는 곳 없음) → 함께 지운다
+    if (await db.meta.get('seed')) await db.dailyStats.clear()
+    await db.meta.bulkDelete(['seed', 'anchor', 'term', 'retention'])
+  })
+  return n
+}
+
+export async function hasSamples(): Promise<boolean> {
+  return !!(await db.meta.get('seed')) || (await db.subjects.where('id').startsWith(SEED_PREFIX).count()) > 0
 }

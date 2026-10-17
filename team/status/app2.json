@@ -1,1 +1,1 @@
-{"percent": 0, "doing": "대기: 설계 뒤 시작", "state": "waiting"}
+{ "percent": 100, "doing": "완료 · saveMemo/openMemo/openDust(src/capture/api.ts) · 메모 0.8ms · 백업 왕복 같음 · .ics 5/6 · 노트로는 openOrCreateNote 대기(TODO)", "state": "done" }

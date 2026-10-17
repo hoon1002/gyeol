@@ -428,6 +428,14 @@ uniform vec4 uZone[3];
 uniform vec3 uZoneP; // 화면 CSS px (폭, 높이) · 페더 px
 const float OMEGA_PE = ${0.006981317};
 vec3 patW(vec3 a) { float th = a.y + OMEGA_PE * uTime; return vec3(a.x * cos(th), a.z, a.x * sin(th)); }
+// uCart = 1: 입력이 직교 좌표(x, y, z) — 노트 별·빛줄기(1,000 · 2,000)는 CPU에서 atan2를 쓰지 않으려고
+uniform float uCart;
+vec3 posW(vec3 a) {
+  if (uCart < 0.5) return patW(a);
+  float t = OMEGA_PE * uTime;
+  float c = cos(t), s = sin(t);
+  return vec3(a.x * c - a.z * s, a.y, a.x * s + a.z * c);
+}
 /* 글 구역 안전 마스크: 둥근 모서리(반지름 64px) 사각형 거리장 — 글 바로 뒤는 꽉, 바깥으로 uZoneP.z px에 걸쳐 부드럽게(상자가 읽히지 않게) */
 float zoneAt(vec2 uv) {
   vec2 p = uv * uZoneP.xy;
@@ -448,6 +456,7 @@ export const DOT_VS = /* glsl */ `#version 300 es
 precision highp float;
 ${EV_COMMON}
 uniform float uDpr;
+uniform float uDotK; // 층 전체 배수
 layout(location = 0) in vec4 a0; // r, θ0, y, 밝기
 layout(location = 1) in vec4 a1; // rgb, 크기(CSS px, 핵 지름)
 out vec3 vCol;
@@ -455,11 +464,11 @@ out float vLv;
 out float vS;
 out float vPx;
 void main() {
-  vec4 clip = uVP * vec4(patW(a0.xyz), 1.0);
+  vec4 clip = uVP * vec4(posW(a0.xyz), 1.0);
   if (clip.w <= 0.0 || a0.w < 0.003) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vCol = vec3(0.0); vLv = 0.0; vS = 1.0; vPx = 1.0; return; }
   vec2 uv = clip.xy / clip.w * 0.5 + 0.5;
   vCol = a1.rgb;
-  vLv = a0.w * mix(1.0, 0.3, zoneAt(uv));
+  vLv = a0.w * uDotK * mix(1.0, 0.3, zoneAt(uv));
   vS = a1.w * 0.5 * uDpr;           // 핵 σ (장치 px)
   vPx = ceil(vS * 3.0 * 4.0) + 2.0; // 할로(σ×3)까지
   gl_Position = clip;
@@ -490,10 +499,13 @@ uniform vec2 uView;   // 캔버스 장치 px
 uniform float uWidth; // 장치 px
 layout(location = 0) in vec4 a0; // A (r, θ0, y), 알파
 layout(location = 1) in vec4 a1; // B (r, θ0, y), -
+layout(location = 2) in vec4 a2; // 색 rgb, -
+uniform float uSegK;  // 층 전체 배수 (검색 중 ×0.5 · 장소 밖 0)
 out float vA;
+out vec3 vC;
 void main() {
-  vec4 ca = uVP * vec4(patW(a0.xyz), 1.0);
-  vec4 cb = uVP * vec4(patW(a1.xyz), 1.0);
+  vec4 ca = uVP * vec4(posW(a0.xyz), 1.0);
+  vec4 cb = uVP * vec4(posW(a1.xyz), 1.0);
   if (ca.w <= 0.0 || cb.w <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vA = 0.0; return; }
   vec2 pa = ca.xy / ca.w;
   vec2 pb = cb.xy / cb.w;
@@ -502,15 +514,16 @@ void main() {
   float end = float(gl_VertexID & 1);
   float side = float((gl_VertexID >> 1) & 1) * 2.0 - 1.0;
   vec2 p = mix(pa, pb, end) + nrm * side;
-  vA = a0.w * mix(1.0, 0.3, zoneAt(p * 0.5 + 0.5));
+  vA = a0.w * uSegK * mix(1.0, 0.3, zoneAt(p * 0.5 + 0.5));
+  vC = a2.rgb;
   gl_Position = vec4(p, 0.0, 1.0);
 }
 `
 export const SEG_FS = /* glsl */ `#version 300 es
 precision highp float;
 in float vA;
-uniform vec3 uLineCol;
+in vec3 vC;
 uniform float uDay;
 out vec4 o;
-void main() { o = uDay > 0.5 ? vec4(vA * (1.0 - uLineCol), 1.0) : vec4(uLineCol * vA, 1.0); }
+void main() { o = uDay > 0.5 ? vec4(vA * (1.0 - vec3(0.271, 0.294, 0.345)), 1.0) : vec4(vC * vA, 1.0); }
 `

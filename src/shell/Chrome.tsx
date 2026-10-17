@@ -10,7 +10,8 @@ import { useSubjects } from '@/db/hooks'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import { useEffectiveMotion, useGo, useIsPhone, useIsRail, isTypingTarget } from './hooks'
-import { IconChevron, IconCmd, IconMore, IconSearch, Symbol } from './icons'
+import { IconChevron, IconCmd, IconMore, IconPlus, IconSearch, Symbol } from './icons'
+import { openMemoFromButton } from '@/capture/MemoSheet'
 import { SPACES, spaceOf, type SpacePath } from './spaces'
 
 function usePath(): string {
@@ -197,9 +198,14 @@ export function Dock() {
   const rail = useIsRail()
   const nav = useLinkNav()
   const here = rail ? path : (PHONE_HOME[path] ?? path)
-  return (
-    <nav className={`dock${hidden ? ' is-hidden' : ''}`} aria-label="장소" inert={hidden ? true : undefined}>
-      {SPACES.map((s) => {
+  const plus = (
+    <button key="plus" type="button" className="dock-item dock-plus" aria-label="메모 (N)" onClick={(e) => openMemoFromButton(e.currentTarget)}>
+      <IconPlus size={22} />
+      <span className="dock-label" aria-hidden="true">메모 <span className="kbd">N</span></span>
+    </button>
+  )
+  // 폰 독: 오늘 · 노트 · ＋ · 복습 · 집중 (＋가 가운데), 레일: 장소 6 아래 맨 끝에 ＋
+  const items = SPACES.map((s) => {
         const Icon = s.icon
         const on = here === s.path
         return (
@@ -215,7 +221,12 @@ export function Dock() {
             <span className="dock-label" aria-hidden="true">{s.name}</span>
           </a>
         )
-      })}
+      })
+  const phoneMid = rail ? -1 : items.findIndex((_, i) => SPACES.slice(0, i + 1).filter((x) => x.phoneDock).length === 2)
+  const list = rail ? [...items, <span key="sep" className="dock-sep" aria-hidden="true" />, plus] : [...items.slice(0, phoneMid + 1), plus, ...items.slice(phoneMid + 1)]
+  return (
+    <nav className={`dock${hidden ? ' is-hidden' : ''}`} aria-label="장소" inert={hidden ? true : undefined}>
+      {list}
       <span className="dock-sep dock-phone-only" aria-hidden="true" />
       <button type="button" className="dock-item dock-phone-only" aria-label="검색·명령 (⌘K)" onClick={(e) => openPalette('', e.currentTarget)}>
         <IconCmd size={22} />

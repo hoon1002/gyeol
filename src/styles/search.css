@@ -1,0 +1,94 @@
+/* =========================================================
+   앱 A (첫 화면에 실린다): ⌘K 결과 줄 · 노트 화면(찾기 칸 · 오늘 수업 노트 · 목록 · 종이 상자).
+   편집기 안쪽 글자 모양은 editor.css(편집기 청크와 함께 지연 로드).
+   이 파일은 shell.css보다 먼저 실릴 수 있어 선택자를 한 단계 더 좁힌다(.pal-m2 · .notes-hero).
+   ========================================================= */
+
+/* ---------- ⌘K: 한 목록 8줄 (design-m2 5장) ---------- */
+.pal-m2 .pal-list { max-height: min(468px, 58svh); }
+.pal-m2 .pal-item { grid-template-columns: 28px minmax(0, 1fr) auto; min-height: 44px; gap: 10px; color: var(--text-2); }
+.pal-m2 .pal-ic { width: 28px; height: 28px; border-radius: 8px; background: transparent; color: var(--c); }
+.pal-m2 .pal-item[data-selected="true"] { color: var(--text-1); }
+.pal-m2 .pal-item[data-selected="true"] .pal-ic { background: transparent; }
+.pal-m2 .pal-item mark { background: rgba(243, 210, 154, .18); color: var(--text-1); font-weight: 600; border-radius: 2px; }
+:root[data-theme="light"] .pal-m2 .pal-item mark { background: rgba(160, 110, 20, .16); }
+.pal-m2 .pal-label { font-size: 15px; }
+.pal-m2 .pal-snip { font-size: 13px; color: var(--text-3); margin-top: 1px; }
+.pal-m2 .pal-snip mark { background: rgba(243, 210, 154, .14); color: var(--text-2); font-weight: 400; }
+.pal-meta { font: 400 11px var(--f-mono), var(--f-kr); color: var(--text-3); white-space: nowrap; }
+.pal-dust { width: 6px; height: 6px; background: #EDE7DA; box-shadow: 0 0 6px rgba(237, 231, 218, .6); }
+:root[data-theme="light"] .pal-dust { background: #454B58; box-shadow: none; }
+.pal-m2 .pal-k-save .pal-label { color: var(--text-1); }
+.pal-m2 .pal-k-save .pal-ic { color: var(--accent); }
+.pv-memo { font-size: 16px; line-height: 1.6; font-family: var(--f-kr); font-weight: 400; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ---------- 노트 화면 (design-m2 3-2 · 5 · 6-3) ---------- */
+.notes-hero .notes-find { position: relative; display: flex; align-items: center; }
+.notes-find-in {
+  width: 100%; height: 36px; box-sizing: border-box; padding: 0 40px 0 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 60%, transparent);
+  font: 400 14px var(--f-kr); color: var(--text-1); outline: none;
+}
+.notes-find-in::placeholder { color: var(--text-3); }
+.notes-find-in:focus { border-color: var(--border-strong); background: color-mix(in srgb, var(--surface) 80%, transparent); }
+.notes-find-n { position: absolute; right: 12px; font: 400 11px var(--f-mono); color: var(--text-3); pointer-events: none; }
+.notes-lens-off { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; min-height: 32px; font: 400 12px var(--f-mono), var(--f-kr); color: var(--text-3); }
+.notes-lens-off i { width: 6px; height: 6px; border-radius: 50%; }
+.notes-hero .notes-list mark { background: rgba(243, 210, 154, .18); color: var(--text-1); border-radius: 2px; }
+.notes-hero .notes-list .notes-snip { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+.notes-hero .notes-list .notes-snip mark { color: var(--text-2); }
+.notes-hero .notes-list li button > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notes-none { padding: 12px 0; border-top: 1px solid var(--border); font: 400 13px var(--f-mono), var(--f-kr); color: var(--text-3); }
+
+/* 오늘 수업 노트: 없을 때 점선 줄, 있을 때 보통 줄로 맨 위 고정 */
+.notes-hero .notes-list li.notes-today > button {
+  width: 100%; min-height: 44px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 8px 0; border-top: 1px solid var(--border); text-align: left; font-size: 14.5px; color: var(--text-2);
+}
+.notes-hero .notes-list li.notes-today > button.is-new {
+  flex-direction: row; justify-content: space-between; align-items: center;
+  margin-bottom: 6px; padding: 8px 12px; border: 1px dashed var(--border); border-radius: 10px; color: var(--text-2);
+}
+.notes-hero .notes-list li.notes-today > button.is-new:hover { color: var(--text-1); border-color: var(--border-strong); }
+.notes-hero .notes-list li.notes-today > button.is-on { color: var(--text-1); }
+.notes-hero .notes-list li.notes-today > button.is-on span::before { content: ""; display: inline-block; width: 4px; height: 4px; margin: 0 8px 3px 0; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.notes-hero .notes-list li.notes-today small.mono { font-family: var(--f-mono); }
+.notes-hero .notes-list li.notes-today + li > button { border-top-color: var(--border); }
+
+/* 가로: 목록 열 = 머리 · 찾기 · 오늘 수업 · 목록(열 안에서 스크롤) */
+@media (min-width: 600px) and (min-aspect-ratio: 1/1) {
+  .notes-hero.hero-zone > .hero-col.zone-a { display: flex; flex-direction: column; gap: 14px; }
+  .notes-hero .focus-lines { font-size: clamp(1.9rem, 1rem + 1.7vw, 2.8rem); }
+  .notes-hero .notes-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; align-content: start; margin-right: -8px; padding-right: 8px; scrollbar-width: thin; }
+  .note-stage.zone-b { display: block; z-index: 1; }
+}
+.notes-hero .actions { margin: 0; }
+
+/* 세로 · 폰: 노트를 열면 한 칸 전체가 종이(‹ 노트) */
+.notes-hero.is-reading.hero-zone > .hero-col.zone-a {
+  display: block; height: calc((var(--za-y1) - var(--za-y0)) * 100svh);
+}
+@media (max-width: 599px), (max-aspect-ratio: 999/1000) {
+  .notes-hero.is-reading.hero-zone > .hero-col.zone-a { width: calc((var(--za-x1) - var(--za-x0)) * 100vw); }
+}
+
+/* ---------- 종이 상자 (편집기를 불러오기 전에도 같은 자리) ---------- */
+.np {
+  --np-pad-y: 48px; --np-pad-x: 40px;
+  position: relative; height: 100%; min-height: 0; box-sizing: border-box;
+  background: rgba(12, 18, 34, .86); box-shadow: var(--hairline); border: 1px solid var(--border);
+  border-radius: 16px; overflow: hidden; pointer-events: auto; text-shadow: none;
+}
+:root[data-theme="light"] .np { background: var(--surface); }
+@media (max-width: 1199px) { .np { --np-pad-y: 32px; --np-pad-x: 32px; } }
+@media (max-width: 599px) { .np { --np-pad-y: 16px; --np-pad-x: 16px; border-radius: 14px; } }
+.np-skel { max-width: 600px; margin: 0 auto; padding: var(--np-pad-y) var(--np-pad-x); }
+.np-skel-t, .np-skel-m, .np-skel-l { border-radius: 6px; background: color-mix(in srgb, var(--text-1) 6%, transparent); }
+.np-skel-t { height: 30px; width: 54%; margin-top: 30px; }
+.np-skel-m { height: 10px; width: 30%; margin: 16px 0 34px; }
+.np-skel-l { height: 12px; margin-top: 18px; }
+.np-o-t { margin: 22px 0 0; font: 600 26px/1.3 var(--f-kr-d), var(--f-kr); letter-spacing: -.03em; color: var(--text-1); }
+.np-o-m { margin: 10px 0 24px; font: 400 12px var(--f-mono), var(--f-kr); color: var(--text-3); }
+.np-o-x { margin: 0 0 10px; font-size: 15px; line-height: 1.7; color: var(--text-2); }
+.np-o-x:last-child { font: 400 12px var(--f-mono), var(--f-kr); color: var(--text-3); }
+.np-other .np-back { font: 400 13px/1 var(--f-mono), var(--f-kr); color: var(--text-2); padding: 8px 0; min-height: 36px; }

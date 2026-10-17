@@ -1,12 +1,12 @@
 /**
- * 지도(← 그래프) v4: 별자리는 하늘이 그린다(useSkyStars graph). 화면 글은 머리 하나(design-m1 2-1 글 구역 왼쪽 위):
- * 지도 / 별 54 · 선 87 / 과목 렌즈 칩 한 줄. 별 정보(노트 제목 / 물리 · 링크 3 / 열기)는 누를 때만 StarPress가 오른쪽 아래에.
+ * 지도(← 그래프) v4 → M2: 노트마다 별 하나, [[링크]]마다 빛줄기(useSkyStars notes · noteLinks · subjects, design-m2 4-3).
+ * 화면 글은 머리 하나(design-m1 2-1 글 구역 왼쪽 위): 지도 / 별 n · 선 m / 과목 렌즈 칩 한 줄.
+ * 별 정보(노트 제목 / 물리 · 링크 3 / 열기)는 누를 때만 StarPress가 오른쪽 아래에.
  * 폰: 위에 '노트 | 지도' 토글(폰 독에는 지도가 없다).
- * M0: 별자리는 시드 개념 목록에서 결정적으로 만든다(실제 링크 색인은 이후).
  */
 import { useMemo } from 'react'
 import { ActiveMood as FieldMood } from '@/app/keepAlive'
-import { buildGraph } from '@/lib/graph'
+import { useNoteStars, useSkySubjects } from '@/db/notes'
 import { useNotes, useSubjects } from '@/db/hooks'
 import { useSettings } from '@/stores/settings'
 import { useGo } from '@/shell/hooks'
@@ -41,9 +41,10 @@ export function MapScreen() {
   const subjects = useSubjects() ?? []
   const lens = useSettings((s) => s.lens)
   const setLens = useSettings((s) => s.setLens)
-  const g = useMemo(buildGraph, [])
+  const stars = useNoteStars()
+  const skySubjects = useSkySubjects(subjects)
   const empty = !!notes && notes.length === 0
-  const skyStars = { graph: empty ? { nodes: [], links: [] } : g }
+  const skyStars = useMemo(() => (stars ? { notes: stars.notes, noteLinks: stars.noteLinks, subjects: skySubjects } : undefined), [stars, skySubjects])
 
   if (empty) {
     return (
@@ -51,7 +52,7 @@ export function MapScreen() {
         <FieldMood preset={SKY.mood} drag={SKY.drag} stars={skyStars} />
         <Hero label="지도" className="map-hero">
           <NotesMapToggle on="map" />
-          <EmptyState lines={['별자리', '올가미 → 링크']} />
+          <EmptyState lines={['별자리', '[[ → 빛줄기']} />
         </Hero>
       </>
     )
@@ -66,7 +67,7 @@ export function MapScreen() {
           <FocusLines lines={['지도']} className="map-title" />
         </Block>
         <Block>
-          <p className="meta enter enter-1">별 {g.nodes.length} · 선 {g.links.length}</p>
+          <p className="meta enter enter-1">별 {stars?.notes.length ?? notes?.length ?? 0} · 선 {stars?.noteLinks.length ?? 0}</p>
         </Block>
         <Block className="enter enter-1">
           <div className="lens-chips" role="radiogroup" aria-label="과목 렌즈">

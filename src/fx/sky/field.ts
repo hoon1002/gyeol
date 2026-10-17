@@ -84,6 +84,7 @@ const SEAL: [number, number, number] = [1.0, 0.561, 0.471]
 function sceneFor(preset: MoodName, phase: Exclude<SkyPhase, 'auto'>): { scene: SceneName; look: LookOverride } {
   switch (preset) {
     case 'landing':
+    case 'onboarding':
       return { scene: 'hero', look: { bright: 1 } }
     case 'today':
       if (phase === 'blue') return { scene: 'today-class', look: { bright: 0.8 } }
@@ -118,6 +119,7 @@ const LAYERS: Record<MoodName, Partial<Record<Layer, number>>> = {
   notes: {},
   graph: { graph: 1 },
   map: { graph: 1 },
+  onboarding: {},
   planner: { exam: 1, today: 0.5 },
   plan: { exam: 1, today: 0.5 },
   settings: {},
@@ -142,6 +144,7 @@ const PLACES: Record<MoodName, Cam> = {
   review: { x: 0.66, y: 0.5, z: 1.9 },
   graph: { x: 0.7, y: 0.36, z: 2.3 },
   map: { x: 0.7, y: 0.36, z: 2.3 },
+  onboarding: { x: 0.7, y: 0.36, z: 2.3 },
   plan: { x: 0.55, y: 0.47, z: 0.88 },
   focus: { x: 0.48, y: 0.33, z: 3.0 },
 }
@@ -232,6 +235,8 @@ function place3d(m: MoodName): PlaceId | null {
       return 'focus'
     case 'settings':
       return null
+    case 'onboarding':
+      return 'onboarding'
     default:
       return 'today'
   }
@@ -422,6 +427,8 @@ export class FieldEngine {
             this.anchorCbs.get(n)?.forEach((f) => f(a))
           })
         this.config3d()
+        this.uploadNotes()
+        this.uploadNoteLinks()
       } catch {
         this.g3d = null
       }
@@ -664,6 +671,7 @@ export class FieldEngine {
       this.g3d.setSheet(preset === 'settings' || this.sheets.size > 0)
       this.g3d.setDrag(this.dragEnabled())
       this.g3d.setPhase(this.phase === 'auto' ? autoPhase() : this.phase)
+      this.applyNoteView()
       if (changed || instant) {
         this.camStack = []
         const ms = this.goCamera({ scene: preset }, instant)
@@ -944,6 +952,7 @@ export class FieldEngine {
         // 나의 가지 (#43): 지난 날의 별자리 — 나의 자리에서 바깥으로 로그 나선(피치 18°), 날마다 0.25u
         const nb = Math.min(60, this.branchDays())
         for (let k = 1; k <= nb; k++) list.push({ id: 'branch:' + k, group: 'branch', pos: branchPos(k), size: 1.4, L: 1, color: GOLD, from: 0.45, to: 0.45, t0: 0, dur: 0 })
+        list.push(...this.m2Stars())
         this.g3d.setDataStars(list)
         // 노트 책등 위 점 (#28): 노트에서는 지도 별이 책등의 높이(해시)에 점으로
         this.g3d.setSpine(
@@ -1148,6 +1157,23 @@ export class FieldEngine {
   }
 
   drawLink(fromId: string, toId: string, o?: { layer?: 'today' | 'graph'; deferIfPaused?: boolean }): void {
+    if (this.g3d && this.notes.has(fromId) && this.notes.has(toId)) {
+      // D7: 노트 별 사이 빛줄기 — 정적 버퍼에 더하고, 지도에서는 V2 머리(사건 층 선 0.8초)
+      const key = fromId < toId ? fromId + '|' + toId : toId + '|' + fromId
+      if (!this.noteLinkSet.has(key)) {
+        this.noteLinkSet.add(key)
+        this.noteLinkPairs.push([fromId, toId])
+        this.uploadNoteLinks(!this.selected)
+        const A = this.notes.get(fromId)!
+        const B = this.notes.get(toId)!
+        if ((this.preset === 'map' || this.preset === 'graph') && this.mode !== 'off') this.g3d.raw?.setLinks([{ a: A.pos, b: B.pos, t0: this.nowS(), dur: 0.8, alpha: 1 }])
+        else if (this.preset === 'notes' && this.mode !== 'off') {
+          this.g3d.sparkle(A.pos)
+          this.g3d.sparkle(B.pos)
+        }
+      }
+      return
+    }
     const layer = o?.layer ?? 'graph'
     if ((o?.deferIfPaused ?? true) && this.paused) {
       this.deferred.push({ a: fromId, b: toId, layer })
@@ -1236,6 +1262,11 @@ export class FieldEngine {
   }
 
   select(id: string | null): void {
+    if (this.g3d && ((id && this.notes.has(id)) || (this.selected && this.notes.has(this.selected)))) {
+      this.selected = id
+      this.uploadNotes()
+      this.uploadNoteLinks()
+    }
     this.selected = id
     for (const s of this.stars.values()) if (s.layer === 'graph') this.animTo(s, this.visTarget(s), 0.3)
     const sel = id ? this.stars.get(id) : null
@@ -1266,7 +1297,11 @@ export class FieldEngine {
     exam?: { id: string; dday: number } | null
     review?: Array<{ id: string; subject: string; level: number }>
     graph?: { nodes: Array<{ id: string; subject: string; links: number }>; links: Array<[string, string]> }
+    notes?: Array<{ id: string; subjectId: string; links: number }>
+    noteLinks?: Array<[string, string]>
+    subjects?: Array<{ id: string; color: string }>
   }): void {
+    if (spec.notes) this.syncNotes(spec.notes, spec.noteLinks, spec.subjects)
     if (spec.today) {
       const keep = new Set(spec.today.map((t) => t.id))
       for (const s of [...this.stars.values()]) if (s.layer === 'today' && !s.id.startsWith('today:') && !keep.has(s.id)) this.removeStar(s.id)
@@ -1694,6 +1729,19 @@ export class FieldEngine {
     /** M1: 3D 엔진 측정 API (measure · uncap · force · flights …) */
     g3d: () => this.g3d?.debug ?? null,
     g3dStats: () => this.g3d?.stats() ?? null,
+    /** M2: 노트 별·빛줄기 데이터 갱신 JS ms (마지막) */
+    notesMs: () => this.perfNotesMs,
+    /** M2 검증: 하늘 사건을 콘솔에서 바로 (dust · fileDust · glintNotes · bloomNebula · revealGalaxy · importNotes · select) */
+    events: () => this,
+    /** M2 검증: 합성 노트 n개 · 링크 m개 (과목 6) */
+    synthNotes: (n = 1000, m = 2000) => {
+      const subj = ['s0', 's1', 's2', 's3', 's4', 's5']
+      const cols = ['#7FB0FF', '#F2A65A', '#9BE38B', '#E58FB0', '#C9A2FF', '#5ED6C8']
+      const notes = Array.from({ length: n }, (_, i) => ({ id: 'n' + i, subjectId: subj[i % 6]!, links: (i * 7) % 11 }))
+      const links: Array<[string, string]> = Array.from({ length: m }, (_, i) => ['n' + (i % n), 'n' + ((i % n) + 1 + 37 * (1 + Math.floor(i / n))) % n])
+      this.syncStars({ notes, noteLinks: links, subjects: subj.map((id, k) => ({ id, color: cols[k]! })) })
+      return this.perfNotesMs
+    },
     debug: () => ({ sky: this.sky?.debugState(), preset: this.preset, hint: this.hint, gate: this.gate, paused: this.paused, overlay: this.overlay, moods: [...this.moods.values()].map((m) => m.preset), pauses: [...this.pauses.values()] }),
     /** 검증용: 다음 자리에 별 탄생(V1) · 별가루 모임 켜기/끄기 */
     birth: (at?: { x: number; y: number }) => this.birthStar({ id: 'test:' + Math.round(performance.now()), at: at ?? 'next', kind: 'set' }),
@@ -1825,6 +1873,337 @@ export class FieldEngine {
     return st.n
   }
   private branchGlint = false
+/* ================= M2 하늘 사건 (design-m2 4-3 · 9 · 10) ================= */
+  private notes = new Map<string, { subjectId: string; links: number; pos: [number, number, number]; s: number; level: number; size: number; color: [number, number, number] }>()
+  private noteOrder: string[] = []
+  private noteLinkSet = new Set<string>()
+  private noteLinkPairs: Array<[string, string]> = []
+  private segBuf = new Float32Array(0)
+  private subjects = new Map<string, { color: [number, number, number]; k: number; bloomed: boolean }>()
+  private noteArr = new Float32Array(0)
+  private spineArr = new Float32Array(0)
+  private search: Set<string> | null = null
+  private dusts: Array<{ id: string; subjectId?: string; t0: number; gone?: boolean; path?: { to: [number, number, number]; t0: number; dur: number }; fadeT0?: number }> = []
+  private dustN = 0
+  private nebulae = new Map<string, { t0: number }>()
+  private nebTimer = 0
+
+  private subjectOf(id: string | undefined | null): { color: [number, number, number]; k: number; bloomed: boolean } | null {
+    if (!id) return null
+    let sj = this.subjects.get(id)
+    if (!sj) {
+      sj = { color: [0.86, 0.89, 1], k: this.subjects.size % 6, bloomed: false }
+      this.subjects.set(id, sj)
+    }
+    return sj
+  }
+  /** 과목 가지 중심: 지도 성운 + 1.5u × 방향 k (6방향) */
+  private branchCenter(k: number): [number, number, number] {
+    const g = LANDMARKS.graph
+    const a = (k / 6) * Math.PI * 2
+    return [g[0] + 1.5 * Math.cos(a), g[1], g[2] + 1.5 * Math.sin(a)]
+  }
+  /** useSkyStars({ notes, noteLinks?, subjects? }) — 노트 별 자리는 id 해시로 고정, 정적 버퍼 1회 올리기 */
+  private syncNotes(list: Array<{ id: string; subjectId: string; links: number }>, pairs?: Array<[string, string]>, subjects?: Array<{ id: string; color: string }>) {
+    const t0 = performance.now()
+    if (subjects) for (const sj of subjects) {
+      const c = cssColor(sj.color)
+      const rec = this.subjectOf(sj.id)!
+      if (c) rec.color = c
+    }
+    const perSubject = new Map<string, number>()
+    for (const n of list) perSubject.set(n.subjectId, (perSubject.get(n.subjectId) ?? 0) + 1)
+    this.notes.clear()
+    this.noteOrder = []
+    for (const n of list) {
+      const sj = this.subjectOf(n.subjectId)!
+      const cnt = perSubject.get(n.subjectId) ?? 1
+      const sig = 0.5 * (cnt > 150 ? Math.sqrt(cnt / 150) : 1)
+      // 자리는 (id, 과목 가지, σ)에만 달려 있다 → 바뀌지 않았으면 다시 계산하지 않는다
+      const ck = n.subjectId + '|' + sj.k + '|' + sig.toFixed(3)
+      let pc = this.posCache.get(n.id)
+      if (!pc || pc.key !== ck) {
+        const h = hashStr(n.id)
+        const h2 = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0
+        const u1 = ((h & 0xffff) + 0.5) / 65536
+        const u2 = (((h >>> 16) & 0xffff) + 0.5) / 65536
+        const u3 = (h2 & 0xffff) / 65536
+        const rr = Math.sqrt(-2 * Math.log(u1)) * sig
+        const c = this.branchCenter(sj.k)
+        pc = { key: ck, pos: [c[0] + rr * Math.cos(2 * Math.PI * u2), c[1] + (u3 - 0.5) * 0.2, c[2] + rr * Math.sin(2 * Math.PI * u2)], s: ((h2 >>> 16) / 65536) * 1.8 - 0.9 }
+        this.posCache.set(n.id, pc)
+      }
+      const tL = Math.min(1, Math.log(1 + Math.max(0, n.links)) * 0.45512 /* 1 / ln 9 */)
+      const col = sj.color
+      const color: [number, number, number] = [0.6904 + col[0] * 0.2, 0.7152 + col[1] * 0.2, 0.8 + col[2] * 0.2]
+      this.notes.set(n.id, { subjectId: n.subjectId, links: n.links, pos: pc.pos, s: pc.s, level: 0.35 + 0.45 * tL, size: 1.2 + 1.4 * tL, color })
+      this.noteOrder.push(n.id)
+    }
+    if (pairs) {
+      this.noteLinkSet.clear()
+      this.noteLinkPairs = []
+      for (const [a, b] of pairs) {
+        const key = a < b ? a + '|' + b : b + '|' + a
+        if (this.noteLinkSet.has(key)) continue
+        this.noteLinkSet.add(key)
+        this.noteLinkPairs.push([a, b])
+      }
+    }
+    this.uploadNotes()
+    this.uploadNoteLinks()
+    this.perfNotesMs = performance.now() - t0
+  }
+  private perfNotesMs = 0
+  private posCache = new Map<string, { key: string; pos: [number, number, number]; s: number }>()
+  private uploadNotes() {
+    const g = this.g3d?.raw
+    if (!g) return
+    const n = this.noteOrder.length
+    if (this.noteArr.length < n * 8) {
+      this.noteArr = new Float32Array(n * 8)
+      this.spineArr = new Float32Array(n * 8)
+    }
+    let i = 0
+    const sel = this.selected
+    for (const id of this.noteOrder) {
+      const r = this.notes.get(id)!
+      let lv = r.level
+      if (this.search) lv *= this.search.has(id) ? 1.25 : 0.5
+      if (sel && this.notes.has(sel)) lv *= id === sel ? 1.3 : 0.5
+      const o = i * 8
+      this.noteArr[o] = r.pos[0]
+      this.noteArr[o + 1] = r.pos[1]
+      this.noteArr[o + 2] = r.pos[2]
+      this.noteArr[o + 3] = Math.min(1, lv)
+      const gold = id === sel
+      this.noteArr[o + 4] = gold ? GOLD[0] : r.color[0]
+      this.noteArr[o + 5] = gold ? GOLD[1] : r.color[1]
+      this.noteArr[o + 6] = gold ? GOLD[2] : r.color[2]
+      this.noteArr[o + 7] = gold ? 3.2 : r.size
+      this.spineArr[o + 2] = r.s
+      this.spineArr[o + 3] = this.noteArr[o + 3]!
+      this.spineArr[o + 4] = this.noteArr[o + 4]!
+      this.spineArr[o + 5] = this.noteArr[o + 5]!
+      this.spineArr[o + 6] = this.noteArr[o + 6]!
+      this.spineArr[o + 7] = this.noteArr[o + 7]!
+      i++
+    }
+    g.setNotes(this.noteArr, n, this.spineArr)
+  }
+  private segCount = 0
+  /** onlyLast: 링크 하나를 더할 때 — 그 링크 토막만 뒤에 붙인다(전체 다시 계산 없음) */
+  private uploadNoteLinks(onlyLast = false) {
+    const g = this.g3d?.raw
+    if (!g) return
+    const all = this.noteLinkPairs
+    const M = all.length
+    const base = Math.min(0.14, 2.2 / Math.sqrt(Math.max(1, M)))
+    if (onlyLast && (this.segCount + 8) * 12 > this.segBuf.length) onlyLast = false
+    if (!onlyLast && this.segBuf.length < Math.max(1, M * 8) * 12) this.segBuf = new Float32Array(Math.ceil(Math.max(1, M * 8) * 12 * 1.25))
+    const pairs = onlyLast ? all.slice(-1) : all
+    const segs = this.segBuf
+    let m = onlyLast ? this.segCount : 0
+    const sel = this.selected && this.notes.has(this.selected) ? this.selected : null
+    // 스칼라로만 계산(토막마다 배열을 만들지 않는다) — 1,000노트 · 2,000링크 전체 다시 쌓기도 짧게
+    const put = (ax: number, ay: number, az: number, bx: number, by: number, bz: number, al: number, r: number, gg: number, b: number) => {
+      const o = m * 12
+      segs[o] = ax
+      segs[o + 1] = ay
+      segs[o + 2] = az
+      segs[o + 3] = al
+      segs[o + 4] = bx
+      segs[o + 5] = by
+      segs[o + 6] = bz
+      segs[o + 8] = r
+      segs[o + 9] = gg
+      segs[o + 10] = b
+      m++
+    }
+    const W = [1, 1, 1]
+    for (const [ia, ib] of pairs) {
+      const A = this.notes.get(ia)
+      const B = this.notes.get(ib)
+      if (!A || !B) continue
+      const dx = B.pos[0] - A.pos[0]
+      const dz = B.pos[2] - A.pos[2]
+      const len = Math.sqrt(dx * dx + dz * dz)
+      let al = base * (len > 4 ? 0.5 : 1)
+      if (sel) al = ia === sel || ib === sel ? 0.6 : 0.16 * (base / 0.14)
+      const ca = this.subjects.get(A.subjectId)?.color ?? W
+      const cb = this.subjects.get(B.subjectId)?.color ?? W
+      // 두 끝 과목색을 흰빛과 30%씩 섞은 평균
+      const r = 0.35 * (ca[0]! + cb[0]!) + 0.3
+      const gg = 0.35 * (ca[1]! + cb[1]!) + 0.3
+      const b = 0.35 * (ca[2]! + cb[2]!) + 0.3
+      if (A.subjectId === B.subjectId) put(A.pos[0], A.pos[1], A.pos[2], B.pos[0], B.pos[1], B.pos[2], al, r, gg, b)
+      else {
+        // 다른 과목: 원반 위로 휜 호 (가운데 y + 0.15 × 길이, 최대 0.6u). 토막 6개(화면에서 8개와 구별되지 않고 정점은 25% 적다)
+        const lift = Math.min(0.6, 0.15 * len)
+        const dy = B.pos[1] - A.pos[1]
+        let px = A.pos[0]
+        let py = A.pos[1]
+        let pz = A.pos[2]
+        for (let k = 1; k <= 6; k++) {
+          const t = k / 6
+          const qx = A.pos[0] + dx * t
+          const qy = A.pos[1] + dy * t + lift * 4 * t * (1 - t)
+          const qz = A.pos[2] + dz * t
+          put(px, py, pz, qx, qy, qz, al, r, gg, b)
+          px = qx
+          py = qy
+          pz = qz
+        }
+      }
+    }
+    this.segCount = m
+    g.setNoteLinks(segs, m)
+  }
+  private applyNoteView() {
+    const g = this.g3d?.raw
+    if (!g) return
+    const p = this.preset
+    const map = p === 'map' || p === 'graph'
+    g.setNoteView(map || p === 'notes' ? 1 : 0, map ? (this.search ? 0.5 : 1) : 0)
+  }
+  /** D1 메모 저장: 나의 자리 둘레 별가루 한 점 */
+  dust(o: { id: string; subjectId?: string }): void {
+    if (!this.dusts.some((d) => d.id === o.id)) this.dusts.push({ id: o.id, subjectId: o.subjectId, t0: this.nowS() })
+    this.dustN = Math.max(this.dustN, this.dusts.filter((d) => !d.gone).length)
+    this.pushStars()
+  }
+  /** D2 별가루 수 (보이는 점은 min(n, 24)) */
+  setDust(n: number): void {
+    this.dustN = Math.max(0, Math.round(n))
+    this.pushStars()
+  }
+  /** D3–D5 나누기: 노트로(그 과목 성운 쪽으로 흘러감) · 할 일로(반짝 → 사라짐) · 보관(사라짐) */
+  fileDust(id: string, subjectId: string | null, to: 'note' | 'task' | 'archive' = 'note'): void {
+    const d = this.dusts.find((x) => x.id === id) ?? { id, t0: this.nowS() - 10 }
+    if (!this.dusts.includes(d)) this.dusts.push(d)
+    const t = this.nowS()
+    const off = this.mode === 'off'
+    if (to === 'note') {
+      const sj = this.subjectOf(subjectId)
+      d.path = { to: sj ? this.branchCenter(sj.k) : [LANDMARKS.graph[0], LANDMARKS.graph[1], LANDMARKS.graph[2]], t0: t, dur: off ? 0.001 : 1.2 }
+      d.fadeT0 = t + (off ? 0 : 1.2)
+    } else if (to === 'task') {
+      if (!off) this.g3d?.sparkle(this.dustPos(d))
+      d.fadeT0 = t + (off ? 0 : 0.3)
+    } else d.fadeT0 = t
+    d.gone = true
+    this.dustN = Math.max(0, this.dustN - 1)
+    this.pushStars()
+    window.setTimeout(() => {
+      this.dusts = this.dusts.filter((x) => x !== d)
+      this.pushStars()
+    }, 2000)
+  }
+  private dustPos(d: { id: string }): [number, number, number] {
+    const h = hashStr(d.id)
+    const c = LANDMARKS.focus
+    const r = 0.9 + 0.7 * ((h & 0xffff) / 65536)
+    const a = (((h >>> 16) & 0xffff) / 65536) * Math.PI * 2
+    return [c[0] + r * Math.cos(a), c[1] + 0.2, c[2] + r * Math.sin(a)]
+  }
+  /** D8 검색: 앞 12개 반짝(40ms 간격) 뒤 결과 +25% · 나머지 별·선 ×0.5로 고정. []이면 원래대로 */
+  glintNotes(ids: string[]): void {
+    this.search = ids.length ? new Set(ids) : null
+    if (ids.length && this.mode !== 'off' && this.theme !== 'light')
+      ids.slice(0, 12).forEach((id, i) => {
+        const r = this.notes.get(id)
+        if (r) window.setTimeout(() => this.g3d?.sparkle(r.pos), i * 40)
+      })
+    this.uploadNotes()
+    this.applyNoteView()
+  }
+  /** D9 성운 피기 (순간 ①): 과목 가지 중심에 반지름 0.9u, 22% → 12%로 쉼. 젊은 별 3–5개 V1s. 카메라는 그대로 */
+  bloomNebula(subjectId: string, color: string): void {
+    const sj = this.subjectOf(subjectId)!
+    const c = cssColor(color)
+    if (c) {
+      const l = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]
+      sj.color = [l + (c[0] - l) * 0.8, l + (c[1] - l) * 0.8, l + (c[2] - l) * 0.8] // 채도 −20%
+    }
+    sj.bloomed = true
+    this.nebulae.set(subjectId, { t0: this.mode === 'off' ? -1e9 : this.nowS() })
+    if (this.mode !== 'off') {
+      const cen = this.branchCenter(sj.k)
+      const n = 3 + (hashStr(subjectId) % 3)
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + 0.7
+        window.setTimeout(() => this.g3d?.sparkle([cen[0] + 0.35 * Math.cos(a), cen[1] + 0.05, cen[2] + 0.35 * Math.sin(a)]), 150 * i + 200)
+      }
+    }
+    this.uploadNotes()
+    this.pushStars()
+  }
+  /** D10 은하 보이기: 회전 0, 물러나기만 2.6초 (동작 줄이기·회전 끔이면 즉시) */
+  revealGalaxy(): Promise<void> {
+    const ms = this.g3d?.raw?.revealGalaxy() ?? 0
+    this.preset = 'today'
+    this.applyNoteView()
+    return new Promise((res) => window.setTimeout(res, ms))
+  }
+  /** D11 가져오기 끝: 새 노트 별 앞 12개만 V1s(80ms 간격), 나머지는 최종 상태 */
+  importNotes(ids: string[]): void {
+    if (this.mode === 'off') return
+    ids.slice(0, 12).forEach((id, i) => {
+      const r = this.notes.get(id)
+      if (r) window.setTimeout(() => this.g3d?.sparkle(r.pos), i * 80)
+    })
+  }
+  /** M2 하늘 사건이 더한 데이터 별(별가루 · 성운) — pushStars가 합친다 */
+  private m2Stars(): DataStar[] {
+    const out: DataStar[] = []
+    const p = this.preset
+    const t = this.nowS()
+    // 별가루: T · F · R(×0.5) · S, 최대 24점 45%
+    const dustVis = p === 'today' || p === 'landing' || p === 'focus' || p === 'settings' ? 1 : p === 'review' ? 0.5 : 0
+    if (dustVis > 0 || this.dusts.some((d) => d.path)) {
+      const live = this.dusts.filter((d) => !d.gone).slice(-24)
+      const extra = Math.max(0, Math.min(24, this.dustN) - live.length)
+      const all: Array<{ id: string; subjectId?: string; t0: number; path?: { to: [number, number, number]; t0: number; dur: number }; fadeT0?: number }> = [...live, ...this.dusts.filter((d) => d.gone)]
+      for (let k = 0; k < extra; k++) all.push({ id: 'dust:' + k, t0: -1e9 })
+      for (const d of all) {
+        const sj = this.subjects.get(d.subjectId ?? '')
+        const W: [number, number, number] = [0.929, 0.906, 0.855]
+        const col: [number, number, number] = sj ? [W[0] * 0.8 + sj.color[0] * 0.2, W[1] * 0.8 + sj.color[1] * 0.2, W[2] * 0.8 + sj.color[2] * 0.2] : W
+        const vis = d.path ? 1 : dustVis
+        const h = hashStr(d.id)
+        const fading = d.fadeT0 !== undefined
+        out.push({
+          id: 'dust:' + d.id,
+          group: 'dust',
+          pos: this.dustPos(d),
+          L: 1,
+          color: col,
+          size: d.path ? 2 : 1 + 0.4 * ((h >>> 8) % 100) / 100,
+          from: fading ? 0.45 * vis : 0,
+          to: fading ? 0 : 0.45 * vis,
+          t0: fading ? d.fadeT0! : d.t0,
+          dur: fading ? 0.6 : this.mode === 'off' ? 0 : 0.6,
+          drift: ((h >>> 3) % 628) / 100,
+          path: d.path,
+        })
+      }
+    }
+    // 과목 성운: 첫 실행 · 지도 · 오늘
+    const nebVis = p === 'onboarding' || p === 'map' || p === 'graph' || p === 'today' || p === 'landing'
+    if (nebVis)
+      for (const [id, nb] of this.nebulae) {
+        const sj = this.subjects.get(id)
+        if (!sj) continue
+        const k = t - nb.t0
+        const lv = k < 0.6 ? 0.22 * (1 - Math.pow(1 - k / 0.6, 3)) : k < 1.6 ? 0.22 - 0.1 * (0.5 - 0.5 * Math.cos(Math.PI * (k - 0.6))) : 0.12
+        out.push({ id: 'neb:' + id, group: 'nebula', pos: this.branchCenter(sj.k), L: 1, color: sj.color, wr: 0.9 * Math.min(1, k / 0.6 + 0.001), from: lv, to: k < 1.6 ? 0.12 : lv, t0: t, dur: k < 1.6 ? 1.6 - k : 0 })
+        if (k < 1.6 && !this.nebTimer)
+          this.nebTimer = window.setTimeout(() => {
+            this.nebTimer = 0
+            this.pushStars()
+          }, 120)
+      }
+    return out
+  }
   /** 3D 엔진 (검증·측정용) */
   galaxy3d(): Galaxy3D | null {
     return this.g3d

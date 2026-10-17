@@ -1,7 +1,7 @@
 /** 데이터 훅 (dexie-react-hooks useLiveQuery). 화면은 여기서만 DB를 읽는다. */
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useMemo } from 'react'
-import { db, type FocusSession, type Note, type Subject } from './schema'
+import { useEffect, useMemo } from 'react'
+import { db, type FocusSession, type Memo, type MemoState, type Note, type Subject } from './schema'
 import { useSettings, type ClockPreset } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import { atTime, addDays, DAY, MIN, studyDayRange, studyDayStart } from '@/lib/time'
@@ -184,4 +184,23 @@ export function useFocusToday(now: Date): { minutes: number; sets: number; list:
     list.sort((a, b) => a.startedAt - b.startedAt)
     return { minutes: sumMin(list), sets: list.length, list: list.map((s) => ({ id: s.id, startedAt: s.startedAt })) }
   }, [key])
+}
+
+/* ---------- 별가루 (1초 메모) ---------- */
+
+/** state별 메모, 최근 것이 위 */
+export function useMemos(state: MemoState): Memo[] | undefined {
+  return useLiveQuery(async () => (await db.memos.where('state').equals(state).toArray()).sort((a, b) => b.createdAt - a.createdAt), [state])
+}
+
+export function useMemoCount(state: MemoState): number | undefined {
+  return useLiveQuery(() => db.memos.where('state').equals(state).count(), [state])
+}
+
+/** 사진 메모 썸네일 URL (없으면 null). 쓰고 나면 해제 */
+export function useAssetUrl(id: string | null | undefined): string | null {
+  const blob = useLiveQuery(async () => (id ? ((await db.assets.get(id))?.blob ?? null) : null), [id])
+  const url = useMemo(() => (blob ? URL.createObjectURL(blob) : null), [blob])
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url) }, [url])
+  return url
 }

@@ -6,7 +6,10 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { useMotionPrefs, useSeal, type MotionLevel } from '@/fx'
 import { useActive } from '@/app/keepAlive'
 import { db } from '@/db/schema'
-import { seedSample } from '@/db/seed'
+import { hasSamples, removeSamples, seedSample } from '@/db/seed'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { BackupCard } from '@/capture/BackupCard'
+import { useCapture } from '@/capture/store'
 import { switchTheme } from '@/lib/theme'
 import { useSettings, type ClockPreset, type RotationPref, type ThemePref, type TravelPref } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
@@ -130,6 +133,7 @@ export function SettingsBody() {
   const osReduced = useOsReducedMotion()
   const level = useEffectiveMotion()
   const storage = useStorageInfo()
+  const samples = useLiveQuery(() => hasSamples(), [])
   const showToast = useUi((s) => s.showToast)
   const seal = useSeal()
   const dev = import.meta.env.DEV || (typeof location !== 'undefined' && /[?&]dev\b/.test(location.search))
@@ -187,14 +191,29 @@ export function SettingsBody() {
 
         <section className="set-sec" aria-labelledby="sec-data">
           <h2 id="sec-data">데이터</h2>
+          <BackupCard />
           <Row title="이 기기" hint={storage.counts || undefined}>
             <span className="set-val">{fmtBytes(storage.usage)}</span>
           </Row>
           <Row title="영구 저장">
             <span className="set-val">{storage.persisted === null ? '알 수 없음' : storage.persisted ? '허용됨' : '요청함'}</span>
           </Row>
-          <Row title="백업">
-            <span className="set-val">없음</span>
+          {samples && (
+            <Row title="샘플">
+              <button type="button" className="btn-ghost small" onClick={() => void removeSamples()}>샘플 지우기</button>
+            </Row>
+          )}
+          <Row title="처음 화면">
+            <button
+              type="button"
+              className="btn-ghost small"
+              onClick={() => {
+                useUi.getState().closeSettings()
+                useCapture.getState().startOnboarding('real')
+              }}
+            >
+              다시 보기
+            </button>
           </Row>
         </section>
 
@@ -234,7 +253,7 @@ export function SettingsBody() {
             </Row>
           </section>
         )}
-        <p className="set-foot mono">결 · M1</p>
+        <p className="set-foot mono">결 · M2</p>
       </div>
     </>
   )

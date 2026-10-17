@@ -1,5 +1,36 @@
 # 개발 노트 — 앱
 
+## M2 앱 A(글): 편집기 · 링크 · 검색 · 템플릿 · 오늘 수업 노트 (2026-10-17)
+
+**파일** — `src/editor/`(NotePaper 지연 로드 청크 · extensions · templates · imeTest), `src/search/`(engine · index · bench), `src/db/notes.ts`, `src/screens/Notes.tsx`·`Map.tsx`, `src/shell/CommandPalette.tsx`, `src/styles/editor.css`(청크와 함께)·`search.css`(첫 화면). 리더 허가로 `src/capture/file.ts`의 `toNote()` 몸통만 `fileMemoToNote`로 바꿈(쓰지 않게 된 import·도우미 함께 정리).
+
+**계약 (B·백업이 쓰는 것)** — `openOrCreateNote({ title?, subjectId?, template?, classKey?, body?, assetId?, quiet? })` → `{ note, created }`(classKey → 제목 순으로 찾고 있으면 body를 끝에 붙임), `fileMemoToNote(memo)`(design-m2 2-2), `findNoteByClassKey` · `appendToNote` · `classKeyFor(subjectId, now)` · `createNote` · `saveBody` · `recomputeLinks` · `renameNote` · `deleteNote`(soft) · `docToMarkdown(doc, title?)`(그림은 `assets/<id>`). 검색 색인은 Dexie 훅(notes·noteBodies·memos)으로 스스로 따라오고, 백업 '바꾸기' 뒤에는 `rebuildIndex()`(src/search)를 부르면 확실하다.
+
+**편집기** — TipTap 3(StarterKit: 제목 1·2, 링크·밑줄 끔 + `@tiptap/extension-list`의 TaskList/TaskItem). 툴바 없음: 마크다운 단축 + 빈 줄 맨 앞 `/` 메뉴(블록 9 + 문서가 비면 틀 2). `[[` 제안·`/` 메뉴는 @tiptap/suggestion 대신 직접 만든 `Trigger` 플러그인 — 장식 없이 상태만 알리고, `view.composing` 동안 다시 평가하지 않으며 compositionend 뒤 한 번 본다. 자리표시도 직접(`Hints`, 틀 노트는 제목 바로 다음 블록에 '남길 것' 등). 링크 = 인라인 원자 노드 `noteLink { to, title }`, 모양은 노드 장식(있는 노트 과목색 60% 밑줄 · 없는 노트 점선). 자동 저장 0.6초(조합 중 멈춤, 떠날 때·숨길 때 즉시), 밖에서 본문이 바뀌면(별가루 붙이기) 고치는 중이 아닐 때 다시 읽음. 백링크 5 + '모두 n ›'.
+- 종이에 blur 20은 넣지 않았다(M1 전력 결정: 움직이는 하늘 위 backdrop-filter 제거). .86 면만.
+
+**검색** — 한글·한자 1·2-gram + 영숫자 낱말(앞부분 일치) 역색인, 낱말마다 후보 교집합 → 원문 확인. 초성 질의는 제목 초성. 끝의 조합 중 낱자(ㅎ)는 뺀다. 1,000노트 합성(본문 92만 자, `__gyeolSearch.bench()`): 색인 62–80ms, 질의 중앙 4.1–4.9ms · 최악 10.4ms(첫 실행) / 6.2ms, 부분 갱신 0.3ms. 앱에서는 시작 1.2초 뒤 유휴 시간에 조각으로 만든다.
+
+**⌘K** — 한 목록 8줄: 장소·명령(해석된 동작 먼저) ≤ 2 · 노트 ≤ 4 · 메모 ≤ 2 · 늘 마지막 '메모로 저장 · ‘입력어’'(B `saveMemo`). 빈 입력 = 최근 5. 노트를 고르면 `glintNotes([id])`. 명령에 '새 노트' · '별가루'(B `openDust`) 추가. 루트에 늘 있으므로 색인 예약과 새 노트 `birthStar`(onNoteCreated)도 여기서.
+
+**한글 조합 시험** — 노트를 열고 콘솔 `await __gyeolImeTest()`(개발 빌드). compositionstart/update/end + 조합 중 Enter(keyCode 229)를 흉내 내고 12항목을 본다: 조합 중 `[[`·`/` 거르기 멈춤 → 끝난 뒤 거름, 조합 중 Enter가 문단을 자르지 않음, 조합 중 저장 0 → 끝난 뒤 0.6초에 1, 평소 Enter는 문단 나눔, '1/2'는 메뉴 아님. 12/12 통과. 실기기(iOS·Android·macOS 입력기)는 미확인.
+
+**번들** — 편집기 청크 NotePaper 417KB(gzip 132KB) + CSS 2.3KB, 첫 화면에는 tiptap 0. 새 모듈(notes·search·templates) gzip ≈ 7KB, 바뀐 Notes·Map·⌘K 포함 A 몫 ≈ 11KB(JS, 최소화 전 측정이라 실제는 더 작음) + search.css ≈ 2KB. 전체 main JS 270.66 → 290.64KB gzip(같은 시간 B·모션 변경 포함).
+
+**남은 일** — 노트 별 누르기(StarPress가 notes 층을 pick하지 못함: 모션), `birthStar({kind:'note'})`가 graph 층 'next' 자리에 따로 생김(notes 층 별과 겹칠 수 있음: 모션 확인), 과목 없는 노트는 하늘 과목 id `_none`으로 넘김, 노트 1,000개일 때 목록은 80줄까지만 그림(찾기 칸이 나머지).
+
+## M2 입구 (앱 개발자 B, 2026-10-17)
+
+- **공개 API** `src/capture/api.ts`: `saveMemo(text, { subjectId?, photo?, sky? }) → id|null`(80ms 뒤 `dust`) · `openMemo(initial?)` · `openDust()` · `guessSubjectId`. 하늘 다리 `capture/sky.ts`(RootLayout `<CaptureSky/>`가 `useSkyEvent()`를 넣고 inbox 수로 `setDust`).
+- **1초 메모** `capture/MemoSheet.tsx`: 미리 마운트(inert + opacity 0), `n`·레일 ＋·폰 독 가운데 ＋ → 같은 틱에 inert 해제 + focus. 측정(키 이벤트 timeStamp → performance.now): **키 → 포커스 0.8ms, 다음 프레임 9.1ms**(배경 탭), ＋ 버튼 0.8ms. 조합 중 Enter(isComposing·229) 무시 확인. 과목 칩 자동 추정. 사진 = 파일·카메라·붙여넣기·끌어 놓기 → assets.
+- **별가루함** `capture/DustBox.tsx`: 오늘 '별가루 n ›'(폰 맨 아래), 가로 오늘 = 글 구역 자리 바꿈, 그 밖 = 아래 시트. ↑↓ · Enter 노트로 · T 할 일로 · E 보관 · S 과목, '보관함 ›' 되돌리기. 할 일 = `dueAt: 0`(마감 없음). **노트로 = A의 `openOrCreateNote` 없음 → `capture/file.ts toNote()` 최소판(TODO 교체).** 오늘 '최근' 장 뺌.
+- **시간표** `capture/Timetable.tsx` + 저장소 `capture/slots.ts`(계획·첫 실행 공용): 가로 세로 끌기 30분, 폰 누르기 1시간 + 손잡이, 팝오버(과목 자동완성·새 과목 색·강의실·매주), 지우기 + 5초 되돌리기. 1440에서 3칸 그리기 확인.
+- **.ics** `lib/ics.ts` + `capture/IcsImport.tsx`(계획 ⋯ · 첫 실행 2단계). 시험 파일 `team/test-timetable.ics`: 6일정 → 매주 5칸(격주·한 번·종일 제외, VALARM·줄 접기·UTC 처리).
+- **백업** `lib/backup.ts`(지연 로드 8.3KB gzip) + 설정 '데이터' 맨 위 `capture/BackupCard.tsx`. **왕복: 실제 DB 12표 → 임시 DB '바꾸기' → 표별 개수·해시 모두 같음(33ms). 합성 DB(사진 Blob·본문·링크·메모)도 같음, 합치기 = 더 최근 updatedAt 유지.** 콘솔: `(await import('/src/lib/backup.ts')).roundTrip()`.
+- **첫 실행** `onboarding/Onboarding.tsx`: 시작 → 과목(bloomNebula) → 시간표 → `await revealGalaxy()`, 오늘 preset 'onboarding'. 건너뛰기·샘플로 시작. `?onboarding=1` = 메모리 모드(DB에 안 씀). 설정 '처음 화면 다시 보기'. RootLayout 자동 시드 제거.
+- **seed v2**: 모든 id `seed-` + 글 노트 12(합계 20)·본문·링크·메모 3. '샘플 지우기' = `removeSamples()`(접두어 + M1 샘플 알려진 id).
+- 남은 것: '매주' 끄기는 스키마에 없어 고정, 수업 저장 시 성운 반짝(V11) API 없음, 태블릿 화면 눈 확인 못 함.
+
 ## M1: 장소 6 · 설정 시트 · 레일 v4 · 글 구역 · 은하 시계 (2026-10-17)
 
 **장소 · 주소**

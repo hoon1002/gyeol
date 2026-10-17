@@ -1,24 +1,31 @@
 /**
- * ⌘K 팔레트 (design-v2 4-4, design.md W6). cmdk 기반, 거르기는 직접(초성 검색 때문에 shouldFilter=false).
- * 그룹 순서: (해석된 동작) → 이동 → 명령 → 과목 렌즈 → 노트.
+ * ⌘K 팔레트 (design-v2 4-4 → design-m2 5장 · 리더 결정 4). cmdk 기반, 거르기는 직접(shouldFilter=false).
+ * 한 목록 8줄 고정: ① 장소·명령(해석된 동작 포함) ≤ 2 ② 노트 ≤ 4(제목 일치 → 본문 일치, src/search 역색인)
+ * ③ 메모 ≤ 2 ④ 마지막 줄은 늘 '메모로 저장 · ‘입력어’'(B의 saveMemo). 빈 입력은 '최근' 노트 5.
+ * 노트를 고르면 그 별이 지도에서 반짝인다(glintNotes).
  * 한글 조합 중 Enter는 cmdk가 무시한다(isComposing / keyCode 229) — 입력창에서도 한 번 더 막는다.
  * 폰(<600)은 아래에서 올라오는 시트(입력창이 엄지 쪽 아래).
+ * 루트에 늘 마운트되므로 검색 색인 만들기(유휴 시간)와 새 노트 birthStar도 여기서 건다.
  */
 import { Command } from 'cmdk'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useFieldPause } from '@/fx'
+import { useFieldPause, useSkyEvent } from '@/fx'
 import { db, uid, type Note, type Subject } from '@/db/schema'
 import { useNotes, useNow, useSubjects } from '@/db/hooks'
+import { createNote, onNoteCreated } from '@/db/notes'
+import { openDust, saveMemo } from '@/capture/api'
+import { isIndexReady, scheduleIndexBuild, searchAll, useSearchVersion, type Hit } from '@/search'
 import { matchText } from '@/lib/hangul'
 import { parseCommand, resolveDue, type ParseResult } from '@/lib/parser'
 import { switchTheme } from '@/lib/theme'
-import { ddayOf, fmtAgo, fmtDday, weekdayShort, fmtHM } from '@/lib/time'
+import { ddayOf, fmtDday, fmtMD, weekdayShort, fmtHM } from '@/lib/time'
 import { useSettings, type ThemePref } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import type { MotionLevel } from '@/fx'
 import { useEffectiveMotion, useGo, useIsPhone } from './hooks'
-import { IconArrow, IconDeck, IconDoc, IconFocus, IconMore, IconMotion, IconPdf, IconPen, IconPlan, IconReview, IconSearch, IconTheme } from './icons'
+import { IconArrow, IconDeck, IconDoc, IconFocus, IconMore, IconMotion, IconPdf, IconPen, IconPlan, IconPlus, IconReview, IconSearch, IconTheme } from './icons'
+import '@/styles/search.css'
 import { SPACES, type SpacePath } from './spaces'
 
 type Preview =
@@ -32,6 +39,9 @@ type Preview =
   | { kind: 'lens'; subject: Subject | null }
   | { kind: 'note'; note: Note; subject: Subject | null }
   | { kind: 'new'; subject: Subject | null }
+  | { kind: 'memo'; text: string; subject: Subject | null }
+  | { kind: 'save'; text: string }
+  | { kind: 'dust' }
 
 interface Item {
   id: string
@@ -42,6 +52,10 @@ interface Item {
   color?: string
   keywords?: string[]
   range?: [number, number] | null
+  /** 오른쪽 모노 11px "물리 · 10.12" */
+  meta?: string
+  /** 본문 일치: 둘째 줄 앞뒤 16자 발췌 */
+  snippet?: { text: string; range: [number, number] } | null
   preview: Preview
   run: (el: Element | null) => void
 }
@@ -81,7 +95,13 @@ export function CommandPalette() {
   const open = useUi((s) => s.paletteOpen)
   const openPalette = useUi((s) => s.openPalette)
   const closePalette = useUi((s) => s.closePalette)
+  const sky = useSkyEvent()
   useFieldPause(open, 'overlay')
+
+  // 검색 색인: 첫 화면이 뜬 뒤 유휴 시간에 (이후 저장마다 부분 갱신)
+  useEffect(() => scheduleIndexBuild(), [])
+  // 새 노트 → 하늘 birthStar (D6). 별가루 '노트로'는 fileDust가 맡는다(quiet)
+  useEffect(() => onNoteCreated((n) => sky.birthStar({ id: n.id, kind: 'note', subject: n.subjectId ?? undefined })), [sky])
 
   // 어디서나 ⌘K / Ctrl+K
   useEffect(() => {
@@ -120,6 +140,8 @@ function Palette() {
   const themePref = useSettings((s) => s.theme)
   const inputRef = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const sky = useSkyEvent()
+  const indexVer = useSearchVersion()
 
   // 열려 있는 동안 뒤 페이지 스크롤 잠금 · 닫히면 포커스 복귀
   useEffect(() => {
@@ -138,6 +160,13 @@ function Palette() {
   const subjOf = (id: string | null | undefined) => subjects.find((s) => s.id === id) ?? null
   const colorOf = (s: Subject | null) => (s ? `var(--s-${s.color})` : undefined)
   const delay = motionLevel === 'off' ? 0 : 180
+
+  /** 새 문서 노트를 만들고 노트 화면에서 연다(제목에 커서는 노트 화면이 맡지 않으므로 목록 맨 위에 선다) */
+  const newNoteAndOpen = async (subjectId: string | null, el: Element | null) => {
+    const n = await createNote({ subjectId })
+    ui().setNoteFocusId(n.id)
+    void go('/notes', el)
+  }
 
   /** 닫고 나서 실행 (팔레트가 먼저 물러난다) */
   const after = (fn: () => void) => {
@@ -190,9 +219,9 @@ function Palette() {
       })
     } else if (q && p.intent === 'new') {
       list.push({
-        id: 'act-new', group: '동작', label: `새 필기 노트${sb ? ' · ' + sb.name : ''}`, sub: 'A4 · 모눈 · 펜 전용 모드 (편집기는 M1)',
-        icon: <IconPen size={17} />, color: colorOf(sb), preview: { kind: 'new', subject: sb },
-        run: (el) => after(() => { void go('/notes', el); ui().showToast('펜 필기 편집기는 다음 단계(M1)에서 열려요', colorOf(sb)) }),
+        id: 'act-new', group: '동작', label: `새 노트${sb ? ' · ' + sb.name : ''}`, sub: '문서 · / 블록 · [[ 링크',
+        icon: <IconDoc size={17} />, color: colorOf(sb), preview: { kind: 'new', subject: sb },
+        run: (el) => after(() => void newNoteAndOpen(sb?.id ?? null, el)),
       })
     } else if (q && p.intent === 'theme' && p.theme) {
       const pref = p.theme
@@ -284,49 +313,86 @@ function Palette() {
       }),
     )
 
-    // ---- 노트 ----
-    notes.forEach((n) => {
-      const s = subjOf(n.subjectId)
-      const kindName = n.kind === 'ink' ? '필기' : n.kind === 'pdf' ? `PDF${n.page ? ` ${n.page}/${n.pages}쪽` : ''}` : n.kind === 'deck' ? '카드 덱' : '문서'
-      list.push({
-        id: 'note-' + n.id, group: '노트', label: n.title, sub: `${s?.name ?? '과목 없음'} · ${kindName} · ${fmtAgo(Date.now(), n.updatedAt)}`,
-        keywords: s ? [s.name, ...s.aliases] : [],
-        icon: <NoteIcon kind={n.kind} />, color: colorOf(s), preview: { kind: 'note', note: n, subject: s },
-        run: (el) => after(() => { ui().setNoteFocusId(n.id); void go('/notes', el) }),
-      })
+    // ---- 노트 · 별가루 명령 ----
+    list.push({
+      id: 'cmd-new-note', group: '명령', label: '새 노트', sub: '문서 · / 블록 · [[ 링크', keywords: ['새 노트', '노트 만들기', 'new note', '문서'],
+      icon: <IconDoc size={17} />, preview: { kind: 'new', subject: null },
+      run: (el) => after(() => void newNoteAndOpen(null, el)),
+    })
+    list.push({
+      id: 'cmd-dust', group: '이동', label: '별가루', sub: '1초 메모 모음 · 노트로 · 할 일로 · 보관', keywords: ['별가루', '메모', '메모함', 'inbox', 'dust', '별가루함'],
+      icon: <span className="pal-dot pal-dust" />, preview: { kind: 'dust' },
+      run: (el) => after(() => openDust(el)),
     })
 
-    // ---- 거르기 ----
-    if (!q) {
-      // 빈 입력: 노트는 최근 5개만
-      let noteCount = 0
-      return list.filter((it) => it.group !== '노트' || ++noteCount <= 5)
+    const noteRow = (n: Note, hit?: Hit): Item => {
+      const s = subjOf(n.subjectId)
+      return {
+        id: 'note-' + n.id, group: '노트', label: n.title || '제목 없음', range: hit?.titleRange ?? null,
+        meta: `${s?.short ?? '과목 없음'} · ${fmtMD(n.updatedAt)}`, snippet: hit?.field === 'body' ? hit.snippet : null,
+        icon: <NoteIcon kind={n.kind} />, color: colorOf(s), preview: { kind: 'note', note: n, subject: s },
+        run: (el) => after(() => { ui().setNoteFocusId(n.id); sky.glintNotes([n.id]); void go('/notes', el) }),
+      }
     }
+
+    // ---- 빈 입력: 최근 노트 5 ----
+    if (!q) return notes.slice(0, 5).map((n) => ({ ...noteRow(n), group: '최근' }))
+
+    // ① 장소·명령 ≤ 2 (해석된 동작이 먼저)
     const actions = list.filter((it) => it.group === '동작')
-    const rest = list
+    const cmds = list
       .filter((it) => it.group !== '동작')
       .map((it) => {
-        // 과목 이름이 해석됐으면 그 과목 노트·렌즈를 함께 보여 준다
         const m = matchText(it.label, q, it.keywords)
-        const bySubject = sb && (it.id === 'lens-' + sb.id || (it.group === '노트' && it.preview.kind === 'note' && it.preview.note.subjectId === sb.id))
+        const bySubject = sb && it.id === 'lens-' + sb.id
         return { it: { ...it, range: m.range }, score: m.score || (bySubject ? 1 : 0) }
       })
       .filter((x) => x.score > 0)
-    const groupOrder = ['이동', '명령', '과목 렌즈', '노트']
-    rest.sort((a, b) => groupOrder.indexOf(a.it.group) - groupOrder.indexOf(b.it.group) || b.score - a.score)
-    let nc = 0
-    return [...actions, ...rest.map((x) => x.it).filter((it) => it.group !== '노트' || ++nc <= 6)]
-  }, [query, parsed, subjects, notes, now, themePref, motionLevel])
+      .sort((a, b) => b.score - a.score)
+      .map((x) => x.it)
+    const head = [...actions, ...cmds].slice(0, 2)
 
-  const groups = useMemo(() => {
-    const g: Array<[string, Item[]]> = []
-    items.forEach((it) => {
-      const last = g[g.length - 1]
-      if (last && last[0] === it.group) last[1].push(it)
-      else g.push([it.group, [it]])
+    // ② 노트 ≤ 4: 역색인(제목 일치 → 본문 일치). 색인이 아직이면 제목만
+    const byId = new Map(notes.map((n) => [n.id, n]))
+    let noteHits: Item[] = searchAll(q, { kinds: ['note'], limit: 12 })
+      .map((h) => (byId.get(h.id) ? noteRow(byId.get(h.id)!, h) : null))
+      .filter((x): x is Item => !!x)
+    if (!isIndexReady()) {
+      noteHits = notes
+        .map((n) => ({ n, m: matchText(n.title, q) }))
+        .filter((x) => x.m.score > 0)
+        .sort((a, b) => b.m.score - a.m.score)
+        .map(({ n, m }) => ({ ...noteRow(n), range: m.range }))
+    }
+    // 과목 이름만 쳤으면 그 과목 최근 노트로 채운다
+    if (sb && noteHits.length < 4) {
+      const have = new Set(noteHits.map((x) => x.id))
+      notes.filter((n) => n.subjectId === sb.id && !have.has('note-' + n.id)).forEach((n) => noteHits.push(noteRow(n)))
+    }
+    noteHits = noteHits.slice(0, 4)
+
+    // ③ 메모 ≤ 2
+    const memoHits: Item[] = searchAll(q, { kinds: ['memo'], limit: 2 }).map((h) => {
+      const s = subjOf(h.subjectId)
+      return {
+        id: 'memo-' + h.id, group: '메모', label: h.title, range: h.titleRange,
+        meta: `${s?.short ? s.short + ' · ' : ''}${fmtMD(h.updatedAt)}`, snippet: h.field === 'body' ? h.snippet : null,
+        icon: <span className="pal-dot pal-dust" />, color: colorOf(s), preview: { kind: 'memo', text: h.title, subject: s },
+        run: (el) => after(() => openDust(el)),
+      }
     })
-    return g
-  }, [items])
+
+    // ④ 늘 마지막: 메모로 저장
+    const save: Item = {
+      id: 'save-memo', group: '메모', label: `메모로 저장 · ‘${q}’`,
+      icon: <IconPlus size={17} />, color: 'var(--accent)', preview: { kind: 'save', text: q },
+      run: () => {
+        close()
+        void saveMemo(q)
+      },
+    }
+    return [...head, ...noteHits, ...memoHits, save]
+  }, [query, parsed, subjects, notes, now, themePref, motionLevel, indexVer, sky])
 
   const selected = items.find((it) => it.id === value) ?? items[0]
 
@@ -366,7 +432,7 @@ function Palette() {
       />
       <motion.div
         ref={panelRef}
-        className="palette-panel"
+        className="palette-panel pal-m2"
         role="dialog"
         aria-modal="true"
         aria-label="검색·명령"
@@ -421,21 +487,23 @@ function Palette() {
                   결과 없음 · 예: 물리 25분
                 </div>
               )}
-              {groups.map(([name, list]) => (
-                <Command.Group key={name} heading={name}>
-                  {list.map((it) => (
-                    <Command.Item key={it.id} value={it.id} data-id={it.id} onSelect={runSelected} className="pal-item" style={{ ['--c' as string]: it.color ?? 'var(--text-2)' }}>
-                      <span className="pal-ic">{it.icon}</span>
-                      <span className="pal-txt">
-                        <span className="pal-label">
-                          <Highlight text={it.label} range={it.range} />
-                        </span>
-                        {it.sub && <small>{it.sub}</small>}
-                      </span>
-                      <span className="pal-hint" aria-hidden="true">↵</span>
-                    </Command.Item>
-                  ))}
-                </Command.Group>
+              {items.map((it) => (
+                <Command.Item key={it.id} value={it.id} data-id={it.id} onSelect={runSelected} className={`pal-item pal-k-${it.group === '최근' ? 'note' : it.id.split('-')[0]}`} style={{ ['--c' as string]: it.color ?? 'var(--text-2)' }}>
+                  <span className="pal-ic">{it.icon}</span>
+                  <span className="pal-txt">
+                    <span className="pal-label">
+                      <Highlight text={it.label} range={it.range} />
+                    </span>
+                    {it.snippet ? (
+                      <small className="pal-snip">
+                        <Highlight text={it.snippet.text} range={it.snippet.range} />
+                      </small>
+                    ) : it.sub && !it.meta ? (
+                      <small>{it.sub}</small>
+                    ) : null}
+                  </span>
+                  {it.meta ? <span className="pal-meta">{it.meta}</span> : <span className="pal-hint" aria-hidden="true">↵</span>}
+                </Command.Item>
               ))}
             </Command.List>
             {!phone && selected && <PreviewPane key={selected.id} p={selected.preview} />}
@@ -558,9 +626,25 @@ function PreviewPane({ p }: { p: Preview }) {
     body = (
       <>
         <p className="pv-k">미리보기 · 새 노트</p>
-        <p className="pv-title">새 필기 노트</p>
+        <p className="pv-title">새 노트{p.subject ? ` · ${p.subject.name}` : ''}</p>
         <div className="pv-skel"><i /><i /></div>
-        <p className="pv-tag">펜이 닿으면 크롬이 3px 결 줄로 접혀요</p>
+        <p className="pv-tag">/ 블록 · [[ 링크</p>
+      </>
+    )
+  } else if (p.kind === 'memo' || p.kind === 'save') {
+    body = (
+      <>
+        <p className="pv-k">{p.kind === 'memo' ? '미리보기 · 별가루' : '메모로 저장'}</p>
+        <p className="pv-title pv-memo">{p.text}</p>
+        <p className="pv-tag">{p.kind === 'memo' ? '별가루함에서 노트로 · 할 일로 · 보관' : 'Enter · 하늘에 별가루 한 점'}</p>
+      </>
+    )
+  } else if (p.kind === 'dust') {
+    body = (
+      <>
+        <p className="pv-k">미리보기 · 별가루</p>
+        <p className="pv-title">별가루</p>
+        <p className="pv-tag">1초 메모 모음</p>
       </>
     )
   }

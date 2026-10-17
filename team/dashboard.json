@@ -8,14 +8,14 @@
     },
     {
       "name": "M2 설계 (아트 디렉터)",
-      "status": "active",
+      "status": "done",
       "members": [
         "ad"
       ]
     },
     {
       "name": "M2 구현: 글(편집기·링크·검색) · 입구(메모·시간표·백업·첫 실행) · 하늘",
-      "status": "todo",
+      "status": "active",
       "members": [
         "app",
         "app2",

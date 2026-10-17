@@ -16,7 +16,7 @@ import { SKY_ZONES, type ZonePlace, type ZoneRect } from './zones'
 
 export type Tier = 'A' | 'B' | 'C'
 export type Rot = 'on' | 'slow' | 'off'
-export type PlaceId = 'today' | 'planner' | 'notes' | 'review' | 'graph' | 'focus' | 'settings'
+export type PlaceId = 'today' | 'planner' | 'notes' | 'review' | 'graph' | 'focus' | 'settings' | 'onboarding'
 const TIERS: Record<Tier, { stars: number; clouds: number; scale: number; bloom: number }> = {
   // design-v4 §1: A 40만 · B 16만 · C 10만(정지 이미지용)
   A: { stars: 400_000, clouds: 1, scale: 1, bloom: 6 },
@@ -63,6 +63,8 @@ export const PLACES: Place[] = [
   { id: 'review', name: '복습', sub: '아래에서 — 뒤집힌 은하, 다시 꺼내 보는 기억', t: C0, az: 195, el: -35, dist: 25, expo: 1, orbit: 0.3, roll: 40, seat: [0.62, 0.5], seatT: [0.66, 0.5], seatP: [0.5, 0.32], seatPh: [0.5, 0.27], fit: { m: 'long', frac: 0.8, of: 'h' }, fitP: { m: 'long', frac: 0.85, of: 'w' }, fitPh: { m: 'long', frac: 0.95, of: 'w' } },
   { id: 'graph', name: '그래프', sub: '팔 속, 낮게 — 별 하나하나가 생각', t: LANDMARKS.graph, az: 72, el: 25, dist: 11.5, expo: 1, orbit: 0, roll: -30, rsK: 0.9, seat: [0.6, 0.5], seatP: [0.5, 0.45] },
   { id: 'focus', name: '집중', sub: '정면 — 시계판처럼 25분에 한 바퀴', t: C0, az: 210, el: 90, dist: 25, expo: 0.95, orbit: 0, roll: 0, rsK: 0.9, seat: [0.6, 0.5], seatT: [0.62, 0.5], seatP: [0.54, 0.4], seatPh: [0.5, 0.36], fit: { m: 'long', frac: 0.64, of: 'short' }, fitP: { m: 'long', frac: 0.66, of: 'short' } }, // 가로: 링 R ≈ 짧은 변 0.40 (design-m1 2-3) // 링(베젤)까지 짧은 변의 ≈ 80%, 세로 좌우 여백 ≥ 6%
+  // design-m2 9: 첫 실행 자세 — 오늘과 같은 방향·롤에서 지도 성운에 다가간 자리 (d 6u), 회전 0
+  { id: 'onboarding', name: '첫 실행', sub: '성운이 태어나는 첫 밤', t: LANDMARKS.graph, az: 210, el: 30, dist: 6, expo: 0.85, orbit: 0, roll: -57, seat: [0.62, 0.42], seatP: [0.54, 0.34], seatPh: [0.54, 0.34] },
   { id: 'settings', name: '설정', sub: '집 안, 어둡게', t: C0, az: 210, el: 30, dist: 25, expo: 0.65, orbit: 1, roll: -57, seat: [0.62, 0.46], seatP: [0.54, 0.4], fit: { m: 'long', frac: 0.8, of: 'h' }, fitP: { m: 'xext', frac: 0.92, of: 'w' } },
 ]
 /** 화면에서 바라보는 점의 자리 (design-v4: 0.66, 0.44) · 원반 장축 57° 대각선 고정 기울기(롤 변화 0) */
@@ -204,6 +206,12 @@ export interface DataStar {
   dur: number
   /** 핵 지름(CSS px) — 세트 별 2.4 (design-m1 0-2-9) */
   size?: number
+  /** 별가루 표류(D2): 지름 0.05u 원을 20초에 한 바퀴 — 위상(라디안). 활동·평소에서만 */
+  drift?: number
+  /** 별가루 흘러감(D3): pos → to(패턴 좌표)로 원반 위 +0.4u 2차 곡선, t0부터 dur초 */
+  path?: { to: [number, number, number]; t0: number; dur: number }
+  /** 성운(D9): 화면 크기를 월드 반지름으로 (u) — 매 프레임 투영 */
+  wr?: number
 }
 export interface LinkSpec {
   a: [number, number, number]
@@ -362,7 +370,7 @@ const zoneUv = new Float32Array(12).fill(-9)
 function zonePlace(): ZonePlace {
   if (sheetOpen) return 'sheet'
   const id = (flight ? flight.to.id : place.id) as PlaceId
-  return id === 'planner' ? 'plan' : id === 'graph' ? 'map' : id === 'settings' ? 'sheet' : (id as ZonePlace)
+  return id === 'planner' ? 'plan' : id === 'graph' ? 'map' : id === 'settings' ? 'sheet' : id === 'onboarding' ? 'today' : (id as ZonePlace)
 }
 function updateMask(cssW: number, cssH: number, dom = true) {
   const rects: ZoneRect[] = [...SKY_ZONES[zonePlace()][cssW < 600 ? 'phone' : cssW >= cssH ? 'land' : 'port']]
@@ -549,7 +557,7 @@ let place = PLACES.find((p) => p.id === qs.get('place')) ?? PLACES[0]!
 let orient: Q = homeOrient(place)
 /** zoom: 핀치·휠 거리 배율 · wv: 관성 각속도(카메라 좌표의 축 × rad/ms, 은하가 굴러가는 쪽) */
 let user = { zoom: 1, wv: [0, 0, 0] as V3 }
-let flight: { from: CamS; to: Place; o: Q; t0: number; dur: number; ang: number; fade: boolean } | null = null
+let flight: { from: CamS; to: Place; o: Q; t0: number; dur: number; ang: number; fade: boolean; reveal?: boolean } | null = null
 let flightMax = 0
 let flightPeak = 0
 let prevFlightQ: Q | null = null
@@ -616,7 +624,7 @@ function curCam(now: number): { c: CamS; flying: boolean } {
   const e = easeS(p) // 이동·회전 같은 이징
   const a = flight.from
   const b: CamS = { t: look ? lookW(look.pos) : placeTarget(flight.to, simT), dist: look ? look.dist : pdist(flight.to), q: worldQ(flight.to, simT, flight.o), expo: flight.to.expo, seat: seatOf(flight.to), fx: 0, dim: 0 }
-  const far = Math.abs(Math.log(b.dist / a.dist)) + Math.hypot(b.t[0] - a.t[0], b.t[2] - a.t[2]) / 6
+  const far = flight.reveal ? 0 : Math.abs(Math.log(b.dist / a.dist)) + Math.hypot(b.t[0] - a.t[0], b.t[2] - a.t[2]) / 6 // 은하 보이기: 호 없이 곧게 물러나기만
   const arc = Math.sin(Math.PI * p)
   if (p >= 1) {
     const st = flightFrames.slice().sort((x, y) => x - y)
@@ -1399,7 +1407,7 @@ function fgUpdate(dt: number, eye: V3, m: Float32Array, sdpr: number, moving: bo
   const deepK = power === 'deep' ? 0.3 : 1
   fgCapK += (deepK - fgCapK) * Math.min(1, dt / 5000)
   // 설정 시트 ×0.3 · 편집 중 0 · 낮(건판) 0
-  cap = Math.max(0, Math.round(cap * fgCapK * (1 - 0.7 * sheetK) * (1 - calmK) * (1 - lightK)))
+  cap = Math.max(0, Math.round(cap * fgCapK * (1 - 0.7 * sheetK) * (1 - calmK) * (1 - lightK) * (flight?.reveal ? 0 : 1))) // 은하 보이기 동안 전경 별 0
   const areaCap = (rot === 'slow' ? 0.005 : 0.015) * cssW * cssH
   const K = fgK(eye)
   const maxCss = rot === 'slow' ? 8 : 22
@@ -1718,16 +1726,40 @@ function buildDots(t: number): number {
     // 가림: 카메라에서 원반 반대편이면 ×0.5 — 복습(아래에서)은 예외 (design-m1 0-2-2)
     if (lastEye[1] < 0 && place.id !== 'review') lv *= 0.5
     if (d.group && d.group === swellAt) lv *= 1 + 0.25 * swellK(performance.now()) // V13s 자리 부풂
+    let px = d.pos[0]
+    let py = d.pos[1]
+    let pz = d.pos[2]
+    if (d.drift !== undefined && power !== 'deep' && power !== 'rest' && lightK < 0.5) {
+      const a = d.drift + (t / 20) * Math.PI * 2
+      px += 0.025 * Math.cos(a)
+      pz += 0.025 * Math.sin(a)
+    }
+    if (d.path) {
+      const k = Math.min(1, Math.max(0, (t - d.path.t0) / d.path.dur))
+      const e = k * k * (3 - 2 * k)
+      const lift = 0.4 * 4 * e * (1 - e)
+      px += (d.path.to[0] - px) * e
+      py += (d.path.to[1] - py) * e + lift
+      pz += (d.path.to[2] - pz) * e
+      if (k < 1) animating = true
+    }
+    let size = d.size ?? 2.4
+    if (d.wr && lastVP) {
+      const w = dataWorld({ ...d, pos: [px, py, pz] })
+      const c = projectCss(lastVP, w)
+      const e2 = projectCss(lastVP, [w[0] + (lastBasis?.s[0] ?? 1) * d.wr, w[1] + (lastBasis?.s[1] ?? 0) * d.wr, w[2] + (lastBasis?.s[2] ?? 0) * d.wr])
+      size = c && e2 ? Math.min(0.18 * Math.min(cssW, cssH), Math.hypot(e2[0] - c[0], e2[1] - c[1])) : 0 // 화면 짧은 변의 18% 이하
+    }
     const o = n * 8
-    dotArr[o] = Math.hypot(d.pos[0], d.pos[2])
-    dotArr[o + 1] = Math.atan2(d.pos[2], d.pos[0])
-    dotArr[o + 2] = d.pos[1]
+    dotArr[o] = Math.hypot(px, pz)
+    dotArr[o + 1] = Math.atan2(pz, px)
+    dotArr[o + 2] = py
     dotArr[o + 3] = Math.min(1.6, lv)
     const c = day ? (DAY_INK[d.group ?? ''] ?? [0.102, 0.125, 0.188]) : d.color
     dotArr[o + 4] = c[0]
     dotArr[o + 5] = c[1]
     dotArr[o + 6] = c[2]
-    dotArr[o + 7] = d.size ?? 2.4
+    dotArr[o + 7] = size
     n++
   }
   if (animating) eventUntil = Math.max(eventUntil, performance.now() + 2000) // 사건 중 활동, 끝나고 2초 뒤 평소
@@ -1736,7 +1768,7 @@ function buildDots(t: number): number {
 let segArr = new Float32Array(0)
 function buildSegs(t: number): number {
   if (!links.length) return 0
-  if (segArr.length < links.length * 8) segArr = new Float32Array(links.length * 8)
+  if (segArr.length < links.length * 12) segArr = new Float32Array(links.length * 12)
   let n = 0
   for (const l of links) {
     const k = l.dur > 0 ? Math.min(1, Math.max(0, (t - l.t0) / l.dur)) : 1
@@ -1744,7 +1776,10 @@ function buildSegs(t: number): number {
     if (l.dur > 0 && k < 1) eventUntil = Math.max(eventUntil, performance.now() + 2000)
     const e = k * k * (3 - 2 * k)
     const b: V3 = [l.a[0] + (l.b[0] - l.a[0]) * e, l.a[1] + (l.b[1] - l.a[1]) * e, l.a[2] + (l.b[2] - l.a[2]) * e]
-    const o = n * 8
+    const o = n * 12
+    segArr[o + 8] = 0.95
+    segArr[o + 9] = 0.86
+    segArr[o + 10] = 0.68
     segArr[o] = Math.hypot(l.a[0], l.a[2])
     segArr[o + 1] = Math.atan2(l.a[2], l.a[0])
     segArr[o + 2] = l.a[1]
@@ -1762,7 +1797,13 @@ function drawEvents(m: Float32Array, now: number) {
   const t = nowS()
   const nd = buildDots(t)
   const ns = buildSegs(t)
-  if (!nd && !ns) return
+  const dt2 = Math.min(0.1, Math.max(0, t - (lastEvT || t)))
+  lastEvT = t
+  noteViewK.stars += (noteView.stars - noteViewK.stars) * Math.min(1, dt2 / 0.3)
+  noteViewK.lines += (noteView.lines - noteViewK.lines) * Math.min(1, dt2 / 0.3)
+  const nn = noteN > 0 && noteViewK.stars > 0.01
+  const nl = nlinkN > 0 && noteViewK.lines > 0.01
+  if (!nd && !ns && !nn && !nl) return
   const day = lightK > 0.5 ? 1 : 0
   gl.enable(gl.BLEND)
   if (day) gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_COLOR)
@@ -1777,12 +1818,66 @@ function drawEvents(m: Float32Array, now: number) {
     gl.uniform3f(L.u.uZoneP!, cssW, cssH, featherPx)
     gl.uniform2f(L.u.uView!, W, H)
     gl.uniform1f(L.u.uWidth!, 0.6 * dpr)
-    gl.uniform3f(L.u.uLineCol!, day ? 0.271 : 0.95, day ? 0.294 : 0.86, day ? 0.345 : 0.68)
     gl.uniform1f(L.u.uDay!, day)
+    gl.uniform1f(L.u.uSegK!, 1)
+    gl.uniform1f(L.u.uCart!, 0)
     gl.bindBuffer(gl.ARRAY_BUFFER, segBuf)
-    gl.bufferData(gl.ARRAY_BUFFER, segArr.subarray(0, ns * 8), gl.DYNAMIC_DRAW)
+    gl.bufferData(gl.ARRAY_BUFFER, segArr.subarray(0, ns * 12), gl.DYNAMIC_DRAW)
     gl.bindVertexArray(segVao)
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, ns)
+  }
+  if (nl) {
+    const L = P.seg
+    gl.useProgram(L.p)
+    gl.uniformMatrix4fv(L.u.uVP!, false, m)
+    gl.uniform1f(L.u.uTime!, simT)
+    gl.uniform4fv(L.u['uZone[0]']!, zoneUv)
+    gl.uniform3f(L.u.uZoneP!, cssW, cssH, featherPx)
+    gl.uniform2f(L.u.uView!, W, H)
+    gl.uniform1f(L.u.uWidth!, 0.375 * dpr) // 0.75px
+    gl.uniform1f(L.u.uDay!, day)
+    gl.uniform1f(L.u.uSegK!, noteViewK.lines)
+    gl.uniform1f(L.u.uCart!, 1)
+    gl.bindVertexArray(nlinkVao)
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nlinkN)
+  }
+  if (nn) {
+    const D = P.dot
+    gl.useProgram(D.p)
+    gl.uniformMatrix4fv(D.u.uVP!, false, m)
+    gl.uniform1f(D.u.uTime!, simT)
+    gl.uniform4fv(D.u['uZone[0]']!, zoneUv)
+    gl.uniform3f(D.u.uZoneP!, cssW, cssH, featherPx)
+    gl.uniform1f(D.u.uDpr!, dpr)
+    gl.uniform1f(D.u.uDay!, day)
+    gl.uniform1f(D.u.uDotK!, noteViewK.stars)
+    gl.uniform1f(D.u.uCart!, 1)
+    if (place.id === 'notes' && spineSrc) {
+      // 노트 장소: 같은 별을 책등 위 점으로 (원반 긴 축, 높이 = id 해시) — 시선이 바뀔 때만 다시 계산
+      const B = lastBasis
+      const key = B ? B.f.map((x) => x.toFixed(3)).join(',') + '|' + simT.toFixed(0) : ''
+      if (B && key !== spineKey) {
+        spineKey = key
+        const ax = norm([B.f[2], 0, -B.f[0]])
+        if (!spineArr || spineArr.length !== spineSrc.length) spineArr = new Float32Array(spineSrc.length)
+        spineArr.set(spineSrc)
+        // 세계 → 패턴 좌표(직교): 자전 −Ωp·t만큼 되돌린다
+        const ca = Math.cos(-OMEGA_P * simT)
+        const sa = Math.sin(-OMEGA_P * simT)
+        for (let i = 0; i < noteN; i++) {
+          const sv = spineSrc[i * 8 + 2]! // 원본 z 칸에 s(−1..1)를 둔 사본
+          const wx = ax[0] * sv * 11
+          const wz = ax[2] * sv * 11
+          spineArr[i * 8] = wx * ca - wz * sa
+          spineArr[i * 8 + 1] = 0.15
+          spineArr[i * 8 + 2] = wx * sa + wz * ca
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, spineBuf)
+        gl.bufferData(gl.ARRAY_BUFFER, spineArr, gl.DYNAMIC_DRAW)
+      }
+      gl.bindVertexArray(spineVao)
+    } else gl.bindVertexArray(noteVao)
+    gl.drawArrays(gl.POINTS, 0, noteN)
   }
   if (nd) {
     const D = P.dot
@@ -1793,6 +1888,8 @@ function drawEvents(m: Float32Array, now: number) {
     gl.uniform3f(D.u.uZoneP!, cssW, cssH, featherPx)
     gl.uniform1f(D.u.uDpr!, dpr)
     gl.uniform1f(D.u.uDay!, day)
+    gl.uniform1f(D.u.uDotK!, 1)
+    gl.uniform1f(D.u.uCart!, 0)
     gl.bindBuffer(gl.ARRAY_BUFFER, dataBuf)
     gl.bufferData(gl.ARRAY_BUFFER, dotArr.subarray(0, nd * 8), gl.DYNAMIC_DRAW)
     gl.bindVertexArray(dataVao)
@@ -1904,11 +2001,62 @@ const segVao = (() => {
   gl.bindVertexArray(vao)
   gl.bindBuffer(gl.ARRAY_BUFFER, segBuf)
   gl.enableVertexAttribArray(0)
-  gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 32, 0)
+  gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 48, 0)
   gl.vertexAttribDivisor(0, 1)
   gl.enableVertexAttribArray(1)
-  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 16)
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 48, 16)
   gl.vertexAttribDivisor(1, 1)
+  gl.enableVertexAttribArray(2)
+  gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 48, 32)
+  gl.vertexAttribDivisor(2, 1)
+  gl.bindVertexArray(null)
+  return vao
+})()
+/* M2 노트 별 · 빛줄기 (design-m2 4-3): 정적 버퍼 — 데이터가 바뀔 때만 다시 올린다. 매 프레임 JS 루프 없음 */
+const noteBuf = gl.createBuffer()!
+const noteVao = (() => {
+  const vao = gl.createVertexArray()!
+  gl.bindVertexArray(vao)
+  gl.bindBuffer(gl.ARRAY_BUFFER, noteBuf)
+  gl.enableVertexAttribArray(0)
+  gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 32, 0)
+  gl.enableVertexAttribArray(1)
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 16)
+  gl.bindVertexArray(null)
+  return vao
+})()
+const nlinkBuf = gl.createBuffer()!
+const nlinkVao = (() => {
+  const vao = gl.createVertexArray()!
+  gl.bindVertexArray(vao)
+  gl.bindBuffer(gl.ARRAY_BUFFER, nlinkBuf)
+  for (let k = 0; k < 3; k++) {
+    gl.enableVertexAttribArray(k)
+    gl.vertexAttribPointer(k, 4, gl.FLOAT, false, 48, k * 16)
+    gl.vertexAttribDivisor(k, 1)
+  }
+  gl.bindVertexArray(null)
+  return vao
+})()
+let noteN = 0
+let nlinkN = 0
+let nlinkCap = 0
+/** 노트 층 배수: 별(지도 1 · 노트 장소 책등 = 따로) · 빛줄기(지도만) · 검색 중 나머지 ×0.5 */
+let noteView = { stars: 0, lines: 0 }
+let noteViewK = { stars: 0, lines: 0 }
+let spineArr: Float32Array | null = null
+let spineSrc: Float32Array | null = null
+let spineKey = ''
+let lastEvT = 0
+const spineBuf = gl.createBuffer()!
+const spineVao = (() => {
+  const vao = gl.createVertexArray()!
+  gl.bindVertexArray(vao)
+  gl.bindBuffer(gl.ARRAY_BUFFER, spineBuf)
+  gl.enableVertexAttribArray(0)
+  gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 32, 0)
+  gl.enableVertexAttribArray(1)
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 16)
   gl.bindVertexArray(null)
   return vao
 })()
@@ -2073,6 +2221,49 @@ return {
   setSpine: (list: Array<{ id: string; s: number; level: number; color: [number, number, number] }>) => {
     spine = list
     if (!stopped) kick()
+  },
+  /** M2 노트 별 (정적): N×8 (x, y, z 패턴 직교 좌표, 밝기 · r, g, b, 크기px). spine: 같은 배열에서 z 칸 = 책등 높이 s(−1..1) */
+  setNotes: (stars: Float32Array, n: number, spine: Float32Array | null) => {
+    noteN = n
+    gl.bindBuffer(gl.ARRAY_BUFFER, noteBuf)
+    gl.bufferData(gl.ARRAY_BUFFER, stars.subarray(0, n * 8), gl.STATIC_DRAW)
+    spineSrc = spine
+    spineKey = ''
+    if (!stopped) kick()
+  },
+  /** M2 빛줄기 (정적): M×12 (A x, y, z, 알파 · B x, y, z, 0 · r, g, b, 0) — 패턴 직교 좌표 */
+  setNoteLinks: (segs: Float32Array, m: number) => {
+    nlinkN = m
+    gl.bindBuffer(gl.ARRAY_BUFFER, nlinkBuf)
+    // 자리가 있으면 덮어쓰기만(재할당 없음)
+    if (m * 12 > nlinkCap) {
+      nlinkCap = Math.ceil(m * 12 * 1.5)
+      gl.bufferData(gl.ARRAY_BUFFER, nlinkCap * 4, gl.STATIC_DRAW)
+    }
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, segs.subarray(0, m * 12))
+    if (!stopped) kick()
+  },
+  /** 노트 층 보이기 (지도: 별·선 · 노트: 별만(책등) · 나머지 0). 검색 중엔 lines ×0.5 */
+  setNoteView: (stars: number, lines: number) => {
+    noteView = { stars, lines }
+    if (reduced()) noteViewK = { stars, lines }
+    if (!stopped) kick()
+  },
+  /** D10 은하 보이기: 첫 실행 자세 → 오늘, 회전 0 · 물러나기만 2.6초 (동작 줄이기·회전 끔이면 즉시) */
+  revealGalaxy: (): number => {
+    const today = PLACES.find((p) => p.id === 'today')!
+    if (reduced()) {
+      setPlace('today', { instant: true })
+      return 0
+    }
+    look = null
+    startFlight(today, homeOrient(today), true)
+    if (flight) {
+      flight.dur = 2600
+      flight.reveal = true
+      flight.fade = false
+    }
+    return 2600
   },
   /** 편집 중(useFieldPause): 자전·공전 ×0.3, 전경 별 0 (300ms) */
   setCalm: (on: boolean) => {

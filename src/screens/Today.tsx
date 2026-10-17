@@ -1,22 +1,24 @@
 /**
- * 오늘 v4: 글 구역(design-m1 2-1) 안에 명사구 1 + 메타 1 + 동작 1(+보조) — 3줄. 아래 장은 '최근' 하나만.
+ * 오늘 v4: 글 구역(design-m1 2-1) 안에 명사구 1 + 메타 1 + 동작 1(+보조) — 3줄 + 조용한 줄 '별가루 n ›'(M2, '최근' 장은 뺌).
+ * 가로 화면에서 별가루함을 열면 이 글 구역이 그 자리에서 별가루함으로 바뀐다(design-m2 2-1).
  * 폰: 맨 아래 한 줄 '계획 · 시험 D-5 ›'을 누르면 계획으로(폰 독에는 계획이 없다).
  * 하늘이 말한다(D5): 오늘 집중 = 오늘의 별(별자리), 시험 임박 = 붉은 별, 남은 수업 = 진행선, 복습량 = 복습 별.
  */
 import { useMemo, useRef } from 'react'
 import { ProgressLine } from '@/fx'
 import { ActiveMood as FieldMood } from '@/app/keepAlive'
-import { useNow, useToday } from '@/db/hooks'
+import { useMemoCount, useNow, useToday } from '@/db/hooks'
 import type { Subject } from '@/db/schema'
 import { evaluateSituation } from '@/lib/situation'
-import { ddayOf, fmtAgo, fmtDday, fmtDur } from '@/lib/time'
+import { ddayOf, fmtDday, fmtDur } from '@/lib/time'
 import { useSettings } from '@/stores/settings'
-import { useUi } from '@/stores/ui'
-import { useGo } from '@/shell/hooks'
+import { useGo, useMediaQuery } from '@/shell/hooks'
+import { DustBox } from '@/capture/DustBox'
+import { useCapture } from '@/capture/store'
 import { spaceOf } from '@/shell/spaces'
 import { IconArrow, IconMic } from '@/shell/icons'
 import { useResolvedColors, useSitAction, type ColorKey } from './actions'
-import { Actions, Block, Chapter, FocusLines, Hero, PrimaryButton, QuietButton } from './parts'
+import { Actions, Block, FocusLines, Hero, PrimaryButton, QuietButton } from './parts'
 
 const SKY = spaceOf('/')
 
@@ -28,6 +30,13 @@ export function TodayScreen() {
   const run = useSitAction()
   const go = useGo()
   const colors = useResolvedColors()
+  const dust = useMemoCount('inbox') ?? 0
+  const dustOpen = useCapture((s) => s.dustOpen)
+  const onb = useCapture((s) => s.onbActive)
+  const mood = onb ? 'onboarding' : SKY.mood
+  const openDust = useCapture((s) => s.openDust)
+  const land = useMediaQuery('(min-width: 600px) and (min-aspect-ratio: 1/1)')
+  const inline = land && dustOpen
 
   const sit = useMemo(() => (data ? evaluateSituation(data.model) : null), [data])
   const subjects: Subject[] = data?.model.subjects ?? []
@@ -46,7 +55,7 @@ export function TodayScreen() {
   if (!data || !sit) {
     return (
       <>
-        <FieldMood preset={SKY.mood} drag={SKY.drag} knotRef={knotRef} />
+        <FieldMood preset={mood} drag={SKY.drag} knotRef={knotRef} />
         <Hero knotRef={knotRef} label="오늘">
           <div className="hero-placeholder" aria-hidden="true" />
         </Hero>
@@ -65,9 +74,13 @@ export function TodayScreen() {
 
   return (
     <>
-      <FieldMood preset={SKY.mood} drag={SKY.drag} knotRef={knotRef} override={{ speed: sit.mood.speed, knotStrength: sit.mood.knotStrength }} data={skyData} stars={skyStars} />
+      <FieldMood preset={mood} drag={SKY.drag} knotRef={knotRef} override={{ speed: sit.mood.speed, knotStrength: sit.mood.knotStrength }} data={skyData} stars={skyStars} />
 
-      <Hero knotRef={knotRef} label="지금">
+      <Hero knotRef={knotRef} label="지금" className={inline ? 'is-dust' : ''}>
+        {inline ? (
+          <div className="today-swap" key="dust"><DustBox variant="inline" /></div>
+        ) : (
+        <div className="today-swap" key="today">
         {/* 하늘의 오늘의 별은 StarPress가 누르기를 받는다(다가가 한 줄로 보기) */}
         <p className="sr-only">{skyLabel}</p>
         <Block>
@@ -94,6 +107,13 @@ export function TodayScreen() {
               ))}
           </Actions>
         )}
+        {dust > 0 && (
+          <button type="button" className="quiet-line mono dust-line not-phone" onClick={(e) => openDust(e.currentTarget)}>
+            별가루 {dust} ›
+          </button>
+        )}
+        </div>
+        )}
       </Hero>
 
       {/* 폰: 맨 아래 계획 줄 (글 구역 둘째 사각형) */}
@@ -110,40 +130,12 @@ export function TodayScreen() {
         {planNext && <span className="plan-line-v">· {planNext}</span>}
         <IconArrow size={14} />
       </a>
-
-      {sit.key !== 'empty' && data.recent.length > 0 && (
-        <Chapter eyebrow="최근" title={[]} className="chapter-last chapter-recent">
-          <ul className="cont">
-            {data.recent.map((n) => {
-              const s = subjects.find((x) => x.id === n.subjectId)
-              return (
-                <li key={n.id}>
-                  <button type="button" onClick={(e) => run({ kind: 'note', noteId: n.id }, e.currentTarget)}>
-                    <span className="cont-title">{n.title}</span>
-                    <small>
-                      {s && <i style={{ background: `var(--s-${s.color})` }} aria-hidden="true" />}
-                      {s?.name ?? '과목 없음'} · {fmtAgo(Date.now(), n.updatedAt)}
-                    </small>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-          <a
-            className="link-more"
-            href="/notes"
-            aria-label="노트 모두 보기"
-            onClick={(e) => {
-              if (e.metaKey || e.ctrlKey) return
-              e.preventDefault()
-              useUi.getState().setNoteFocusId(null)
-              void go('/notes', e.currentTarget)
-            }}
-          >
-            모두 <IconArrow size={16} />
-          </a>
-        </Chapter>
+      {dust > 0 && (
+        <button type="button" className="quiet-line mono dust-line-phone phone-only-flex" onClick={(e) => openDust(e.currentTarget)}>
+          별가루 {dust}
+        </button>
       )}
+
     </>
   )
 }
