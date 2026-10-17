@@ -68,6 +68,7 @@ export {
   useSkyAnchor,
   useSkyDrag,
   useSkyPaper,
+  useSkyExams,
   useSkyClock,
 } from './hooks'
 /** 글 구역 (design-m1 2-1·2-2) — 렌더러 안전 마스크와 앱 배치가 같은 숫자를 쓴다 */

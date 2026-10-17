@@ -426,6 +426,21 @@ export class FieldEngine {
     canvas.className = 'gx-sky-canvas'
     host.appendChild(canvas)
     this.canvas = canvas
+    // M4 끝난 시험 별: 앱이 안 보일 때 나의 가지 끝으로 옮기고(보이는 이동 0), 다음 보기에 가지 끝 V11
+    const onVis = () => {
+      if (document.hidden) {
+        for (const e of this.exams) if (e.dday < 0 && !this.examMoved.has(e.examId)) this.examMoved.set(e.examId, -1)
+      } else {
+        let any = false
+        for (const [id, v] of this.examMoved) if (v === -1) (this.examMoved.set(id, this.nowS()), (any = true))
+        if (any) {
+          this.pushStars()
+          window.setTimeout(() => this.pushStars(), 350)
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', onVis)
+    this.cleanups.push(() => document.removeEventListener('visibilitychange', onVis))
     // 누르기 ↔ 끌기 구분 (M3): 하늘 끌기·핀치·관성·휠 뒤의 click 표시 → isSkyDragClick
     this.cleanups.push(installSkyGesture(this.dragFilter, () => this.g3d?.spin() ?? 0, () => !!this.g3d && this.dragEnabled()))
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -454,7 +469,7 @@ export class FieldEngine {
           },
         }).mount(canvas)
         svg.style.display = 'none' // 별자리 선은 3D 사건 층이 그린다
-        for (const n of ['core', 'focus-disk'] as AnchorName[])
+        for (const n of ['core', 'focus-disk', 'plan-band'] as AnchorName[])
           this.g3d.anchors(n, (a) => {
             this.anchorLast.set(n, a)
             this.anchorCbs.get(n)?.forEach((f) => f(a))
@@ -1033,6 +1048,7 @@ export class FieldEngine {
         const nb = Math.min(60, this.branchDays())
         for (let k = 1; k <= nb; k++) list.push({ id: 'branch:' + k, group: 'branch', pos: branchPos(k), size: 1.4, L: 1, color: GOLD, from: 0.45, to: 0.45, t0: 0, dur: 0 })
         list.push(...this.m2Stars())
+        list.push(...this.examStars(this.nowS()))
         this.g3d.setDataStars(list)
         // 노트 책등 위 점 (#28): 노트에서는 지도 별이 책등의 높이(해시)에 점으로
         this.g3d.setSpine(
@@ -1078,6 +1094,7 @@ export class FieldEngine {
       const sel = this.selected && (l.a === this.selected || l.b === this.selected)
       out.push({ a: pos3(A), b: pos3(B), t0: l.t0 ?? 0, dur: l.t0 ? 0.8 : 0, alpha: (sel ? 0.6 : this.selected ? 0.16 : 0.32) * v })
     }
+    out.push(...this.examLinks())
     this.g3d.setLinks(out)
   }
 
@@ -1996,7 +2013,7 @@ export class FieldEngine {
   }
   private branchGlint = false
 /* ================= M2 하늘 사건 (design-m2 4-3 · 9 · 10) ================= */
-  private notes = new Map<string, { subjectId: string; links: number; pos: [number, number, number]; s: number; level: number; size: number; color: [number, number, number] }>()
+  private notes = new Map<string, { subjectId: string; links: number; pos: [number, number, number]; s: number; level: number; size: number; color: [number, number, number]; bFrom: number; bTo: number; bT0: number; bDur: number }>()
   private noteOrder: string[] = []
   private noteLinkSet = new Set<string>()
   private noteLinkPairs: Array<[string, string]> = []
@@ -2050,7 +2067,7 @@ export class FieldEngine {
     return [g[0] + d * Math.cos(a), g[1], g[2] + d * Math.sin(a)]
   }
   /** useSkyStars({ notes, noteLinks?, subjects? }) — 노트 별 자리는 id 해시로 고정, 정적 버퍼 1회 올리기 */
-  private syncNotes(list: Array<{ id: string; subjectId: string; links: number }>, pairs?: Array<[string, string]>, subjects?: Array<{ id: string; color: string }>) {
+  private syncNotes(list: Array<{ id: string; subjectId: string; links: number; bright?: number }>, pairs?: Array<[string, string]>, subjects?: Array<{ id: string; color: string }>) {
     const t0 = performance.now()
     if (subjects) for (const sj of subjects) {
       const c = cssColor(sj.color)
@@ -2069,6 +2086,10 @@ export class FieldEngine {
     }
     this.stageArr = stage.length ? new Float32Array(stage) : null
     this.applyStage()
+    // M4 기억 밝기: 바뀌기 전 밝기를 기억해 두고 새 값으로 2초(V9) 동안 옮긴다
+    const tb = this.nowS()
+    const prevB = new Map<string, number>()
+    for (const [id, r] of this.notes) prevB.set(id, this.brightAt(r, tb))
     this.notes.clear()
     this.noteOrder = []
     for (const n of list) {
@@ -2102,7 +2123,7 @@ export class FieldEngine {
       const col = sj.color
       const lum = 0.3 * col[0] + 0.59 * col[1] + 0.11 * col[2]
       const color: [number, number, number] = sj.k < 0 ? [0.86, 0.89, 1] : [0.12 + 0.88 * (lum + (col[0] - lum) * 0.45 / Math.max(0.35, this.satOf(col))), 0.12 + 0.88 * (lum + (col[1] - lum) * 0.45 / Math.max(0.35, this.satOf(col))), 0.12 + 0.88 * (lum + (col[2] - lum) * 0.45 / Math.max(0.35, this.satOf(col)))]
-      this.notes.set(n.id, { subjectId: n.subjectId, links: n.links, pos: pc.pos, s: pc.s, level: 0.35 + 0.45 * tL, size: 2.0 + 0.4 * tL, color }) // 하한 2.0px (review-m2)
+      this.notes.set(n.id, { subjectId: n.subjectId, links: n.links, pos: pc.pos, s: pc.s, level: 0.35 + 0.45 * tL, size: 2.0 + 0.4 * tL, color, ...this.brightRec(prevB.get(n.id), n.bright, tb) }) // 하한 2.0px (review-m2)
       this.noteOrder.push(n.id)
     }
     if (pairs) {
@@ -2144,6 +2165,8 @@ export class FieldEngine {
   }
   private posCache = new Map<string, { key: string; pos: [number, number, number]; s: number }>()
   private uploadNotes() {
+    const tNow = this.nowS()
+    let bAnim = false
     const g = this.g3d?.raw
     if (!g) return
     const n = this.noteOrder.length
@@ -2157,9 +2180,15 @@ export class FieldEngine {
     const dens = Math.min(1, 7 / Math.sqrt(Math.max(1, n)))
     const lens = this.lens
     for (const id of this.noteOrder) {
+      const rb = this.notes.get(id)
+      if (rb && rb.bDur > 0 && tNow - rb.bT0 < rb.bDur) bAnim = true
       const r = this.notes.get(id)!
       // 하한: 노트 100개 이하면 별 하나가 최소 45% (처음 쓰는 학생에게 '내 별'이 분명히)
       let lv = n <= 100 ? Math.max(0.45, r.level * dens) : r.level * dens
+      // M4 기억 밝기: × bright(하한 0.40). R < 0.70(bright < 0.53)이면 차가운 회색 #8E94A8을 40%까지 섞는다
+      const bNow = this.brightAt(r, tNow)
+      lv *= bNow
+      const cold = bNow < 0.53 ? 0.4 * Math.min(1, (0.53 - bNow) / 0.03) : 0
       // 렌즈(과목 칩): 그 과목 노트 별 +30%, 나머지 ×0.4
       if (lens) lv *= r.subjectId === lens ? 1.3 : 0.4
       if (this.search) lv = this.search.has(id) ? Math.max(lv, r.level) * 1.25 : lv * 0.5
@@ -2170,9 +2199,9 @@ export class FieldEngine {
       this.noteArr[o + 2] = r.pos[2]
       this.noteArr[o + 3] = Math.min(1, lv)
       const gold = id === sel
-      this.noteArr[o + 4] = gold ? GOLD[0] : r.color[0]
-      this.noteArr[o + 5] = gold ? GOLD[1] : r.color[1]
-      this.noteArr[o + 6] = gold ? GOLD[2] : r.color[2]
+      this.noteArr[o + 4] = gold ? GOLD[0] : r.color[0] + (0.557 - r.color[0]) * cold
+      this.noteArr[o + 5] = gold ? GOLD[1] : r.color[1] + (0.58 - r.color[1]) * cold
+      this.noteArr[o + 6] = gold ? GOLD[2] : r.color[2] + (0.659 - r.color[2]) * cold
       this.noteArr[o + 7] = gold ? 3.2 : r.size
       this.spineArr[o + 2] = r.s
       this.spineArr[o + 3] = this.noteArr[o + 3]!
@@ -2183,6 +2212,7 @@ export class FieldEngine {
       i++
     }
     g.setNotes(this.noteArr, n, this.spineArr)
+    this.brightTick(bAnim)
   }
   private segCount = 0
   /** onlyLast: 링크 하나를 더할 때 — 그 링크 토막만 뒤에 붙인다(전체 다시 계산 없음) */
@@ -2353,6 +2383,146 @@ export class FieldEngine {
       const sh = this.inkShape(id, t)
       const r = this.notes.get(id)
       if (sh && r) out.push({ id: 'ink:' + id, s: r.s, level: sh.to, color: r.color, ...sh, size: r.size })
+    }
+    return out
+  }
+  /** M4 기억 밝기 기록: 앞 밝기에서 새 밝기(0.40–1, 없으면 1)로. 동작 줄이기면 바로 */
+  private brightRec(prev: number | undefined, bright: number | undefined, t: number): { bFrom: number; bTo: number; bT0: number; bDur: number } {
+    const to = Math.max(0.4, Math.min(1, Number.isFinite(bright) ? (bright as number) : 1))
+    const from = prev ?? to
+    return { bFrom: from, bTo: to, bT0: t, bDur: from === to || this.mode === 'off' ? 0 : 2.0 }
+  }
+  /** 지금 기억 밝기 (V9 · V3 이징 inout) */
+  private brightAt(r: { bFrom: number; bTo: number; bT0: number; bDur: number }, t: number): number {
+    if (!r.bDur) return r.bTo
+    const k = Math.min(1, Math.max(0, (t - r.bT0) / r.bDur))
+    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2
+    return r.bFrom + (r.bTo - r.bFrom) * e
+  }
+  private brightTimer = 0
+  /** 밝기가 옮겨 가는 동안만 0.12초마다 정적 버퍼를 다시 올린다(매 프레임 계산 없음) */
+  private brightTick(anim: boolean): void {
+    if (!anim || this.brightTimer) return
+    this.brightTimer = window.setTimeout(() => {
+      this.brightTimer = 0
+      this.uploadNotes()
+    }, 120)
+  }
+  /** M4 순간 ③ 흐린 별 다시 켜기: 복습에서 ✓를 받을 때 그 노트 별이 짧게 밝아지고(+30%) 새 bright로 800ms(V3).
+   *  지도 · 노트에서 안 보이면 최종 상태만 */
+  relightNote(noteId: string, bright: number): void {
+    const r = this.notes.get(noteId)
+    if (!r) return
+    const t = this.nowS()
+    const vis = (this.preset === 'map' || this.preset === 'graph' || this.preset === 'notes') && this.mode !== 'off'
+    const to = Math.max(0.4, Math.min(1, bright))
+    Object.assign(r, { bFrom: this.brightAt(r, t), bTo: to, bT0: t, bDur: vis ? 0.8 : 0 })
+    if (vis) {
+      this.inks.set(noteId, { t0: t, k: 0.3, dur: 0.8 })
+      this.pushStars()
+      window.setTimeout(() => this.pushStars(), 250)
+      window.setTimeout(() => this.pushStars(), 820)
+    }
+    this.uploadNotes()
+  }
+  /* ---------- M4 순간 ④ 시험 별자리 (design-m4 6장) ---------- */
+  private exams: Array<{ examId: string; dday: number; studyDays: number; doneDays: number; cardIds: string[]; noteIds?: string[] }> = []
+  /** 시험마다 그어진 선의 시작 시각(초) — 다시 쌓아도 그어짐이 다시 시작되지 않게 */
+  private examLineT0 = new Map<string, number[]>()
+  private examMoved = new Map<string, number>() // 끝난 시험 → 가지 끝으로 옮긴 시각(보이지 않을 때)
+  setExams(list: Array<{ examId: string; dday: number; studyDays: number; doneDays: number; cardIds: string[]; noteIds?: string[] }>): void {
+    this.exams = list.slice(0, 12)
+    const p = this.preset
+    if (!(p === 'today' || p === 'landing' || p === 'map' || p === 'graph'))
+      // 다른 장소에서 하루치를 끝냈으면 최종 상태만(돌아와도 그어짐 없음)
+      for (const e of this.exams) {
+        const S = Math.max(1, Math.round(e.studyDays))
+        const done = e.dday <= 0 ? 16 : Math.min(16, S > 16 ? Math.floor((e.doneDays * 16) / S) : Math.round(e.doneDays))
+        const t0s = this.examLineT0.get(e.examId)?.slice() ?? []
+        for (let i = t0s.length; i < done; i++) t0s[i] = 0
+        this.examLineT0.set(e.examId, t0s)
+      }
+    this.pushStars()
+  }
+  /** 범위 노트 별 N+1개(카드 많은 순 noteIds 앞에서, N = 공부 날 수 · 최대 16)를 시험 별에서 가까운 순으로 잇는 경로 */
+  private examPath(e: { studyDays: number; noteIds?: string[] }, from: [number, number, number]): Array<[number, number, number]> {
+    const N = Math.max(1, Math.min(16, Math.round(e.studyDays)))
+    const pool = (e.noteIds ?? []).map((id) => this.notes.get(id)?.pos).filter((p): p is [number, number, number] => !!p).slice(0, N + 1)
+    const out: Array<[number, number, number]> = []
+    let cur = from
+    while (pool.length) {
+      let bi = 0
+      let bd = Infinity
+      pool.forEach((p, i) => {
+        const d = Math.hypot(p[0] - cur[0], p[2] - cur[2])
+        if (d < bd) {
+          bd = d
+          bi = i
+        }
+      })
+      cur = pool.splice(bi, 1)[0]!
+      out.push(cur)
+    }
+    return out
+  }
+  private examPos(k: number): [number, number, number] {
+    const c = LAYER3D.exam.c
+    return [c[0] + 0.7 * k, c[1], c[2] + 0.4 * k]
+  }
+  /** 시험 별(데이터 별) — T · M에서 */
+  private examStars(t: number): DataStar[] {
+    const p = this.preset
+    if (!(p === 'today' || p === 'landing' || p === 'map' || p === 'graph') || !this.exams.length) return []
+    const out: DataStar[] = []
+    const up = this.exams.filter((e) => e.dday >= 0).sort((a, b) => a.dday - b.dday)
+    const RED: [number, number, number] = [1, 0.561, 0.471] // #FF8F78
+    up.forEach((e, i) => {
+      if (i === 0) {
+        const k = 1 - Math.min(1, Math.max(0, e.dday / 14))
+        out.push({ id: 'exam:' + e.examId, group: 'exam', pos: this.examPos(0), L: 1, color: RED, size: 2.4 + 1.2 * k, from: 0.2 + 0.8 * k, to: 0.2 + 0.8 * k, t0: 0, dur: 0 })
+        if (e.dday <= 3) out.push({ id: 'examneb:' + e.examId, group: 'nebula', pos: this.examPos(0), L: 1, color: RED, wr: 0.6 + 0.6 * (1 - e.dday / 3), from: 0.18, to: 0.18, t0: 0, dur: 0 })
+      } else out.push({ id: 'exam:' + e.examId, group: 'exam', pos: this.examPos(i), L: 1, color: RED, size: 1.6, from: 0.35, to: 0.35, t0: 0, dur: 0 })
+    })
+    // 끝난 시험: 흰빛 2등급. 앱이 안 보일 때 나의 가지 끝으로 옮겼으면 그 자리, 다음 보기에 V11
+    for (const e of this.exams.filter((x) => x.dday < 0).slice(0, 6)) {
+      const moved = this.examMoved.get(e.examId)
+      const pos = moved !== undefined ? branchPos(Math.min(60, this.branchDays()) + 1) : this.examPos(0)
+      const flash = moved !== undefined && moved > 0 && t - moved < 0.3
+      out.push({ id: 'exam:' + e.examId, group: 'exam', pos, L: 1, color: [0.94, 0.95, 1], size: 2, from: flash ? 0.9 : 0.5, to: 0.5, t0: flash ? moved! : 0, dur: flash ? 0.3 : 0 })
+    }
+    return out
+  }
+  /** 시험 별자리 선 — 꺼진 선(점선 6%) · 그은 선(28%, V2 그어짐) · 지난 별자리(흰빛 12%). M · T */
+  private examLinks(): LinkSpec[] {
+    const p = this.preset
+    if (!(p === 'today' || p === 'landing' || p === 'map' || p === 'graph') || !this.exams.length) return []
+    const t = this.nowS()
+    const out: LinkSpec[] = []
+    const up = this.exams.filter((e) => e.dday >= 0).sort((a, b) => a.dday - b.dday)
+    const past = this.exams.filter((e) => e.dday < 0).slice(0, 6)
+    for (const e of [...up, ...past]) {
+      const ended = e.dday < 0
+      const path = this.examPath(e, this.examPos(Math.max(0, up.indexOf(e))))
+      const L = path.length - 1
+      if (L < 1) continue
+      const S = Math.max(1, Math.round(e.studyDays))
+      const done = ended || e.dday === 0 ? L : Math.min(L, S > 16 ? Math.floor((e.doneDays * 16) / S) : Math.round(e.doneDays))
+      // 새로 그은 선: 그어짐 시작 시각을 남긴다. 처음 보는 별자리는 최종 상태, 그 뒤 늘어난 선만 V2(시험 날 아침 완성은 최대 3개 차례로, 나머지 즉시)
+      const known = this.examLineT0.get(e.examId)
+      const t0s = known ? known.slice() : []
+      let animN = 0
+      for (let i = t0s.length; i < done; i++) {
+        const animate = !!known && this.mode !== 'off' && animN < 3
+        t0s[i] = animate ? t + 0.25 * animN++ : 0
+      }
+      this.examLineT0.set(e.examId, t0s)
+      for (let i = 0; i < L; i++) {
+        const a = path[i]!
+        const b = path[i + 1]!
+        if (ended) out.push({ a, b, t0: 0, dur: 0, alpha: 0.12, color: [0.94, 0.95, 1] })
+        else if (i < done) out.push({ a, b, t0: t0s[i] ?? 0, dur: t0s[i] ? 0.75 : 0, alpha: 0.28 })
+        else out.push({ a, b, t0: 0, dur: 0, alpha: 0.06, dash: true })
+      }
     }
     return out
   }

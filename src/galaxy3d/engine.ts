@@ -189,8 +189,11 @@ export interface Anchor {
   y: number
   r: number
   visible: boolean
+  /** 'plan-band': 계획 장소 은하 띠의 왼쪽 · 오른쪽 끝 x (CSS px) — y는 띠 가운데 줄 */
+  x0?: number
+  x1?: number
 }
-export type AnchorName = 'core' | 'focus-disk'
+export type AnchorName = 'core' | 'focus-disk' | 'plan-band'
 /** 데이터 별 (오늘의 별자리·복습 카드·노트 별 …): 은하 패턴 좌표(t=0) — 팔과 함께 돈다 */
 export interface DataStar {
   id: string
@@ -223,6 +226,10 @@ export interface LinkSpec {
   t0: number
   dur: number
   alpha: number
+  /** 선 색(기본 따뜻한 금빛) */
+  color?: [number, number, number]
+  /** 점선(2 · 4px) — M4 시험 별자리 '꺼진 선' */
+  dash?: boolean
 }
 export interface G3DOptions {
   /** 시제품 쿼리 문자열(?tier=…&rot=…). 앱은 비운다 */
@@ -1936,9 +1943,10 @@ function buildSegs(t: number): number {
     const e = k * k * (3 - 2 * k)
     const b: V3 = [l.a[0] + (l.b[0] - l.a[0]) * e, l.a[1] + (l.b[1] - l.a[1]) * e, l.a[2] + (l.b[2] - l.a[2]) * e]
     const o = n * 12
-    segArr[o + 8] = 0.95
-    segArr[o + 9] = 0.86
-    segArr[o + 10] = 0.68
+    segArr[o + 8] = l.color?.[0] ?? 0.95
+    segArr[o + 9] = l.color?.[1] ?? 0.86
+    segArr[o + 10] = l.color?.[2] ?? 0.68
+    segArr[o + 11] = l.dash ? 1 : 0
     segArr[o] = Math.hypot(l.a[0], l.a[2])
     segArr[o + 1] = Math.atan2(l.a[2], l.a[0])
     segArr[o + 2] = l.a[1]
@@ -1977,6 +1985,7 @@ function drawEvents(m: Float32Array, now: number) {
     gl.uniform3f(L.u.uZoneP!, cssW, cssH, featherPx)
     gl.uniform2f(L.u.uView!, W, H)
     gl.uniform1f(L.u.uWidth!, 0.6 * dpr)
+    gl.uniform1f(L.u.uDashPx!, dpr)
     gl.uniform1f(L.u.uDay!, day)
     gl.uniform1f(L.u.uSegK!, 1)
     gl.uniform1f(L.u.uCart!, 0)
@@ -2142,6 +2151,18 @@ function ringPx(m: Float32Array, R: number): number {
   }
   return n ? sum / n : 0
 }
+/** M4: 계획 장소 은하 띠 — 원반 면에서 시선에 수직인 축 ±11.5u의 화면 끝(x0 · x1)과 가운데 줄 y (CSS px) */
+function planBand(m: Float32Array, c: [number, number] | null): Anchor {
+  const B = lastBasis
+  if (!B || !c) return { x: 0, y: 0, r: 0, visible: false, x0: 0, x1: 0 }
+  const ax = norm([B.f[2], 0, -B.f[0]])
+  const p0 = projectCss(m, [ax[0] * 11.5, 0, ax[2] * 11.5])
+  const p1 = projectCss(m, [-ax[0] * 11.5, 0, -ax[2] * 11.5])
+  if (!p0 || !p1) return { x: c[0], y: c[1], r: 0, visible: false, x0: c[0], x1: c[0] }
+  const x0 = Math.min(p0[0], p1[0])
+  const x1 = Math.max(p0[0], p1[0])
+  return { x: c[0], y: c[1], r: (x1 - x0) / 2, visible: place.id === 'planner', x0, x1 }
+}
 function emitAnchors(m: Float32Array, _target: V3) {
   anchorDirty = false
   const force = anchorForce
@@ -2152,8 +2173,9 @@ function emitAnchors(m: Float32Array, _target: V3) {
     core: { x: c?.[0] ?? 0, y: c?.[1] ?? 0, r: ringPx(m, 11.5), visible: on },
     // r = 눈에 보이는 팔 고리 11.5u의 화면 반지름 — 앱이 링을 R = 1.22r(= 14u 베젤)로 그린다 (design-m1 2-3)
     'focus-disk': { x: c?.[0] ?? 0, y: c?.[1] ?? 0, r: ringPx(m, 11.5), visible: on && place.id === 'focus' },
+    'plan-band': planBand(m, c),
   }
-  for (const name of ['core', 'focus-disk'] as AnchorName[]) {
+  for (const name of ['core', 'focus-disk', 'plan-band'] as AnchorName[]) {
     const a = next[name]
     const b = anchorLast.get(name)
     if (!force && b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.r - b.r) < 0.5 && a.visible === b.visible) continue

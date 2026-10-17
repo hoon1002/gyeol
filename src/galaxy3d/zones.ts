@@ -25,7 +25,7 @@ export const SKY_ZONES: Record<ZonePlace, Record<ZoneLayout, ZoneRect[]>> = {
     phone: [[0.04, 0.07, 0.88, 0.86]],
   },
   review: {
-    land: [[0.08, 0.22, 0.4, 0.78]],
+    land: [[0.08, 0.22, 0.4, 0.78], [0.08, 0.1, 0.42, 0.9]], // M4 리더 결정 2: 후보함 가로 판 자리
     port: [[0.14, 0.56, 0.86, 0.88]],
     phone: [[0.05, 0.48, 0.95, 0.84]],
   },

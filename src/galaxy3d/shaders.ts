@@ -522,9 +522,13 @@ layout(location = 2) in vec4 a2; // 색 rgb, -
 uniform float uSegK;  // 층 전체 배수 (검색 중 ×0.5 · 장소 밖 0)
 out float vA;
 out vec3 vC;
+out float vL; // 선을 따라 간 거리(장치 px) — 점선
+out float vD; // 점선이면 1
 void main() {
   vec4 ca = uVP * vec4(posW(a0.xyz), 1.0);
   vec4 cb = uVP * vec4(posW(a1.xyz), 1.0);
+  vL = 0.0;
+  vD = a2.w;
   if (ca.w <= 0.0 || cb.w <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vA = 0.0; return; }
   vec2 pa = ca.xy / ca.w;
   vec2 pb = cb.xy / cb.w;
@@ -533,6 +537,7 @@ void main() {
   float end = float(gl_VertexID & 1);
   float side = float((gl_VertexID >> 1) & 1) * 2.0 - 1.0;
   vec2 p = mix(pa, pb, end) + nrm * side;
+  vL = end * length((pb - pa) * uView * 0.5);
   vA = a0.w * uSegK * mix(1.0, 0.3, zoneAt(p * 0.5 + 0.5));
   vC = a2.rgb;
   gl_Position = vec4(p, 0.0, 1.0);
@@ -542,9 +547,17 @@ export const SEG_FS = /* glsl */ `#version 300 es
 precision highp float;
 in float vA;
 in vec3 vC;
+in float vL;
+in float vD;
 uniform float uDay;
+uniform float uDashPx; // CSS px 1개의 장치 px (점선 2 · 4px)
 out vec4 o;
-void main() { o = uDay > 0.5 ? vec4(vA * (1.0 - vec3(0.271, 0.294, 0.345)), 1.0) : vec4(vC * vA, 1.0); }
+void main() {
+  if (vD > 0.5) {
+    float u = uDashPx > 0.0 ? uDashPx : 1.0;
+    if (mod(vL, 6.0 * u) > 2.0 * u) discard;
+  }
+  o = uDay > 0.5 ? vec4(vA * (1.0 - vec3(0.271, 0.294, 0.345)), 1.0) : vec4(vC * vA, 1.0); }
 `
 
 /* 빛줄기 층 얹기 (design-m2 4-3): 반 해상도 층에 더한 선을 한 픽셀 35%에서 잘라 캔버스에 */

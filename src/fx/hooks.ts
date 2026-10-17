@@ -355,6 +355,8 @@ export interface SkyEvents {
   inkSettled: (noteId: string, o?: { pages?: number }) => void
   /** M3 K6 메모 고정: 그 별가루 점을 고리 안쪽 자리에 멈추고(표류 0) 조금 밝게. false면 풀기 */
   pinDust: (id: string, on: boolean) => void
+  /** M4 순간 ③ 흐린 별 다시 켜기: 복습 ✓마다 그 노트 별이 짧게 밝아지고 새 bright로 800ms(지도 · 노트, 안 보이면 최종 상태만) */
+  relightNote: (noteId: string, bright: number) => void
   /** D9 과목 성운 피기 (순간 ①). 카메라는 움직이지 않는다 */
   bloomNebula: (subjectId: string, color: string) => void
   /** D10 은하 보이기: 첫 실행 자세(FieldMood 'onboarding') → 오늘, 회전 0 · 2.6초. 끝나면 resolve */
@@ -380,6 +382,7 @@ const NOOP_EVENTS: SkyEvents = {
   glintNotes: () => {},
   inkSettled: () => {},
   pinDust: () => {},
+  relightNote: () => {},
   bloomNebula: () => {},
   revealGalaxy: () => Promise.resolve(),
   importNotes: () => {},
@@ -407,6 +410,7 @@ export function useSkyEvent(): SkyEvents {
       glintNotes: (ids) => eng.glintNotes?.(ids),
       inkSettled: (id, o) => eng.inkSettled?.(id, o),
       pinDust: (id, on) => eng.pinDust?.(id, on),
+      relightNote: (id, b) => eng.relightNote?.(id, b),
       bloomNebula: (sj, c) => eng.bloomNebula?.(sj, c),
       revealGalaxy: () => eng.revealGalaxy?.() ?? Promise.resolve(),
       importNotes: (ids) => eng.importNotes?.(ids),
@@ -437,7 +441,8 @@ export interface SkyStarsSpec {
   review?: Array<{ id: string; subject: string; level: number }>
   graph?: { nodes: Array<{ id: string; subject: string; links: number }>; links: Array<[string, string]> }
   /** M2 노트 별: 지도의 과목 성운 둘레에 노트마다 별 하나(id 해시로 자리 고정). links = 링크 수(크기·밝기) */
-  notes?: Array<{ id: string; subjectId: string; links: number }>
+  /** M4: bright = 기억 밝기 0.40–1 (없으면 1, 끄면 1) — 하루 1번 바뀌면 2초(V9) */
+  notes?: Array<{ id: string; subjectId: string; links: number; bright?: number }>
   /** M2 빛줄기: 노트 사이 링크 쌍(정적 버퍼, 바뀔 때만 다시 올린다) */
   noteLinks?: Array<[string, string]>
   /** M2 과목 색 (빛줄기·노트 별 색 섞기·성운 색) */
@@ -569,7 +574,7 @@ export function useSkySheet(open: boolean): void {
  * 'focus-disk' = 집중 원반 중심·베젤 반지름(타이머 링 자리), 'core' = 은하 중심·보이는 팔 반지름.
  * 비행이 끝날 때 · 크기가 바뀔 때 · 끌기가 멈출 때만 부른다(구독하면 마지막 값을 바로 한 번).
  */
-export function useSkyAnchor(name: 'focus-disk' | 'core', cb: (a: { x: number; y: number; r: number; visible: boolean }) => void): void {
+export function useSkyAnchor(name: 'focus-disk' | 'core' | 'plan-band', cb: (a: { x: number; y: number; r: number; visible: boolean; x0?: number; x1?: number }) => void): void {
   const eng = useFieldEngine()
   const cbRef = useRef(cb)
   cbRef.current = cb
@@ -627,4 +632,17 @@ export function useSkyPaper(open: boolean): void {
       release?.()
     }
   }, [open, eng])
+}
+
+/** M4 순간 ④ 시험 별자리 (design-m4 6장): src/memory/plan.ts examSky() 결과를 그대로 넘긴다.
+ *  noteIds(범위 노트, 카드 많은 순)를 함께 주면 그 별들로 경로를 만든다 — 없으면 시험 별만.
+ *  시험 별 2.4 → 3.6px · 20 → 100%(D-day), D-3부터 성운. 꺼진 선 6% 점선 · doneDays만큼 순서대로 그은 선 28% · 시험 날 완성 · 끝나면 흰빛. */
+export function useSkyExams(list: Array<{ examId: string; dday: number; studyDays: number; doneDays: number; cardIds: string[]; noteIds?: string[] }> | null | undefined): void {
+  const eng = useFieldEngine()
+  const key = stableKey(list ?? [])
+  useEffect(() => {
+    eng?.setExams?.(list ?? [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eng, key])
+  useEffect(() => () => eng?.setExams?.([]), [eng])
 }
