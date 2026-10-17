@@ -258,3 +258,8 @@ kbd.memo-hint { font: 400 11px var(--f-mono); color: var(--text-3); border: 1px 
 .memo-box:focus { outline: none; }
 .memo-pinned { display: grid; place-items: center; color: var(--accent); }
 .memo-swipe { position: absolute; left: 0; right: 0; top: -8px; height: 32px; z-index: 1; touch-action: none; }
+/* 손글씨 메모 칸 (design-ink 8-1): 처음부터 커진 칸, 펜 아래 그림 고정 */
+.memo-box[data-ink] .memo-row { flex-wrap: wrap; }
+.memo-ink { position: relative; flex: 1 1 100%; overflow: hidden; border-radius: 10px; background: color-mix(in srgb, var(--text-1) 3%, transparent); touch-action: none; }
+.memo-ink-wait { width: 100%; height: 100%; }
+.dust-ink { display: block; max-width: 100%; color: var(--text-1); }

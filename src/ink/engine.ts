@@ -100,7 +100,7 @@ export class InkEngine {
   tape: TapeStyle = { color: TAPE_SLOTS[0]!, width: 22 }
   /** 글 상자 색 = 펜 1번 칸 */
   textColor = PEN_SLOTS[0]!
-  prefs: InkPrefs = { scratch: true, penPie: true }
+  prefs: InkPrefs = { scratch: true, penPie: true, eraserReturn: false }
   penOnlyMode: PenOnlyMode
   penOnly: boolean
   shapeArmed = false
@@ -192,8 +192,8 @@ export class InkEngine {
     const pad = this.mode === 'pad' ? o.padSize ?? [this.host.clientWidth || 320, this.host.clientHeight || 240] : null
     await this.doc.open(pad ? { template: 'blank', w: pad[0], h: pad[1] } : { template: o.template ?? 'ruled' })
     if (this.destroyed) return
-    const [scratch, penPie] = await Promise.all([getInkMeta(this.db, 'ink.scratch', true), getInkMeta(this.db, 'ink.penPie', true)])
-    this.prefs = { scratch, penPie }
+    const [scratch, penPie, eraserReturn] = await Promise.all([getInkMeta(this.db, 'ink.scratch', true), getInkMeta(this.db, 'ink.penPie', true), getInkMeta(this.db, 'ink.eraserReturn', false)])
+    this.prefs = { scratch, penPie, eraserReturn }
     this.readColors()
     this.measure()
     this.view.layout(this.doc.pages.map((p) => p.page), false)
@@ -444,6 +444,7 @@ export class InkEngine {
     this.prefs = { ...this.prefs, ...p }
     if (p.scratch !== undefined) void setInkMeta(this.db, 'ink.scratch', p.scratch)
     if (p.penPie !== undefined) void setInkMeta(this.db, 'ink.penPie', p.penPie)
+    if (p.eraserReturn !== undefined) void setInkMeta(this.db, 'ink.eraserReturn', p.eraserReturn)
   }
 
   recordInput(ms: number, ts: number, n: number): void {
@@ -1278,7 +1279,6 @@ export class InkEngine {
     ctx.clearRect(0, 0, L.a.width, L.a.height)
     L.setMode('ink')
     ctx.save()
-    L.clipPage(ctx, v, box)
     L.pageTransform(ctx, v, box)
     ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5])
     const look = { dark: this.r.views.get(pm.id)?.spec.dark ?? this.night }
@@ -1314,6 +1314,30 @@ export class InkEngine {
     this.r.items.setDrag(pm.id, s.items, null)
     this.dragM = null
     this.live.clearA()
+    // 옮긴 상자 가운데가 다른 쪽에 들면 그 쪽으로 (지우고 새 id로 넣기 = 되돌리기 1단계)
+    const box = this.selPageBox()
+    if (box && this.mode === 'note') {
+      const [cx, cy] = mApply(mul(m, s.m), (s.box[0] + s.box[2]) / 2, (s.box[1] + s.box[3]) / 2)
+      const ti = this.view.pageAt(box.x + cx, box.y + cy, 0)
+      const tb = this.view.boxes[ti]
+      const target = tb ? this.doc.byId.get(tb.id) : undefined
+      if (tb && target && target !== pm) {
+        const M = mul(translate(box.x - tb.x, box.y - tb.y), m)
+        let z = Math.max(0, ...[...target.items.values()].map((i) => i.z))
+        const ns = before.map((r) => ({ ...transformStrokeRow(r, M, now), id: uid('st'), pageId: target.id }))
+        const ni = ib.map((it) => ({ ...transformItemRow(it, M, now), id: uid('it'), pageId: target.id, z: ++z + (it.kind === 'tape' ? 1000 : 0) }))
+        this.sel = null
+        this.pushCommand({
+          label: 'move-page',
+          before: { strokes: [...before, ...ns.map((r) => deleted(r, now))], items: [...ib, ...ni.map((r) => deleted(r, now))] },
+          after: { strokes: [...before.map((r) => deleted(r, now)), ...ns], items: [...ib.map((r) => deleted(r, now)), ...ni] },
+          pageId: target.id,
+        })
+        if (target.state === 'ready') this.select(target, ns.map((r) => r.id), ni.map((r) => r.id))
+        else this.selectionChanged()
+        return
+      }
+    }
     this.pushCommand({ label: 'transform', before: { strokes: before, items: ib }, after: { strokes: after, items: ia }, pageId: pm.id })
     s.m = mul(m, s.m)
     this.drawOverlay()
@@ -1614,9 +1638,9 @@ export class InkEngine {
       else this.pushCommand({ label: 'text', before: { items: [{ ...e.before, updatedAt: now }] }, after: { items: [deleted(cur, now)] }, pageId: pm.id })
       return
     }
-    const next: InkItem = { ...cur, text: e.text, h: Math.max(e.h, (cur.fontSize ?? 12) * 1.5), updatedAt: now }
+    const next: InkItem = { ...cur, text: e.text, w: e.w, h: Math.max(e.h, (cur.fontSize ?? 12) * 1.5), updatedAt: now }
     if (e.isNew) this.pushCommand({ label: 'text', before: { items: [deleted(next, now)] }, after: { items: [next] }, pageId: pm.id })
-    else if (e.text !== (e.before.text ?? '')) this.pushCommand({ label: 'text', before: { items: [{ ...e.before, updatedAt: now }] }, after: { items: [next] }, pageId: pm.id })
+    else if (e.text !== (e.before.text ?? '') || Math.abs(e.w - e.before.w) > 0.5) this.pushCommand({ label: 'text', before: { items: [{ ...e.before, updatedAt: now }] }, after: { items: [next] }, pageId: pm.id })
     else this.doc.apply({ items: [cur] })
   }
 
@@ -1833,8 +1857,17 @@ export class InkEngine {
 
   /* ---------- 도구 ---------- */
 
+  /** 지우개를 고르기 전 도구 ('다 지우면 이전 도구로') */
+  private prevTool: ToolName = 'pen'
+
+  /** 지우개 획이 끝남: 옵션이 켜져 있으면 이전 도구로 */
+  eraserDone(): void {
+    if (this.prefs.eraserReturn && this.tool === 'eraser') this.setTool(this.prevTool)
+  }
+
   setTool(t: ToolName): void {
     if (this.tool === t) return
+    if (t === 'eraser') this.prevTool = this.tool
     if (this.sel && t !== 'lasso') this.clearSelection()
     if (this.r.items.editing && t !== 'text') this.endTextEdit()
     this.tool = t
@@ -1873,12 +1906,64 @@ export class InkEngine {
   /** 밤 종이(밤 테마) 켬·끔 */
   setNight(night: boolean): void {
     if (this.night === night) return
+    // 600ms 교차 페이드: 지금 화면을 한 장으로 찍어 위에 두고, 새 종이를 다 그린 뒤 걷어 낸다
+    const snap = matchMedia('(prefers-reduced-motion: reduce)').matches ? null : this.snapshot()
+    if (snap) {
+      this.r.stage.insertBefore(snap, this.r.L.tape)
+      const t0 = performance.now()
+      const wait = () => {
+        if (this.destroyed) return snap.remove()
+        if (this.r.pendingJobs > 0 && performance.now() - t0 < 400) return void requestAnimationFrame(wait)
+        snap.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 600, easing: 'cubic-bezier(.65,0,.35,1)', fill: 'forwards' }).onfinish = () => {
+          snap.remove()
+          snap.width = snap.height = 0
+        }
+      }
+      requestAnimationFrame(wait)
+    }
     this.night = night
     this.readColors()
     this.r.invalidateAll()
     for (const pv of this.r.views.values()) this.r.items.sync(pv)
     this.requestFrame()
     this.thumbs.clear()
+  }
+
+  /** 지금 보이는 종이 · 틀 · PDF · 형광 · 잉크를 화면 크기 한 장으로 (테마 교차 페이드용) */
+  private snapshot(): HTMLCanvasElement {
+    const v = this.view
+    const c = document.createElement('canvas')
+    c.width = Math.round(v.W * v.dpr)
+    c.height = Math.round(v.H * v.dpr)
+    c.className = 'ink-snap'
+    c.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;z-index:9;pointer-events:none'
+    const ctx = c.getContext('2d')!
+    const dpr = v.dpr
+    const [i0, i1] = v.range(0)
+    for (let i = i0; i >= 0 && i <= i1; i++) {
+      const b = v.boxes[i]!
+      const pv = this.r.views.get(b.id)
+      if (!pv) continue
+      const [x, y] = v.toScreen(b.x, b.y)
+      ctx.fillStyle = this.mode === 'pad' ? 'transparent' : pv.spec.bg.startsWith('var') ? '#FBFAF7' : pv.spec.bg
+      ctx.fillRect(x * dpr, y * dpr, b.w * v.s * dpr, b.h * v.s * dpr)
+    }
+    ctx.drawImage(this.r.tpl, 0, 0)
+    for (const l of ['pdf', 'hl', 'ink'] as const)
+      for (const pv of this.r.views.values())
+        for (const lv of ['base', 'detail'] as const) {
+          const sl = pv.slots[l][lv]
+          if (!sl) continue
+          const [x, y] = v.toScreen(pv.box.x + sl.region[0], pv.box.y + sl.region[1])
+          ctx.save()
+          if (l === 'hl') {
+            ctx.globalAlpha = pv.spec.hlOpacity
+            ctx.globalCompositeOperation = pv.spec.hlBlend
+          }
+          ctx.drawImage(sl.el, x * dpr, y * dpr, (sl.region[2] - sl.region[0]) * v.s * dpr, (sl.region[3] - sl.region[1]) * v.s * dpr)
+          ctx.restore()
+        }
+    return c
   }
 
   /* ---------- PDF · 내보내기 · 썸네일 ---------- */

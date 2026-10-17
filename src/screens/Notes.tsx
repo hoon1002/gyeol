@@ -4,12 +4,13 @@
  * 세로·폰 = 한 칸에서 목록 ↔ 종이(‹). 편집기는 노트를 열 때 동적 import(첫 화면 번들 밖).
  * 하늘: 노트 별 데이터(책등 위 점), 찾는 동안 glintNotes.
  */
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { ActiveMood as FieldMood, useActive } from '@/app/keepAlive'
 import { useSkyEvent } from '@/fx'
 import { useNotes, useNow, usePlanner, useSubjects } from '@/db/hooks'
-import { db, type CourseSlot, type Note, type Subject } from '@/db/schema'
+import { db, type CourseSlot, type Note, type PageTemplate, type Subject } from '@/db/schema'
 import { classKeyFor, createNote, findNoteByClassKey, openOrCreateNote, useNoteStars, useSkySubjects } from '@/db/notes'
 import { isIndexReady, searchAll, useSearchVersion, type Hit } from '@/search'
 import { matchText } from '@/lib/hangul'
@@ -21,11 +22,21 @@ import { spaceOf } from '@/shell/spaces'
 import { tip } from '@/shell/Tip'
 import { IconBack, IconDeck, IconDoc, IconPdf, IconPen, IconPlus, IconSearch } from '@/shell/icons'
 import { Backlinks } from '@/editor/Backlinks'
+import { pickPdf, setPendingPdf } from '@/editor/inkState'
+import { pushLayer } from '@/shell/layers'
 import { NotesMapToggle } from './Map'
 import { Hero } from './parts'
 import { isTyping, screenKey } from './keyScope'
 
 const NotePaper = lazy(() => import('@/editor/NotePaper'))
+/** 필기 · PDF 노트의 종이 펼치기(잉크 엔진과 함께 지연 로드) */
+const InkSheet = lazy(() => import('@/editor/InkSheet'))
+
+const isPaperKind = (n: Pick<Note, 'kind'> | undefined) => n?.kind === 'ink' || n?.kind === 'pdf'
+const centerOf = (el: Element | null | undefined) => {
+  const r = el?.getBoundingClientRect()
+  return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null
+}
 
 const KIND_NAME = { ink: '필기', doc: '문서', pdf: 'PDF', deck: '카드 덱' } as const
 const KIND_ICON = { ink: IconPen, doc: IconDoc, pdf: IconPdf, deck: IconDeck } as const
@@ -78,6 +89,11 @@ export function NotesScreen() {
   const list = alive.filter((n) => !lens || n.subjectId === lens)
   const subj = (id: string | null | undefined): Subject | undefined => subjects.find((s) => s.id === id)
   const today = useTodayClass(now, forceEmpty)
+  // 필기 노트 첫 쪽 썸네일(종이를 닫을 때 · 쓰고 쉴 때 잉크 엔진이 찍어 둔 것)
+  const thumbs = useLiveQuery(async () => {
+    const rows = await db.meta.where('key').startsWith('ink.thumb.').toArray()
+    return new Map(rows.map((r) => [r.key.slice('ink.thumb.'.length), (r.value as { url?: string } | undefined)?.url ?? '']))
+  }, [])
 
   // ----- 찾기 -----
   const ver = useSearchVersion()
@@ -152,19 +168,71 @@ export function NotesScreen() {
 
   // ----- 고른 노트: 가로는 없으면 맨 위, 세로·폰은 누른 것만 -----
   const focus: Note | undefined = (focusId ? byId.get(focusId) : undefined) ?? (land ? (today?.note ?? list[0]) : undefined)
-  const open = (id: string) => {
+
+  // ----- 종이 펼치기(필기 · PDF 노트) -----
+  const [ink, setInk] = useState<{ note: Note; template: PageTemplate; origin: { x: number; y: number } | null } | null>(null)
+  const openPaper = (n: Note, o: { template?: PageTemplate; from?: Element | null } = {}) => {
+    setInk({ note: n, template: o.template ?? 'ruled', origin: centerOf(o.from) })
+  }
+  const closePaper = () => {
+    setInk(null)
+    if (!land) setFocus(null)
+  }
+  // 밖(⌘K · 지도 별 · 별가루)에서 필기 노트에 초점을 주면 펼친다 — 새로 만든 노트는 목록에 들어온 뒤에
+  const pendingFocus = useRef<string | null>(focusId)
+  useEffect(() => {
+    pendingFocus.current = focusId
+  }, [focusId])
+  useEffect(() => {
+    const id = pendingFocus.current
+    if (!id || !active) return
+    const n = byId.get(id)
+    if (!n) return
+    pendingFocus.current = null
+    if (isPaperKind(n) && ink?.note.id !== id) openPaper(n)
+  })
+  useEffect(() => {
+    if (!active) setInk(null)
+  }, [active])
+  const inkNote = ink ? (byId.get(ink.note.id) ?? ink.note) : null
+
+  const open = (id: string, from?: Element | null) => {
+    pendingFocus.current = null
     setFocus(id)
     setQ('')
+    const n = byId.get(id)
+    if (n && isPaperKind(n)) openPaper(n, { from })
   }
-  const newNote = async () => {
+  /** 입력한 손이 정한다(design-ink 1-1 · 리더 결정 4): 펜 = 필기(빈 쪽 · 줄), 손가락 · 마우스 · 키보드 = 글 */
+  const newNote = async (hand: 'doc' | 'ink' = 'doc', from?: Element | null) => {
+    if (hand === 'ink') {
+      const n = await createNote({ kind: 'ink', subjectId: lens ?? null })
+      pendingFocus.current = null
+      setFocus(n.id)
+      openPaper(n, { from })
+      return
+    }
     const n = await createNote({ subjectId: lens ?? null })
     setTitleFor(n.id)
     open(n.id)
   }
-  const openToday = async () => {
+  const importPdf = async () => {
+    const f = await pickPdf()
+    if (!f) return
+    const n = await createNote({ kind: 'pdf', title: f.name.replace(/\.pdf$/i, ''), subjectId: lens ?? null })
+    setPendingPdf(n.id, f)
+    pendingFocus.current = null
+    setFocus(n.id)
+    openPaper(n, { template: 'blank' })
+  }
+  /** 오늘 수업 노트: 펜으로 누르면 코넬 틀 필기 노트(design-ink 1-1) */
+  const openToday = async (pen = false, from?: Element | null) => {
     if (!today) return
-    const r = await openOrCreateNote({ classKey: today.key, subjectId: today.slot.subjectId, template: 'class' })
-    open(r.note.id)
+    const r = await openOrCreateNote({ classKey: today.key, subjectId: today.slot.subjectId, ...(pen ? { kind: 'ink' as const, pageTemplate: 'cornell' as const } : { template: 'class' as const }) })
+    pendingFocus.current = null
+    setFocus(r.note.id)
+    setQ('')
+    if (isPaperKind(r.note)) openPaper(r.note, { template: 'cornell', from })
   }
   const roomOf = (n: Note): string | null => {
     if (n.template !== 'class' || !n.classKey || !planner) return null
@@ -176,7 +244,21 @@ export function NotesScreen() {
   }
 
   const skyStars = useMemo(() => (stars ? { notes: stars.notes, noteLinks: stars.noteLinks, subjects: skySubjects } : undefined), [stars, skySubjects])
-  const mood = <FieldMood preset={SKY.mood} drag={SKY.drag} stars={skyStars} />
+  const sheet =
+    inkNote && active
+      ? createPortal(
+          <Suspense fallback={null}>
+            <InkSheet key={inkNote.id} note={inkNote} template={ink!.template} origin={ink!.origin} active={active} onClose={closePaper} />
+          </Suspense>,
+          document.body,
+        )
+      : null
+  const mood = (
+    <>
+      <FieldMood preset={SKY.mood} drag={SKY.drag} stars={skyStars} />
+      {sheet}
+    </>
+  )
 
   const paper = focus ? (
     <PaperSlot
@@ -191,6 +273,7 @@ export function NotesScreen() {
       onOpenNote={open}
       onBack={land ? undefined : () => setFocus(null)}
       onDeleted={() => setFocus(null)}
+      thumb={thumbs?.get(focus.id)}
     />
   ) : null
 
@@ -244,9 +327,7 @@ export function NotesScreen() {
           )}
         </label>
       )}
-      <button type="button" className="gold-btn" {...tip('새 노트')} onClick={() => void newNote()}>
-        <IconPlus size={22} />
-      </button>
+      <NewNoteButton onDoc={() => void newNote('doc')} onInk={(el) => void newNote('ink', el)} onPdf={() => void importPdf()} />
     </div>
   )
 
@@ -261,7 +342,7 @@ export function NotesScreen() {
           {today && (
             <ul className="recent notes-list">
               <li className="notes-today">
-                <TodayClassRow today={today} onOpen={() => void openToday()} />
+                <TodayClassRow today={today} onOpen={(pen, el) => void openToday(pen, el)} />
               </li>
             </ul>
           )}
@@ -281,7 +362,7 @@ export function NotesScreen() {
         <ul className="recent notes-list enter enter-2" aria-label={q ? '찾은 노트' : '노트 목록'}>
           {!q && today && (
             <li className="notes-today">
-              <TodayClassRow today={today} current={focus?.id} onOpen={() => void openToday()} />
+              <TodayClassRow today={today} current={focus?.id} onOpen={(pen, el) => void openToday(pen, el)} />
             </li>
           )}
           {rows.slice(0, LIST_MAX).map(({ n, hit }) => {
@@ -295,11 +376,12 @@ export function NotesScreen() {
                   aria-current={on || undefined}
                   className={on ? 'is-on' : undefined}
                   data-tip={`${KIND_NAME[n.kind]} · ${fmtAgo(Date.now(), n.updatedAt)}`}
-                  onClick={() => open(n.id)}
+                  onClick={(e) => open(n.id, e.currentTarget)}
                 >
                   <span className="nl-line">
                     <RowMark n={n} s={s} />
                     <span className="nl-t">{hit?.titleRange && n.title.trim() ? <Mark text={name} range={hit.titleRange} /> : name}</span>
+                    {thumbs?.get(n.id) && <img className="nl-thumb" src={thumbs.get(n.id)} alt="" aria-hidden="true" />}
                   </span>
                   {hit?.snippet && (
                     <small className="notes-snip">
@@ -340,9 +422,10 @@ function PaperSlot(props: {
   active: boolean
   load: boolean
   focusTitle: boolean
-  onOpenNote: (id: string) => void
+  onOpenNote: (id: string, from?: Element | null) => void
   onBack?: () => void
   onDeleted: () => void
+  thumb?: string
 }) {
   const { note } = props
   if (note.kind !== 'doc') {
@@ -355,6 +438,9 @@ function PaperSlot(props: {
               <IconBack size={20} />
             </button>
           )}
+          <button type="button" className="np-o-open" {...tip('펼치기', { kbd: '↵' })} onClick={(e) => props.onOpenNote(note.id, e.currentTarget)}>
+            {props.thumb ? <img src={props.thumb} alt="" /> : <IconPen size={22} />}
+          </button>
           <p className="np-o-t">{noteName(note)}</p>
           <p className="np-o-m">
             <i className={`sdot${s ? '' : ' is-none'}`} style={s ? { ['--c' as string]: `var(--s-${s.color})` } : undefined} {...tip(s?.name ?? '과목 없음')} />
@@ -414,14 +500,18 @@ function useTodayClass(now: Date, forceEmpty: boolean): TodayClass | null | unde
   }, [minuteKey, forceEmpty])
 }
 
-function TodayClassRow({ today, current, onOpen }: { today: TodayClass; current?: string; onOpen: () => void }) {
+function TodayClassRow({ today, current, onOpen }: { today: TodayClass; current?: string; onOpen: (pen: boolean, el: Element) => void }) {
+  const hand = useRef('mouse')
+  const down = (e: ReactPointerEvent) => {
+    hand.current = e.pointerType
+  }
   const s = today.subject
   const name = s?.short ?? s?.name ?? '수업'
   const dot = <i className={`sdot${s ? '' : ' is-none'}`} style={s ? { ['--c' as string]: `var(--s-${s.color})` } : undefined} aria-hidden="true" />
   if (today.note) {
     const on = today.note.id === current
     return (
-      <button type="button" aria-current={on || undefined} className={`notes-today-row${on ? ' is-on' : ''}`} data-tip="오늘" onClick={onOpen}>
+      <button type="button" aria-current={on || undefined} className={`notes-today-row${on ? ' is-on' : ''}`} data-tip="오늘" onPointerDown={down} onClick={(e) => onOpen(hand.current === 'pen', e.currentTarget)}>
         <span className="nl-line">
           <span className="nl-mark" aria-hidden="true">
             <IconDoc size={13} />
@@ -434,12 +524,122 @@ function TodayClassRow({ today, current, onOpen }: { today: TodayClass; current?
   }
   // 없을 때: 점선 고리 ＋ · 과목 점 · 15:00 (이름은 툴팁)
   return (
-    <button type="button" className="notes-today-row is-new" {...tip(`오늘 ${name} 수업 노트`)} onClick={onOpen}>
+    <button
+      type="button"
+      className="notes-today-row is-new"
+      {...tip(`오늘 ${name} 수업 노트`)}
+      onPointerDown={down}
+      onClick={(e) => {
+        onOpen(hand.current === 'pen', e.currentTarget)
+        hand.current = 'mouse'
+      }}
+    >
       <span className="nt-ring" aria-hidden="true">
         <IconPlus size={14} />
       </span>
       {dot}
       <span className="mono">{today.slot.start}</span>
     </button>
+  )
+}
+
+/**
+ * 금빛 ＋ — 입력한 손이 정한다(design-ink 1-1 · 리더 결정 4): 펜으로 누르면 필기 노트(빈 쪽 · 줄), 손가락 · 마우스 · 키보드는 글 노트.
+ * 길게 누르기(손가락 450ms · 펜 · 마우스 600ms) · 오른쪽 클릭 · 메뉴 키 = 둥근 고르기 3칸: 글(12시) · 필기(4시) · PDF 가져오기(8시).
+ */
+function NewNoteButton({ onDoc, onInk, onPdf }: { onDoc: () => void; onInk: (el: Element | null) => void; onPdf: () => void }) {
+  const [pick, setPick] = useState(false)
+  const box = useRef<HTMLSpanElement>(null)
+  const press = useRef<{ timer: number; long: boolean; x: number; y: number } | null>(null)
+  const hand = useRef('mouse')
+  useEffect(() => {
+    if (!pick) return
+    const off = (e: PointerEvent) => {
+      if (!box.current?.contains(e.target as Node)) setPick(false)
+    }
+    document.addEventListener('pointerdown', off)
+    const release = pushLayer({ id: 'new-note-pick', close: () => setPick(false), restoreFocusTo: box.current?.querySelector('.gold-btn') ?? null, el: box.current })
+    return () => {
+      document.removeEventListener('pointerdown', off)
+      release()
+    }
+  }, [pick])
+  const choose = (k: 'doc' | 'ink' | 'pdf') => {
+    setPick(false)
+    if (k === 'doc') onDoc()
+    else if (k === 'ink') onInk(box.current)
+    else onPdf()
+  }
+  const stop = () => {
+    const p = press.current
+    if (p) window.clearTimeout(p.timer)
+  }
+  return (
+    <span className={`nn-wrap${pick ? ' is-open' : ''}`} ref={box}>
+      <button
+        type="button"
+        className="gold-btn"
+        {...tip('새 노트')}
+        data-radial=""
+        aria-haspopup="menu"
+        aria-expanded={pick}
+        onPointerDown={(e) => {
+          hand.current = e.pointerType
+          if (e.button !== 0) return
+          const p = { timer: 0, long: false, x: e.clientX, y: e.clientY }
+          p.timer = window.setTimeout(() => {
+            p.long = true
+            setPick(true)
+          }, e.pointerType === 'touch' ? 450 : 600)
+          press.current = p
+        }}
+        onPointerMove={(e) => {
+          const p = press.current
+          if (p && !p.long && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) {
+            stop()
+            press.current = null
+          }
+        }}
+        onPointerUp={stop}
+        onPointerCancel={() => {
+          stop()
+          press.current = null
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          stop()
+          setPick(true)
+        }}
+        onClick={(e) => {
+          const p = press.current
+          press.current = null
+          if (p?.long || pick) return
+          // 키보드(detail 0) · 손가락 · 마우스 = 글, 펜 = 필기
+          if (e.detail !== 0 && hand.current === 'pen') onInk(e.currentTarget)
+          else onDoc()
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+            e.preventDefault()
+            setPick(true)
+          }
+        }}
+      >
+        <IconPlus size={22} />
+      </button>
+      {pick && (
+        <span className="nn-pick" role="menu" aria-label="새 노트">
+          <button type="button" role="menuitem" className="nn-i nn-i-0" {...tip('글 노트')} onClick={() => choose('doc')} autoFocus>
+            <IconDoc size={20} />
+          </button>
+          <button type="button" role="menuitem" className="nn-i nn-i-1" {...tip('필기 노트')} onClick={() => choose('ink')}>
+            <IconPen size={20} />
+          </button>
+          <button type="button" role="menuitem" className="nn-i nn-i-2" {...tip('PDF 가져오기')} onClick={() => choose('pdf')}>
+            <IconPdf size={20} />
+          </button>
+        </span>
+      )}
+    </span>
   )
 }

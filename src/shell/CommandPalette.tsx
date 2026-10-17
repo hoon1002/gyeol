@@ -17,6 +17,7 @@ import { useFieldPause, useSkyEvent } from '@/fx'
 import { db, uid, type Note, type Subject } from '@/db/schema'
 import { useNotes, useNow, useSubjects } from '@/db/hooks'
 import { createNote, onNoteCreated } from '@/db/notes'
+import { pickPdf, setPendingPdf, usePaperOpen } from '@/editor/inkState'
 import { openDust, saveMemo } from '@/capture/api'
 import { isIndexReady, scheduleIndexBuild, searchAll, useSearchVersion, type Hit } from '@/search'
 import { matchText } from '@/lib/hangul'
@@ -27,12 +28,21 @@ import { useSettings, type ThemePref } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import type { MotionLevel } from '@/fx'
 import { useEffectiveMotion, useGo, useIsPhone } from './hooks'
-import { IconDeck, IconDoc, IconDust, IconFlag, IconFocus, IconMore, IconMotion, IconPdf, IconPen, IconPlan, IconReview, IconSearch, IconTheme } from './icons'
+import { IconDeck, IconDoc, IconDust, IconExport, IconFlag, IconFocus, IconLock, IconMore, IconMotion, IconNote, IconPdf, IconPen, IconPlan, IconReview, IconSearch, IconTheme, IconUndo } from './icons'
 import { tip } from './Tip'
 import { useHintCount } from './hints'
 import { pushLayer } from './layers'
 import '@/styles/search.css'
 import { SPACES } from './spaces'
+
+type InkModule = typeof import('@/ink')
+
+/** 손글씨 명령 줄 아이콘(무리별 하나, 첫 화면 번들의 shell 아이콘만) */
+const INK_GROUP_ICON: Record<string, (p: { size?: number }) => ReactNode> = {
+  tool: IconPen, insert: IconDoc, edit: IconUndo, page: IconNote, tape: IconLock, view: IconSearch, file: IconExport, toggle: IconMotion, note: IconNote, memo: IconDust,
+}
+/** 빈 입력일 때 먼저 보일 손글씨 명령 */
+const INK_FIRST = ['ink.undo', 'ink.redo', 'ink.page.add', 'ink.drawer', 'ink.tool.pen', 'ink.tool.highlighter', 'ink.tool.eraser', 'ink.close']
 
 interface Item {
   id: string
@@ -50,6 +60,12 @@ interface Item {
   note?: Note
   /** 툴팁 · 읽기용 이름(줄 글과 다를 때, 예: '메모로 저장') */
   tipLabel?: string
+  /** 오른쪽 단축키(모노 11px) — 손글씨 명령 */
+  kbd?: string
+  /** 지금은 고를 수 없음(30%로 흐림) */
+  disabled?: boolean
+  /** 켜고 끄는 명령의 지금 상태(줄 끝 점) */
+  on?: boolean
   run: (el: Element | null) => void
 }
 
@@ -127,6 +143,17 @@ function Palette() {
   const panelRef = useRef<HTMLDivElement>(null)
   const sky = useSkyEvent()
   const indexVer = useSearchVersion()
+  // 종이가 펼쳐져 있으면 손글씨 명령을 먼저(design-ink 0-4). 잉크 모듈은 그때만 불러온다(첫 화면 번들 밖)
+  const paperId = usePaperOpen()
+  const [inkMod, setInkMod] = useState<InkModule | null>(null)
+  useEffect(() => {
+    if (!paperId || inkMod) return
+    let alive = true
+    void import('@/ink').then((m) => alive && setInkMod(m))
+    return () => {
+      alive = false
+    }
+  }, [paperId, inkMod])
 
   // 겹침 층: Esc는 전역 관리자가 맨 위 층만 닫는다(별 패널 위에 ⌘K를 열어도 ⌘K만 닫힘)
   useEffect(() => pushLayer({ id: 'palette', close: () => close(), el: panelRef.current }), [close])
@@ -152,6 +179,21 @@ function Palette() {
   /** 새 문서 노트를 만들고 노트 화면에서 연다(제목에 커서는 노트 화면이 맡지 않으므로 목록 맨 위에 선다) */
   const newNoteAndOpen = async (subjectId: string | null, el: Element | null) => {
     const n = await createNote({ subjectId })
+    ui().setNoteFocusId(n.id)
+    void go('/notes', el)
+  }
+
+  /** 새 필기 노트 · PDF 가져오기 → 노트 화면에서 종이를 펼친다(노트 화면이 초점을 보고 연다) */
+  const newInkAndOpen = async (el: Element | null) => {
+    const n = await createNote({ kind: 'ink' })
+    ui().setNoteFocusId(n.id)
+    void go('/notes', el)
+  }
+  const importPdfAndOpen = async (el: Element | null) => {
+    const f = await pickPdf()
+    if (!f) return
+    const n = await createNote({ kind: 'pdf', title: f.name.replace(/\.pdf$/i, '') })
+    setPendingPdf(n.id, f)
     ui().setNoteFocusId(n.id)
     void go('/notes', el)
   }
@@ -301,6 +343,16 @@ function Palette() {
       run: (el) => after(() => void newNoteAndOpen(null, el)),
     })
     list.push({
+      id: 'cmd-new-ink', group: '명령', label: '새 필기 노트', keywords: ['필기', '손글씨', '새 필기', '펜', 'ink', 'pen'],
+      icon: <IconPen size={17} />,
+      run: (el) => after(() => void newInkAndOpen(el)),
+    })
+    list.push({
+      id: 'cmd-pdf-import', group: '명령', label: 'PDF 가져오기', keywords: ['pdf', '가져오기', '파일', 'import', '필기'],
+      icon: <IconPdf size={17} />,
+      run: (el) => after(() => void importPdfAndOpen(el)),
+    })
+    list.push({
       id: 'cmd-dust', group: '이동', label: '별가루', keywords: ['별가루', '메모', '메모함', 'inbox', 'dust', '별가루함'],
       icon: <IconDust size={17} />,
       run: (el) => after(() => openDust(el)),
@@ -316,8 +368,27 @@ function Palette() {
       }
     }
 
-    // ---- 빈 입력: 최근 노트 5 ----
-    if (!q) return notes.slice(0, 5).map((n) => ({ ...noteRow(n), group: '최근' }))
+    // ---- 손글씨 명령(종이가 펼쳐져 있을 때만, 먼저) ----
+    const inkRows: Item[] = []
+    if (paperId && inkMod) {
+      const eng = inkMod.getActiveInkEngine()
+      const cmds = inkMod.INK_COMMANDS.filter((c) => !c.noEngine)
+      const ordered = q ? cmds : [...INK_FIRST.map((id) => cmds.find((c) => c.id === id)).filter((c): c is (typeof cmds)[number] => !!c)]
+      for (const c of ordered) {
+        const m = q ? matchText(c.name, q, c.aliases ?? []) : { score: 1, range: null }
+        if (m.score <= 0) continue
+        const Ic = INK_GROUP_ICON[c.group] ?? IconPen
+        inkRows.push({
+          id: 'ink-' + c.id, group: '손글씨', label: c.name, range: m.range, tipLabel: '손글씨', kbd: c.kbd,
+          disabled: !!(eng && c.enabled && !c.enabled(eng)), on: !!(eng && c.on?.(eng)),
+          icon: <Ic size={17} />,
+          run: () => after(() => void inkMod.runInkCommand(c.id)),
+        })
+      }
+    }
+
+    // ---- 빈 입력: 종이가 펼쳐져 있으면 손글씨 명령, 아니면 최근 노트 5 ----
+    if (!q) return inkRows.length ? inkRows.slice(0, 8) : notes.slice(0, 5).map((n) => ({ ...noteRow(n), group: '최근' }))
 
     // ① 장소·명령 ≤ 2. 자연어 명령(동작)은 질의에 동작 신호(집중 · n분 · 추가 · 마감 · 복습 …, parser intent)가 있을 때만 위에 둔다.
     //    신호 없이 과목 별칭만 맞으면('라플라스', '물리') 노트·메모가 먼저, 그 과목 명령·렌즈는 아래쪽 제안('공업수학 25분 집중 ›')으로만.
@@ -380,10 +451,10 @@ function Palette() {
     const ql = q.toLowerCase()
     const titleOf = (it: Item) => (it.note ? it.note.title : it.label).trim().toLowerCase()
     const lead = noteHits.find((it) => titleOf(it) === ql) ?? noteHits.find((it) => titleOf(it).startsWith(ql))
-    const rows = [...(lead ? [lead] : []), ...strongHead, ...noteHits.filter((it) => it !== lead), ...memoHits, ...weakHead]
+    const rows = [...inkRows.slice(0, 4), ...(lead ? [lead] : []), ...strongHead, ...noteHits.filter((it) => it !== lead), ...memoHits, ...weakHead]
     // 8줄 고정: 마지막 줄은 늘 '메모로 저장'
     return [...rows.slice(0, 7), save]
-  }, [query, parsed, subjects, notes, now, themePref, motionLevel, indexVer, sky])
+  }, [query, parsed, subjects, notes, now, themePref, motionLevel, indexVer, sky, paperId, inkMod])
 
   const selected = items.find((it) => it.id === value) ?? items[0]
   // 미리보기 칸 = 노트를 고를 때만, 본문 앞 3줄(데이터). 본문이 없거나 노트가 아니면 칸이 없다(리더 결정 5)
@@ -488,6 +559,7 @@ function Palette() {
                   value={it.id}
                   data-id={it.id}
                   onSelect={runSelected}
+                  disabled={it.disabled}
                   className={`pal-item pal-k-${it.group === '최근' ? 'note' : it.id.split('-')[0]}`}
                   style={{ ['--c' as string]: it.color ?? 'var(--text-2)' }}
                   {...(it.tipLabel ? { 'aria-label': `${it.tipLabel} ${it.label}`, 'data-tip': it.tipLabel } : {})}
@@ -503,7 +575,12 @@ function Palette() {
                       </small>
                     )}
                   </span>
-                  {it.meta ? (
+                  {it.kbd || it.on ? (
+                    <span className="pal-meta pal-kbd">
+                      {it.on && <i className="pal-on" aria-label="켬" />}
+                      {it.kbd}
+                    </span>
+                  ) : it.meta ? (
                     <span className="pal-meta">
                       <i className={`sdot${it.meta.dot ? '' : ' is-none'}`} style={it.meta.dot ? { ['--c' as string]: it.meta.dot } : undefined} aria-hidden="true" />
                       {it.meta.text}

@@ -32,6 +32,12 @@ export interface InkSurfaceProps {
   onClose?: () => void
   /** 닫을 때: 이번에 획이 늘어난 쪽 수 */
   onPagesWritten?: (pages: number, strokesAdded: number) => void
+  /** 서랍 머리의 노트 제목 (없으면 notes에서 읽는다) */
+  title?: string
+  /** 이름 바꾸기를 앱이 처리할 때 (없으면 notes.title을 직접 고친다) */
+  onRename?: (title: string) => void
+  /** 내보내기 결과를 앱이 받을 때 (없으면 공유 시트 · 내려받기) */
+  onExport?: (kind: 'pdf' | 'png', blob: Blob) => void
 }
 
 function themeNight(): boolean {
@@ -83,7 +89,7 @@ export function InkSurface(props: InkSurfaceProps) {
   return (
     <div className={'ink-surface' + (props.className ? ' ' + props.className : '')} style={{ position: 'relative', width: '100%', height: '100%', ...props.style }}>
       <div ref={hostRef} className="ink-canvas" style={{ position: 'absolute', inset: 0 }} aria-label="필기" role="application" />
-      {ui && engine && <InkToolbar engine={engine} />}
+      {ui && engine && <InkToolbar engine={engine} title={props.title} onRename={props.onRename} onExport={props.onExport} />}
     </div>
   )
 }

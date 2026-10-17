@@ -3,7 +3,8 @@
  * 둥근 메뉴 · 선택 칸 · 쪽 번호 · 되돌리기 칩 · 테이프 칩 · 쪽 서랍. 모든 동작은 INK_COMMANDS id 또는 엔진 메서드를 부른다.
  * 떠 있는 것은 blur 없이 --surface-2 96%, transform · opacity · clip-path로만 움직인다. Esc · 두 손가락 탭은 맨 위 층만 닫는다(layers.ts).
  */
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useHint } from '@/shell/hints'
 import { IconEraser, IconLasso, IconMore, IconPlus, IconSearch, IconTrash } from '@/shell/icons'
 import { tip } from '@/shell/Tip'
 import { closeTopLayer, isLayerOpen, pushLayer } from '@/shell/layers'
@@ -59,7 +60,17 @@ function useLayer(open: boolean, id: string, close: () => void) {
   }, [open, id])
 }
 
-export function InkToolbar({ engine: e }: { engine: InkEngine }) {
+export interface InkToolbarProps {
+  engine: InkEngine
+  /** 노트 제목 (없으면 DB에서 읽는다) */
+  title?: string
+  /** 이름 바꾸기 (없으면 notes.title을 직접 고친다) */
+  onRename?: (title: string) => void
+  /** 내보내기 결과 (없으면 공유 시트 · 내려받기) */
+  onExport?: (kind: 'pdf' | 'png', blob: Blob) => void
+}
+
+export function InkToolbar({ engine: e, title, onRename, onExport }: InkToolbarProps) {
   const [tool, setTool] = useState<ToolName>(e.tool)
   const [k, setK] = useState<Tools>(DEF_TOOLS)
   const [dock, setDock] = useState<Dock>({ edge: phone() ? 'bottom' : 'top', t: 0.5 })
@@ -319,7 +330,10 @@ export function InkToolbar({ engine: e }: { engine: InkEngine }) {
       <PageNumber engine={e} />
       <UndoChip engine={e} edge={dock.edge} />
       <TapeChips engine={e} />
-      <PageDrawer engine={e} />
+      <PageDrawer engine={e} title={title} onRename={onRename} />
+      <ExportPop engine={e} onExport={onExport} />
+      <InkHints engine={e} edge={dock.edge} />
+      <PenOnlyMark engine={e} pill={pillRef} />
       {void force}
     </>
   )
@@ -372,6 +386,7 @@ function Popover({ kind, engine: e, tool, k, save, close, edge }: { kind: 'color
             onClick={() => {
               if (id === 'ink.search') e.emit('ui', { id: 'ink.search' })
               else run(id, e)
+              if (id === 'ink.insert.text' || id === 'ink.insert.image') e.emit('ui', { id: 'hint.pie' })
               close()
             }}
           >
@@ -402,6 +417,13 @@ function Popover({ kind, engine: e, tool, k, save, close, edge }: { kind: 'color
           <div className="ink-seg">
             <button className={'ink-btn' + (k.hl.straight ? ' is-toggled' : '')} {...tip('곧게')} onClick={() => save({ ...k, hl: { ...k.hl, straight: !k.hl.straight } })}>
               <IconHighlighter />
+            </button>
+          </div>
+        )}
+        {tool === 'eraser' && (
+          <div className="ink-seg">
+            <button className={'ink-btn' + (e.prefs.eraserReturn ? ' is-toggled' : '')} {...tip('다 지우면 이전 도구로')} onClick={() => (e.setPrefs({ eraserReturn: !e.prefs.eraserReturn }), close())}>
+              <IconUndoInk />
             </button>
           </div>
         )}
@@ -798,42 +820,97 @@ function TapeChips({ engine: e }: { engine: InkEngine }) {
 
 /* ---------- 쪽 서랍 (5장) ---------- */
 
-function PageDrawer({ engine: e }: { engine: InkEngine }) {
+function PageDrawer({ engine: e, title, onRename }: { engine: InkEngine; title?: string; onRename?: (t: string) => void }) {
   const [open, setOpen] = useState(false)
   const [pages, setPages] = useState<PageInfo[]>(e.pageInfos())
   const [cur, setCur] = useState(0)
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
   const [menu, setMenu] = useState<string | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
+  const [name, setName] = useState(title ?? '')
+  const [editing, setEditing] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
+  const q = useRef<{ list: string[]; busy: boolean }>({ list: [], busy: false })
   useLayer(open, 'ink-drawer', () => setOpen(false))
+  useEffect(() => {
+    if (title !== undefined) setName(title)
+    else void e.db.notes.get(e.noteId).then((n) => n && setName(n.title))
+  }, [e, title])
+  // 썸네일: 보이는 근처부터, 쉴 때 하나씩 (200쪽 넘는 PDF도 막히지 않게)
+  const pump = () => {
+    const s = q.current
+    if (s.busy) return
+    const id = s.list.shift()
+    if (!id) return
+    s.busy = true
+    const idle = (window as Window & { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback ?? ((f: () => void) => window.setTimeout(f, 16))
+    idle(
+      () =>
+        void e.thumbnail(id, 240).then(
+          (c) => {
+            if (c) setThumbs((t) => ({ ...t, [id]: c.toDataURL('image/png') }))
+            s.busy = false
+            pump()
+          },
+          () => {
+            s.busy = false
+            pump()
+          },
+        ),
+      { timeout: 500 },
+    )
+  }
+  const want = (id: string) => {
+    const s = q.current
+    if (!s.list.includes(id)) s.list.unshift(id)
+    pump()
+  }
   useEffect(() => {
     const offs = [
       e.on('pages', setPages),
       e.on('view', (v) => setCur(v.page)),
-      e.on('ui', ({ id }) => id === 'ink.drawer' && setOpen((o) => !o)),
+      e.on('ui', ({ id }) => {
+        if (id === 'ink.drawer') setOpen((o) => !o)
+        if (id === 'ink.rename') {
+          setOpen(true)
+          setEditing(true)
+        }
+      }),
       e.on('edgeswipe', () => setOpen(true)),
-      e.on('thumb', ({ pageId }) => setThumbs((t) => ({ ...t, [pageId]: '' }))),
+      e.on('thumb', ({ pageId }) =>
+        setThumbs((t) => {
+          if (!(pageId in t)) return t
+          const n = { ...t }
+          delete n[pageId]
+          return n
+        }),
+      ),
     ]
     return () => offs.forEach((f) => f())
   }, [e])
   useEffect(() => {
-    if (!open) return
-    let dead = false
-    void (async () => {
-      for (const p of pages) {
-        if (dead) return
-        if (thumbs[p.id]) continue
-        const c = await e.thumbnail(p.id, 240)
-        if (!c || dead) continue
-        const url = c.toDataURL('image/png')
-        setThumbs((t) => ({ ...t, [p.id]: url }))
-      }
-    })()
-    return () => {
-      dead = true
-    }
-  }, [open, pages, thumbs, e])
+    const root = listRef.current
+    if (!open || !root || typeof IntersectionObserver !== 'function') return
+    const io = new IntersectionObserver(
+      (ents) => {
+        for (const en of ents) {
+          const id = (en.target as HTMLElement).dataset.page
+          if (en.isIntersecting && id && !thumbs[id]) want(id)
+        }
+      },
+      { root, rootMargin: '600px' },
+    )
+    root.querySelectorAll('[data-page]').forEach((el) => io.observe(el))
+    return () => io.disconnect()
+  }, [open, pages, thumbs])
+  const rename = (t: string) => {
+    setEditing(false)
+    const v = t.trim()
+    if (!v || v === name) return
+    setName(v)
+    if (onRename) onRename(v)
+    else void e.db.notes.update(e.noteId, { title: v, updatedAt: Date.now() }).catch(() => {})
+  }
   if (!open) return null
   const W = phone() ? undefined : innerWidth > 1200 ? 196 : 168
   const onThumbDown = (id: string, ev: React.PointerEvent) => {
@@ -878,10 +955,31 @@ function PageDrawer({ engine: e }: { engine: InkEngine }) {
   return (
     <aside className={'ink-drawer' + (phone() ? ' is-phone' : '')} data-ink-ui="" style={W ? { width: W } : undefined} aria-label="쪽 서랍">
       <div className="ink-drawer-head">
+        {editing ? (
+          <input
+            className="ink-drawer-title"
+            defaultValue={name}
+            autoFocus
+            aria-label="노트 이름"
+            onKeyDown={(ev) => {
+              if (ev.nativeEvent.isComposing || ev.keyCode === 229) return
+              if (ev.key === 'Enter') rename((ev.target as HTMLInputElement).value)
+              if (ev.key === 'Escape') {
+                ev.stopPropagation()
+                setEditing(false)
+              }
+            }}
+            onBlur={(ev) => rename(ev.target.value)}
+          />
+        ) : (
+          <button className="ink-drawer-title" {...tip('이름 바꾸기')} onClick={() => setEditing(true)}>
+            {name || '\u00a0'}
+          </button>
+        )}
         <button className="ink-btn" {...tip('PDF 가져오기')} onClick={() => run('ink.pdf.import', e)}>
           <IconPdfIn size={20} />
         </button>
-        <button className="ink-btn" {...tip('내보내기')} onClick={() => e.emit('ui', { id: 'ink.export.pdf' })}>
+        <button className="ink-btn" {...tip('내보내기')} onClick={() => e.emit('ui', { id: 'ink.export.open' })}>
           <IconShare size={20} />
         </button>
       </div>
@@ -918,5 +1016,219 @@ function PageDrawer({ engine: e }: { engine: InkEngine }) {
         </button>
       </div>
     </aside>
+  )
+}
+
+/* ---------- 내보내기 (5-4): PDF 전체 · 이 쪽 그림, 테이프 뺌(기본)/포함 ---------- */
+
+async function deliver(blob: Blob, name: string, kind: 'pdf' | 'png', onExport?: (kind: 'pdf' | 'png', blob: Blob) => void): Promise<void> {
+  if (onExport) return onExport(kind, blob)
+  const file = new File([blob], name, { type: blob.type })
+  const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean }
+  if ('ontouchend' in document && nav.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] })
+      return
+    } catch {
+      /* 취소 → 내려받기 */
+    }
+  }
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000)
+}
+
+function ExportPop({ engine: e, onExport }: { engine: InkEngine; onExport?: (kind: 'pdf' | 'png', blob: Blob) => void }) {
+  const [open, setOpen] = useState(false)
+  const [tapes, setTapes] = useState<'none' | 'hidden'>('none')
+  const [busy, setBusy] = useState<null | 'pdf' | 'png'>(null)
+  const [done, setDone] = useState(0)
+  useLayer(open, 'ink-export', () => setOpen(false))
+  const go = async (kind: 'pdf' | 'png', t: 'none' | 'hidden' = tapes) => {
+    if (busy) return
+    setBusy(kind)
+    setDone(0)
+    try {
+      const stamp = new Date().toISOString().slice(0, 10)
+      if (kind === 'pdf') await deliver(await e.exportPdf({ tapes: t }), `gyeol-${stamp}.pdf`, 'pdf', onExport)
+      else {
+        const b = await e.exportPng(undefined, { tapes: t })
+        if (b) await deliver(b, `gyeol-${stamp}.png`, 'png', onExport)
+      }
+    } catch (err) {
+      e.emit('error', err instanceof Error ? err : new Error(String(err)))
+    } finally {
+      setBusy(null)
+      setOpen(false)
+    }
+  }
+  useEffect(() => {
+    const offs = [
+      e.on('ui', ({ id }) => {
+        if (id === 'ink.export.open') setOpen((o) => !o)
+        else if (id === 'ink.export.pdf') void go('pdf', 'none')
+        else if (id === 'ink.export.png') void go('png', 'none')
+      }),
+      e.on('progress', (p) => p.kind === 'export' && setDone(p.done / Math.max(1, p.total))),
+    ]
+    return () => offs.forEach((f) => f())
+  })
+  if (!open) return null
+  const arc = (on: boolean) =>
+    on ? (
+      <svg className="ink-arc" viewBox="0 0 48 48" aria-hidden="true">
+        <circle cx="24" cy="24" r="21" pathLength="100" style={{ strokeDasharray: `${Math.max(4, done * 100)} 100` }} />
+      </svg>
+    ) : null
+  return (
+    <div className="ink-pop ink-export" data-ink-ui="" role="dialog" aria-label="내보내기">
+      <button className="ink-btn" {...tip('PDF 전체')} onClick={() => void go('pdf')}>
+        <IconShare />
+        {arc(busy === 'pdf')}
+      </button>
+      <button className="ink-btn" {...tip('이 쪽 그림')} onClick={() => void go('png')}>
+        <IconImage />
+        {arc(busy === 'png')}
+      </button>
+      <i className="ink-sep" />
+      <button className={'ink-btn' + (tapes === 'hidden' ? ' is-toggled' : '')} {...tip(tapes === 'hidden' ? '테이프 포함' : '테이프 뺌')} aria-pressed={tapes === 'hidden'} onClick={() => setTapes(tapes === 'none' ? 'hidden' : 'none')}>
+        <IconTape />
+      </button>
+    </div>
+  )
+}
+
+/* ---------- 첫 회 무음 안내 (4-5): 그림만, 한 번 열 때 하나 ---------- */
+
+const bump = (k: string): number => {
+  try {
+    const n = Number(localStorage.getItem(k) ?? '0') + 1
+    localStorage.setItem(k, String(n))
+    return n
+  } catch {
+    return 0
+  }
+}
+const OPP: Record<Edge, Edge> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' }
+const Fin = ({ x, y, c = 'ih-tap' }: { x: number; y: number; c?: string }) => <circle className={c} cx={x} cy={y} r="6" />
+const ART: Record<string, ReactNode> = {
+  'ink-undo': (
+    <>
+      <path className="ih-draw" d="M14 46c12-18 26-18 38 0s26 18 38 0" />
+      <Fin x={52} y={30} c="ih-tap ih-late" />
+      <Fin x={70} y={30} c="ih-tap ih-late" />
+    </>
+  ),
+  'ink-pie': (
+    <>
+      <Fin x={60} y={36} />
+      <circle className="ih-ring" cx="60" cy="36" r="16" />
+      {[0, 60, 120, 180, 240, 300].map((a) => (
+        <circle key={a} className="ih-pie" cx={60 + Math.sin((a * Math.PI) / 180) * 26} cy={36 - Math.cos((a * Math.PI) / 180) * 26} r="2" />
+      ))}
+    </>
+  ),
+  'ink-tape': (
+    <>
+      <path d="M16 36h88" opacity=".4" />
+      <rect className="ih-tape" x="30" y="28" width="60" height="16" rx="1" />
+      <Fin x={60} y={36} />
+    </>
+  ),
+  'ink-drawer': (
+    <>
+      <Fin x={10} y={36} c="ih-swipe" />
+      {[0, 1, 2].map((i) => (
+        <rect key={i} className="ih-thumb" x={14 + i * 4} y={14 + i * 16} width="18" height="12" rx="1.5" style={{ animationDelay: `${i * 80}ms` }} />
+      ))}
+    </>
+  ),
+  'ink-scratch': (
+    <>
+      <path className="ih-word" d="M24 38c6-10 10 6 16-2s8-8 14 2 10-6 16 0 8 6 14-2" />
+      <path className="ih-zig" d="M22 30l10 14 8-14 10 14 8-14 10 14 8-14 10 14" />
+    </>
+  ),
+}
+const HINT_LABEL: Record<string, string> = {
+  'ink-undo': '두 손가락으로 톡 치면 되돌리기',
+  'ink-pie': '빈 곳을 길게 누르면 둥근 메뉴',
+  'ink-tape': '테이프를 누르면 걷히고 다시 붙는다',
+  'ink-drawer': '왼쪽 가장자리에서 밀면 쪽 서랍',
+  'ink-scratch': '펜으로 긁으면 그 아래 획이 지워진다',
+}
+
+function HintCard({ id, active, edge, onShow }: { id: string; active: boolean; edge: Edge; onShow: (id: string) => void }) {
+  const h = useHint(id, active)
+  useEffect(() => {
+    if (h.visible) onShow(id)
+  }, [h.visible, id, onShow])
+  if (!h.visible) return null
+  return (
+    <div className={'ink-hint at-' + OPP[edge]} data-ink-ui="" role="img" aria-label={HINT_LABEL[id]} onPointerDown={h.dismiss}>
+      <svg viewBox="0 0 120 72" width="120" height="72" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {ART[id]}
+      </svg>
+    </div>
+  )
+}
+
+function InkHints({ engine: e, edge }: { engine: InkEngine; edge: Edge }) {
+  const [c, setC] = useState({ 'ink-undo': false, 'ink-pie': false, 'ink-tape': false, 'ink-drawer': false, 'ink-scratch': false } as Record<string, boolean>)
+  const [shown, setShown] = useState<string | null>(null)
+  const on = (k: string) => setC((x) => (x[k] ? x : { ...x, [k]: true }))
+  useEffect(() => {
+    if (bump('gyeol.ink.opens') >= 3) on('ink-pie')
+    const offs = [
+      e.on('inkend', () => on('ink-undo')),
+      e.on('pages', (ps) => {
+        if (ps.some((p) => p.tapes.total > 0)) on('ink-tape')
+        if (ps.length >= 2 && e.standalone) on('ink-drawer')
+      }),
+      e.on('tool', (t) => t === 'eraser' && bump('gyeol.ink.eraserPicks') >= 3 && on('ink-scratch')),
+      e.on('ui', ({ id }) => id === 'hint.pie' && on('ink-pie')),
+    ]
+    return () => offs.forEach((f) => f())
+  }, [e])
+  return (
+    <>
+      {Object.keys(ART).map((id) => (
+        <HintCard key={id} id={id} active={!!c[id] && (!shown || shown === id)} edge={edge} onShow={setShown} />
+      ))}
+    </>
+  )
+}
+
+/** 펜이 처음 감지될 때: 카드 없이 구슬 옆 손가락 아이콘에 사선, 1.2초에 흐려진다 */
+function PenOnlyMark({ engine: e, pill }: { engine: InkEngine; pill: RefObject<HTMLDivElement | null> }) {
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null)
+  useEffect(
+    () =>
+      e.on('penOnly', (v) => {
+        if (!v) return
+        try {
+          if (localStorage.getItem('gyeol.ink.penOnlyShown')) return
+          localStorage.setItem('gyeol.ink.penOnlyShown', '1')
+        } catch {
+          return
+        }
+        const r = pill.current?.getBoundingClientRect()
+        const h = e.host.getBoundingClientRect()
+        if (!r) return
+        setAt({ x: r.right - h.left + 8, y: r.top - h.top + r.height / 2 })
+        setTimeout(() => setAt(null), 1400)
+      }),
+    [e, pill],
+  )
+  if (!at) return null
+  return (
+    <div className="ink-penonly" style={{ left: at.x, top: at.y }} aria-hidden="true">
+      <IconFinger size={20} />
+      <svg className="ink-penonly-slash" viewBox="0 0 24 24" width="20" height="20">
+        <path d="M5 19L19 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    </div>
   )
 }

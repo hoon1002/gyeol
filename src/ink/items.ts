@@ -55,7 +55,7 @@ export class ItemsLayer {
   private pages = new Map<string, PageBox>()
   private urls = new Map<string, string>()
   private loadingUrls = new Map<string, Promise<string | null>>()
-  editing: { pageId: string; id: string; ta: HTMLTextAreaElement; isNew: boolean; before: InkItem } | null = null
+  editing: { pageId: string; id: string; ta: HTMLTextAreaElement; grip: HTMLElement; isNew: boolean; before: InkItem; w: number } | null = null
 
   constructor(
     private eng: InkEngine,
@@ -333,21 +333,53 @@ export class ItemsLayer {
       e.stopPropagation()
     })
     ta.addEventListener('blur', () => this.eng.endTextEdit())
-    this.editing = { pageId, id: it.id, ta, isNew, before: it }
+    // 오른쪽 끝 손잡이: 끌어 너비를 정한다 (누르는 동안 포커스를 뺏지 않는다)
+    const grip = document.createElement('i')
+    grip.className = 'ink-text-grip'
+    grip.setAttribute('data-ink-ui', '')
+    const place = (w: number) => (grip.style.transform = `${css(itemMatrix(it))} translate(${w}px, 0)`)
+    place(it.w)
+    grip.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault()
+      ev.stopPropagation()
+      grip.setPointerCapture(ev.pointerId)
+      const v = this.eng.view
+      const b = v.boxes.find((x) => x.id === pageId)
+      const host = this.eng.host.getBoundingClientRect()
+      const move = (m: PointerEvent) => {
+        if (!b || !this.editing) return
+        const px = v.vx + (m.clientX - host.left) / v.s - b.x
+        const w = Math.max(40, Math.min(b.w - it.x, px - it.x))
+        this.editing.w = w
+        ta.style.width = w + 'px'
+        place(w)
+        fit()
+      }
+      const up = () => {
+        grip.removeEventListener('pointermove', move)
+        grip.removeEventListener('pointerup', up)
+        ta.focus({ preventScroll: true })
+      }
+      grip.addEventListener('pointermove', move)
+      grip.addEventListener('pointerup', up)
+    })
+    p.under.appendChild(grip)
+    this.editing = { pageId, id: it.id, ta, grip, isNew, before: it, w: it.w }
     p.els.get(it.id)?.classList.add('is-editing')
     ta.focus({ preventScroll: true })
     return ta
   }
 
-  finishEdit(): { pageId: string; id: string; text: string; isNew: boolean; before: InkItem; h: number } | null {
+  finishEdit(): { pageId: string; id: string; text: string; isNew: boolean; before: InkItem; h: number; w: number } | null {
     const e = this.editing
     if (!e) return null
     this.editing = null
     const text = e.ta.value
     const h = e.ta.offsetHeight
     e.ta.remove()
+    e.grip.remove()
     this.pages.get(e.pageId)?.els.get(e.id)?.classList.remove('is-editing')
-    return { pageId: e.pageId, id: e.id, text, isNew: e.isNew, before: e.before, h }
+    return { pageId: e.pageId, id: e.id, text, isNew: e.isNew, before: e.before, h, w: e.w }
   }
 
   /* ---------- 첨부 URL ---------- */

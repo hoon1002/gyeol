@@ -19,6 +19,8 @@ export interface SaveMemoOpts {
   photo?: Blob | null
   /** 음성 메모 (MediaRecorder) → assets, 길이(ms)는 asset 행의 durationMs */
   audio?: { blob: Blob; ms: number } | null
+  /** 손글씨 메모: InkPad가 그 메모 id로 쪽(pages.noteId = 'memo:<id>')을 이미 만들었다 → kind 'ink' + pageId */
+  ink?: { memoId: string } | null
   /** 체크리스트 메모: 줄마다 항목(☐ · [ ] 접두 허용) → kind 'check' + items */
   checklist?: boolean
   pinned?: boolean
@@ -104,18 +106,20 @@ export async function saveMemo(text: string, opts: SaveMemoOpts = {}): Promise<s
   const body = text.replace(/\s+$/u, '').replace(/^\s+/u, '')
   const raw = opts.photo ?? null
   const audio = opts.audio ?? null
-  if (!body && !raw && !audio) return null
-  const id = uid('memo-')
+  const ink = opts.ink ?? null
+  if (!body && !raw && !audio && !ink) return null
+  const id = ink?.memoId ?? uid('memo-')
   const subjectId = opts.subjectId === undefined ? await guessSubjectId(body) : opts.subjectId
   const photo = raw ? await shrinkPhoto(raw) : null
   const now = Date.now()
   const assetId = photo || audio ? uid('asset-') : null
   const items = opts.checklist ? itemsFromText(body) : null
-  const kind: Memo['kind'] = items?.length ? 'check' : audio ? 'voice' : photo ? 'photo' : 'text'
+  const kind: Memo['kind'] = ink ? 'ink' : items?.length ? 'check' : audio ? 'voice' : photo ? 'photo' : 'text'
   // 체크 메모의 text는 항목 글을 줄로 이은 것(검색 색인용)
   const memo: Memo = { id, text: items?.length ? items.map((x) => x.text).join('\n') : body, assetId, subjectId, state: 'inbox', filedTo: null, createdAt: now, updatedAt: now, kind }
   if (items?.length) memo.items = items
   if (audio) memo.durationMs = Math.round(audio.ms)
+  if (ink) memo.pageId = await settleInkPage(ink.memoId)
   if (opts.pinned) memo.pinned = true
   await db.transaction('rw', db.memos, db.assets, async () => {
     if (assetId && audio) await db.assets.add({ id: assetId, ownerId: id, mime: audio.blob.type || 'audio/webm', blob: audio.blob, createdAt: now, durationMs: Math.round(audio.ms) } as AssetX)
@@ -130,6 +134,24 @@ export async function saveMemo(text: string, opts: SaveMemoOpts = {}): Promise<s
     }, wait)
   }
   return id
+}
+
+/**
+ * 손글씨 메모의 쪽 고르기: 엔진이 획을 비동기로 쓰므로 잠깐 기다린 뒤 획이 있는 쪽을 고른다.
+ * (개발 StrictMode에서는 패드가 두 번 마운트돼 'memo:<id>' 쪽이 둘 생길 수 있다 → 획 없는 쪽은 지운다)
+ */
+async function settleInkPage(memoId: string): Promise<string | null> {
+  await new Promise((r) => setTimeout(r, 250))
+  const pages = await db.pages.where('noteId').equals('memo:' + memoId).toArray()
+  if (!pages.length) return null
+  const counts = await Promise.all(pages.map((p) => db.strokes.where('pageId').equals(p.id).count()))
+  let best = 0
+  pages.forEach((p, i) => {
+    if (counts[i]! > counts[best]! || (counts[i] === counts[best] && (p.updatedAt ?? 0) > (pages[best]!.updatedAt ?? 0))) best = i
+  })
+  const empty = pages.filter((_, i) => i !== best && counts[i] === 0).map((x) => x.id)
+  if (empty.length) await db.pages.bulkDelete(empty)
+  return pages[best]!.id
 }
 
 /** 메모 칸 열기 (같은 틱에 inert 해제 + focus). initial이 있으면 그 글로 채운다 */

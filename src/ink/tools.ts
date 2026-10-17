@@ -747,6 +747,7 @@ export class EraserSession implements Session {
     this.eng.cursor(null)
     const now = Date.now()
     if (!this.originals.size && !this.pieces.size) return
+    queueMicrotask(() => this.eng.eraserDone())
     const before: InkStroke[] = [...this.originals.values()].map((r) => ({ ...r, updatedAt: now }))
     const after: InkStroke[] = [...this.originals.values()].map((r) => deleted(r, now))
     for (const p of this.pieces.values()) {

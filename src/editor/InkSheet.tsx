@@ -8,7 +8,7 @@
  * 여는 전환 중 펜이 닿으면 전환을 최종 상태로 건너뛰어 첫 점을 살린다(design-ink 1-8).
  * 목록 줄 썸네일: 첫 쪽 그림을 엔진 thumbnail()로 찍어 meta 'ink.thumb.<noteId>'에 둔다(쓰고 쉴 때 · 닫을 때).
  */
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { useSkyEvent, useSkyPaper } from '@/fx'
 import { db, type Note, type PageTemplate } from '@/db/schema'
 import type { InkEngine } from '@/ink'
@@ -19,6 +19,20 @@ import { paperClosed, paperOpened, takePendingPdf } from './inkState'
 import '@/styles/paper.css'
 
 const InkSurface = lazy(() => import('@/ink'))
+
+/** 잉크 화면이 무너져도 앱 전체(라우트)를 끌고 가지 않게: 종이만 비우고 ‹로 닫을 수 있게 둔다 */
+class InkGuard extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+  componentDidCatch(err: unknown) {
+    console.warn('[ink] 종이를 그리지 못함', err)
+  }
+  render() {
+    return this.state.failed ? <p className="ink-sheet-err">이 노트를 열 수 없어요.</p> : this.props.children
+  }
+}
 
 export interface InkSheetProps {
   note: Note
@@ -127,6 +141,7 @@ export default function InkSheet({ note, template, origin, active, onClose }: In
       onTransitionStart={(e) => e.target === sheetRef.current && sheetRef.current?.classList.add('is-moving')}
       onTransitionEnd={(e) => e.target === sheetRef.current && sheetRef.current?.classList.remove('is-moving')}
     >
+      <InkGuard>
       <Suspense fallback={<div className="ink-sheet-wait" aria-hidden="true" />}>
         <InkSurface
           noteId={note.id}
@@ -139,6 +154,7 @@ export default function InkSheet({ note, template, origin, active, onClose }: In
           }}
         />
       </Suspense>
+      </InkGuard>
       <button type="button" className="ibtn ink-sheet-back" {...tip('노트 목록', { kbd: 'esc', side: 'right' })} onClick={() => void close()}>
         <IconBack size={22} />
       </button>

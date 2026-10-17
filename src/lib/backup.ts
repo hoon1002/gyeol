@@ -328,11 +328,23 @@ export async function roundTripSynthetic(): Promise<Awaited<ReturnType<typeof ro
     await src.table('notes').put({ id: 'n1', title: '손글씨', subjectId: 's1', kind: 'ink', createdAt: now, updatedAt: now })
     await src.table('memos').put({ id: 'm1', text: '[ ] 하나\n[x] 둘', checklist: true, pinned: true, subjectId: 's1', state: 'inbox', filedTo: null, createdAt: now, updatedAt: now })
     await src.table('assets').put({ id: 'a1', ownerId: 'm1', mime: 'image/png', blob: new Blob([new Uint8Array([137, 80, 78, 71, 1, 2, 3])], { type: 'image/png' }), createdAt: now })
-    if (has('pages')) await src.table('pages').put({ id: 'p1', noteId: 'n1', index: 0, template: 'grid', updatedAt: now })
+    if (has('pages')) {
+      await src.table('pages').bulkPut([
+        { id: 'p1', noteId: 'n1', index: 0, template: 'grid', w: 595, h: 842, updatedAt: now },
+        // 손글씨 메모의 쪽(pages.noteId = 'memo:<메모 id>')
+        { id: 'pm1', noteId: 'memo:m2', index: 0, template: 'blank', w: 520, h: 220, updatedAt: now },
+      ])
+      await src.table('memos').put({ id: 'm2', text: '', kind: 'ink', pageId: 'pm1', subjectId: null, state: 'inbox', filedTo: null, createdAt: now, updatedAt: now })
+    }
+    if (has('pageItems')) await src.table('pageItems').bulkPut([
+      { id: 'it1', pageId: 'p1', kind: 'tape', x: 40, y: 80, w: 200, h: 24, color: '#F3D29A', flag: true, updatedAt: now },
+      { id: 'it2', pageId: 'p1', kind: 'image', x: 10, y: 300, w: 120, h: 90, assetId: 'a1', updatedAt: now },
+    ])
     if (has('strokes')) {
       await src.table('strokes').bulkPut([
         { id: 'k1', pageId: 'p1', layer: 0, tool: 'pen', color: '#F2EFE8', width: 2, points: pts.buffer.slice(0), updatedAt: now },
         { id: 'k2', pageId: 'p1', layer: 0, tool: 'highlighter', color: '#F3D29A', width: 12, points: new Float32Array(pts.subarray(0, 40)), updatedAt: now },
+        { id: 'k3', pageId: 'pm1', layer: 0, tool: 'pen', color: '#F2EFE8', width: 2, points: pts.slice(0, 120).buffer, updatedAt: now },
       ])
     }
     const rt = await roundTrip(src)
@@ -343,7 +355,9 @@ export async function roundTripSynthetic(): Promise<Awaited<ReturnType<typeof ro
       const back = await openBackup(blob)
       const k1 = back.data.strokes?.find((r) => r.id === 'k1')?.points
       const k2 = back.data.strokes?.find((r) => r.id === 'k2')?.points
-      strokesChecked = k1 instanceof ArrayBuffer && k1.byteLength === pts.byteLength && new Float32Array(k1)[5] === pts[5] && k2 instanceof Float32Array && k2.length === 40 && k2[7] === pts[7]
+      const k3 = back.data.strokes?.find((r) => r.id === 'k3')?.points
+      const same = async (a: unknown, b: ArrayBuffer | ArrayBufferView) => isBin(a) && (await sha256(binBytes(a))) === (await sha256(binBytes(b)))
+      strokesChecked = k1 instanceof ArrayBuffer && k2 instanceof Float32Array && (await same(k1, pts)) && (await same(k2, pts.subarray(0, 40))) && (await same(k3, pts.slice(0, 120))) && back.data.pages?.some((p) => p.noteId === 'memo:m2') === true && (back.data.pageItems?.length ?? 0) === 2
     }
     return { ...rt, ok: rt.ok && strokesChecked, strokesChecked }
   } finally {

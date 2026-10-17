@@ -4,13 +4,18 @@
  * 폰 = 키보드 바로 위 아래 시트(visualViewport), 태블릿·데스크톱 = 내용 영역 가운데 아래 떠 있는 칸.
  * 하늘은 어둡게 하지 않는다. 저장 피드백은 80ms 뒤 별가루(saveMemo가 부른다), 토스트 없음.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import { useSubjects } from '@/db/hooks'
 import { isTypingTarget, useIsPhone } from '@/shell/hooks'
 import { useUi } from '@/stores/ui'
 import { guessSubject, saveMemo } from './api'
 import { closeMemoSheet, memoTimings, registerMemoSheet } from './open'
 import { fmtSec, useVoice } from './voice'
+import { uid } from '@/db/schema'
+
+/** 손글씨 칸은 펜 대기 때만 지연 로드(첫 화면 번들에 잉크를 넣지 않는다) */
+const loadInk = () => import('@/ink')
+const InkPad = lazy(() => loadInk().then((m) => ({ default: m.InkPad })))
 import { tip } from '@/shell/Tip'
 import { pushLayer } from '@/shell/layers'
 import { useHintCount } from '@/shell/hints'
@@ -53,6 +58,10 @@ export function MemoSheet() {
   const [pin, setPin] = useState(false)
   /** 펜으로 ＋를 눌렀다: 포커스를 주지 않는다(키보드 없음). 키를 치면 바로 글 상태 (design-ink 8-1) */
   const [penWait, setPenWait] = useState(false)
+  /** 손글씨 초안: 메모 id(쪽 = pages.noteId 'memo:<id>'), 획 수, 칸 너비. 저장하기 전까지 남는다(초안 1개) */
+  const [inkId, setInkId] = useState<string | null>(null)
+  const [inkCount, setInkCount] = useState(0)
+  const [padW, setPadW] = useState(0)
   const voice = useVoice()
   const ph = useHintCount('memo-ph', 3)
   const enterHint = useHintCount('memo-enter', 3)
@@ -151,18 +160,39 @@ export function MemoSheet() {
     void voice.stop().then((a) => a && setAudio(a))
   }, [voice])
 
-  // 펜 대기 중 키를 치면 글 상태로
+  // 펜 대기 = 손글씨 칸(design-ink 8-1): 칸은 처음부터 커진 크기로 깔리고 펜 아래 그림은 움직이지 않는다
   useEffect(() => {
     if (!penWait) return
+    setInkId((x) => x ?? uid('memo-'))
+    const box = layerRef.current?.querySelector('.memo-box') as HTMLElement | null
+    setPadW(Math.max(200, Math.round((box?.clientWidth ?? 360) - 32)))
+    void loadInk()
+  }, [penWait])
+
+  // 펜 대기 중 키를 치면 글 상태로 (아직 그린 것이 없을 때만)
+  useEffect(() => {
+    if (!penWait || inkCount > 0) return
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
         setPenWait(false)
-        taRef.current?.focus({ preventScroll: true })
+        requestAnimationFrame(() => taRef.current?.focus({ preventScroll: true }))
       }
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [penWait])
+  }, [penWait, inkCount])
+
+  useEffect(() => {
+    if (!penWait || !open) return
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        void submitRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [penWait, open])
 
   // 폰: 키보드 바로 위 (visualViewport)
   useEffect(() => {
@@ -190,6 +220,16 @@ export function MemoSheet() {
   }, [text])
 
   const submit = async () => {
+    if (penWait && inkId && inkCount > 0) {
+      void saveMemo(text.replace(/☐\s?/g, ''), { subjectId, ink: { memoId: inkId } })
+      setInkId(null)
+      setInkCount(0)
+      setText('')
+      setPenWait(false)
+      setOverride(undefined)
+      closeNow()
+      return
+    }
     let a = audio
     if (voice.state === 'rec') a = await voice.stop()
     const raw = check ? text.split('\n').map((l) => l.replace(/^☐\s?/, '')).join('\n') : text
@@ -223,6 +263,8 @@ export function MemoSheet() {
   }
 
   const closeNow = () => closeMemoSheet()
+  const submitRef = useRef(submit)
+  submitRef.current = submit
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // IME 조합 중(한글)에는 Enter·Esc를 무시한다
@@ -306,6 +348,7 @@ export function MemoSheet() {
         className="memo-box"
         tabIndex={-1}
         data-hand={penWait ? 'pen' : undefined}
+        data-ink={penWait ? '' : undefined}
         role="dialog"
         aria-label="메모"
         onDragOver={(e) => e.preventDefault()}
@@ -342,6 +385,7 @@ export function MemoSheet() {
           <textarea
             ref={taRef}
             className={`memo-input${check ? ' is-check' : ''}`}
+            style={penWait && !text ? { display: 'none' } : undefined}
             rows={1}
             placeholder={ph.fresh || (phone && !text) ? '생각 하나' : undefined}
             aria-label="메모"
@@ -351,8 +395,14 @@ export function MemoSheet() {
             onKeyDown={onKeyDown}
             onPaste={onPaste}
           />
-          {/* 손글씨 메모 자리(M3): 펜을 대면 이 칸이 작은 잉크 칸이 된다 — 손글씨 엔진(src/ink)이 나오면 붙인다 */}
-          <div className="memo-ink-slot" data-ink-slot="memo" hidden />
+          {/* 손글씨 메모(design-ink 8-1): 펜으로 ＋ → 칸이 위로 자라 잉크 칸. 쪽 = pages.noteId 'memo:<id>' */}
+          {penWait && inkId && padW > 0 && (
+            <div className="memo-ink" data-ink-slot="memo" style={{ height: phone ? 200 : 220 }}>
+              <Suspense fallback={<div className="memo-ink-wait" />}>
+                <InkPad memoId={inkId} width={padW} height={phone ? 200 : 220} onChange={setInkCount} />
+              </Suspense>
+            </div>
+          )}
         </div>
         <div className="memo-foot">
           <div className="memo-chip-wrap">
@@ -424,7 +474,9 @@ export function MemoSheet() {
                 taRef.current?.focus({ preventScroll: true })
               }}
             />
-            {phone ? (
+            {penWait && inkCount > 0 ? (
+              <button type="button" className="memo-send" {...tip('저장', { kbd: '⌘↵' })} onPointerDown={(e) => e.preventDefault()} onClick={() => void submit()}>↑</button>
+            ) : phone ? (
               canSave && (
                 <button type="button" className="memo-send" {...tip('저장')} onPointerDown={(e) => e.preventDefault()} onClick={() => void submit()}>↑</button>
               )
@@ -442,5 +494,6 @@ export function MemoSheet() {
 export function openMemoFromButton(origin: Element | null, pointerType?: string): void {
   const layer = document.querySelector('.memo-layer') as (HTMLDivElement & { __open?: (via: Via, origin: Element | null, pen?: boolean) => void }) | null
   // 입력한 손이 정한다(리더 결정 4): 펜으로 누르면 펜 대기(손글씨 메모 자리), 손가락·마우스·키보드면 글
+  if (pointerType === 'pen') void import('@/ink')
   layer?.__open?.('button', origin, pointerType === 'pen')
 }

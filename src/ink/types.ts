@@ -46,6 +46,8 @@ export interface InkPrefs {
   scratch: boolean
   /** 펜 길게 누르기 → 둥근 메뉴 (기본 켬) */
   penPie: boolean
+  /** 다 지우면 이전 도구로 (기본 끔) */
+  eraserReturn: boolean
 }
 
 export interface PageInfo {

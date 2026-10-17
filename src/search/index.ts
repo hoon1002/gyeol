@@ -48,6 +48,14 @@ function memoInput(m: Memo): SearchInput {
 
 const memoSearchable = (m: Memo | undefined): m is Memo => !!m && m.state !== 'filed'
 
+/** 필기 · PDF 노트의 찾을 글 = 글 상자(pageItems kind 'text')의 글 */
+async function inkText(noteId: string): Promise<string> {
+  const pages = await db.pages.where('noteId').equals(noteId).filter((p) => !p.deletedAt).primaryKeys()
+  if (!pages.length) return ''
+  const items = await db.pageItems.where('pageId').anyOf(pages).filter((it) => it.kind === 'text' && !it.deletedAt && !!it.text).toArray()
+  return items.map((it) => it.text!.trim()).filter(Boolean).join('\n')
+}
+
 /* ---------- 부분 갱신 ---------- */
 
 let flushT = 0
@@ -66,10 +74,16 @@ async function flush() {
     for (const key of keys) {
       const [kind, ...rest] = key.split(':')
       const id = rest.join(':')
+      if (kind === 'page') {
+        // 필기 글 상자가 바뀜 → 그 쪽의 노트를 다시
+        const pg = await db.pages.get(id)
+        if (pg && !pg.noteId.startsWith('memo:')) dirty.add('note:' + pg.noteId)
+        continue
+      }
       if (kind === 'note') {
-        const [n, b] = await Promise.all([db.notes.get(id), db.noteBodies.get(id)])
+        const n = await db.notes.get(id)
         if (!n || n.deletedAt) searchIndex.remove('note', id)
-        else searchIndex.upsert(noteInput(n, b?.text ?? ''))
+        else searchIndex.upsert(noteInput(n, n.kind === 'ink' || n.kind === 'pdf' ? await inkText(id) : ((await db.noteBodies.get(id))?.text ?? '')))
       } else {
         const m = await db.memos.get(id)
         if (memoSearchable(m)) searchIndex.upsert(memoInput(m))
@@ -79,6 +93,7 @@ async function flush() {
   } catch {
     /* 다음 변경 때 다시 */
   }
+  if (dirty.size && !flushT) flushT = window.setTimeout(flush, 30)
   bump()
 }
 
@@ -102,6 +117,21 @@ function attachHooks() {
   watch('notes', (id) => 'note:' + id)
   watch('noteBodies', (id) => 'note:' + id)
   watch('memos', (id) => 'memo:' + id)
+  // 필기 글 상자: 행에 pageId가 있으므로 그 쪽을 줄 세운다(지울 때도 obj에서)
+  const items = db.table<Record<string, unknown>, string>('pageItems')
+  const byPage = (obj: Record<string, unknown> | undefined) => (obj?.kind === 'text' && obj.pageId ? 'page:' + String(obj.pageId) : null)
+  items.hook('creating', function (this: CreatingHookContext<Record<string, unknown>, string>, _pk, obj) {
+    const k = byPage(obj)
+    if (k) this.onsuccess = () => queue(k)
+  })
+  items.hook('updating', function (this: UpdatingHookContext<Record<string, unknown>, string>, _mods, _pk, obj) {
+    const k = byPage(obj)
+    if (k) this.onsuccess = () => queue(k)
+  })
+  items.hook('deleting', function (this: DeletingHookContext<Record<string, unknown>, string>, _pk, obj) {
+    const k = byPage(obj)
+    if (k) this.onsuccess = () => queue(k)
+  })
 }
 
 /* ---------- 처음 만들기 (유휴 시간에 조각으로) ---------- */
@@ -116,8 +146,25 @@ async function build(): Promise<void> {
   state = 'building'
   dirty.clear()
   try {
-    const [notes, bodies, memos] = await Promise.all([db.notes.toArray(), db.noteBodies.toArray(), db.memos.toArray()])
+    const [notes, bodies, memos, pages, items] = await Promise.all([
+      db.notes.toArray(),
+      db.noteBodies.toArray(),
+      db.memos.toArray(),
+      db.pages.toArray(),
+      db.pageItems.filter((it) => it.kind === 'text' && !it.deletedAt && !!it.text).toArray(),
+    ])
     const text = new Map(bodies.map((b) => [b.noteId, b.text]))
+    // 필기 노트: 글 상자 글을 노트별로 모은다
+    const noteOfPage = new Map(pages.filter((p) => !p.deletedAt).map((p) => [p.id, p.noteId]))
+    const inkTexts = new Map<string, string[]>()
+    for (const it of items) {
+      const nid = noteOfPage.get(it.pageId)
+      if (!nid) continue
+      const a = inkTexts.get(nid) ?? []
+      a.push(it.text!.trim())
+      inkTexts.set(nid, a)
+    }
+    for (const n of notes) if ((n.kind === 'ink' || n.kind === 'pdf') && inkTexts.has(n.id)) text.set(n.id, inkTexts.get(n.id)!.join('\n'))
     const inputs: SearchInput[] = [
       ...notes.filter((n) => !n.deletedAt).map((n) => noteInput(n, text.get(n.id) ?? '')),
       ...memos.filter(memoSearchable).map(memoInput),

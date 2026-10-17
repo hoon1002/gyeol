@@ -13,13 +13,13 @@
  */
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo, useRef } from 'react'
-import { db, uid, type Memo, type Note, type NoteLink, type Subject } from './schema'
+import { db, uid, type Memo, type Note, type NoteLink, type PageTemplate, type Subject } from './schema'
 import { dayKey, fmtMD, studyDayStart } from '@/lib/time'
 import { templateDoc, type PMNode, type TemplateName } from '@/editor/templates'
 
 export type { PMNode } from '@/editor/templates'
 
-const TABLES = [db.notes, db.noteBodies, db.links, db.assets, db.subjects]
+const TABLES = [db.notes, db.noteBodies, db.links, db.assets, db.subjects, db.pages]
 
 /* ---------- 문서 JSON 도우미 (TipTap 없이) ---------- */
 
@@ -237,8 +237,10 @@ export interface CreateNoteOpts {
   assetId?: string | null
   /** 음성 메모 소리 → 소리 칩 블록 */
   voice?: VoiceRef | null
-  /** 'ink' · 'pdf' = 종이 노트(본문 문서 없음, 쪽은 잉크 엔진이 만든다). 기본 'doc' */
+  /** 'ink' · 'pdf' = 종이 노트(본문 문서 없음). 기본 'doc' */
   kind?: 'doc' | 'ink' | 'pdf'
+  /** 종이 노트 첫 쪽 틀 (필기 기본 '줄', PDF는 '빈' — 가져오면 PDF 쪽이 이 빈 쪽 자리를 쓴다) */
+  pageTemplate?: PageTemplate
   /** true면 onNoteCreated(하늘 birthStar)를 부르지 않는다 — 별가루 '노트로'는 fileDust가 도착 연출(D3 → D6)을 맡는다 */
   quiet?: boolean
 }
@@ -260,9 +262,10 @@ export async function createNote(opts: CreateNoteOpts = {}): Promise<Note> {
     if (!title && (template === 'class' || (kind === 'ink' && opts.classKey))) title = await classTitle(opts.subjectId, opts.classKey)
     if (!title && kind === 'ink') title = `${fmtMD(now)} 필기`
     if (kind !== 'doc') {
-      // 종이 노트: 노트 행만. 쪽 · 획은 펼칠 때 잉크 엔진이 만든다(첫 쪽 틀은 펼치는 쪽이 정함)
+      // 종이 노트: 노트 행 + 첫 쪽(여기서 미리 만들어 두면 펼칠 때 엔진이 쪽을 두 번 만들 일이 없다). 획은 잉크 엔진이 쓴다
       const n: Note = { id, title, subjectId: opts.subjectId ?? null, kind, pages: 1, page: 1, createdAt: now, updatedAt: now, deletedAt: null, classKey: opts.classKey ?? null, template: null }
       await db.notes.add(n)
+      await db.pages.put({ id: uid('pg'), noteId: id, index: 0, template: opts.pageTemplate ?? (kind === 'pdf' ? 'blank' : 'ruled'), w: 595, h: 842, pdf: null, paper: null, createdAt: now, updatedAt: now, deletedAt: null })
       if (title) await connectDangling(title, id)
       return n
     }

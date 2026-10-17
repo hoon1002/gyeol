@@ -36,3 +36,4 @@
 :root[data-paper][data-motion="off"] .dock,
 :root[data-paper][data-motion="off"] .topbar,
 :root[data-paper][data-motion="off"] .space[data-path="/notes"] .notes-hero { transform: none; }
+.ink-sheet .ink-sheet-err { position: absolute; left: 50%; top: 40%; translate: -50% 0; margin: 0; font-size: 14px; color: var(--danger); }

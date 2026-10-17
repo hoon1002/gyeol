@@ -1,1 +1,1 @@
-{ "percent": 100, "doing": "QA 수정 완료(#2–4·6–12·14–17·19 + hint svg). 겹침 층 API src/shell/layers.ts: pushLayer({ id, close, restoreFocusTo?(요소|함수), el? }) → 해제 · isLayerOpen(id?) · topLayer() · closeTopLayer() · subscribeLayers()", "state": "done" }
+{ "percent": 100, "doing": "손글씨 메모(펜 ＋ → InkPad 지연 로드 · kind ink + pageId · 별가루함 획 썸네일 · 노트로 = 새 필기 노트로 쪽 옮김) · 백업 왕복(pages·strokes·pageItems·memo 쪽) 완료", "state": "done" }

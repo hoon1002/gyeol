@@ -15,7 +15,7 @@ import { fmtHM, fmtMD } from '@/lib/time'
 import { useEffectiveMotion, useIsPhone } from '@/shell/hooks'
 import { tip } from '@/shell/Tip'
 import { announce } from '@/shell/announce'
-import { IconArchive, IconBack, IconChevron, IconClose, IconDust, IconMic, IconPin, IconPlay, IconPause, IconSelect, IconTask, IconToNote, IconUndo } from '@/shell/icons'
+import { IconPen, IconArchive, IconBack, IconChevron, IconClose, IconDust, IconMic, IconPin, IconPlay, IconPause, IconSelect, IconTask, IconToNote, IconUndo } from '@/shell/icons'
 import { useCapture } from './store'
 import { fileMemo, restoreMemo, setMemoSubject } from './file'
 import { memoItems, type AssetX, type MemoX } from './api'
@@ -57,6 +57,34 @@ function VoicePlay({ assetId, ms }: { assetId: string; ms?: number | null }) {
       {playing ? <IconPause size={16} /> : <IconPlay size={16} />}
       <span aria-hidden="true">{fmtSec(dur ?? 0)}</span>
     </button>
+  )
+}
+
+/** 손글씨 메모 썸네일: 그 쪽의 획을 높이 40px 띠 그림으로(엔진 썸네일 API가 없어 획 점을 직접 잇는다, 최대 80획) */
+function InkThumb({ memoId, pageId }: { memoId: string; pageId?: string | null }) {
+  const shape = useLiveQuery(async () => {
+    const page = pageId ? await db.pages.get(pageId) : await db.pages.where('noteId').equals('memo:' + memoId).first()
+    if (!page) return null
+    const rows = await db.strokes.where('pageId').equals(page.id).limit(80).toArray()
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+    const ds: string[] = []
+    for (const r of rows) {
+      const pts = new Float32Array((r as { points: ArrayBuffer }).points)
+      let d = ''
+      for (let i = 0; i + 1 < pts.length; i += 8) {
+        const x = pts[i]!, y = pts[i + 1]!
+        x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y)
+        d += `${d ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`
+      }
+      if (d) ds.push(d)
+    }
+    return ds.length ? { ds, box: `${x0 - 4} ${y0 - 4} ${Math.max(8, x1 - x0 + 8)} ${Math.max(8, y1 - y0 + 8)}` } : null
+  }, [memoId, pageId])
+  if (!shape) return <IconPen size={16} />
+  return (
+    <svg className="dust-ink" viewBox={shape.box} height="40" preserveAspectRatio="xMinYMid meet" aria-hidden="true">
+      {shape.ds.map((d, i) => <path key={i} d={d} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />)}
+    </svg>
   )
 }
 
@@ -143,7 +171,7 @@ function Row({ memo, subjects, archive, selecting, selected, onSelect, onFocusMo
   }
 
   const when = fmtHM(memo.createdAt)
-  const label = `${memo.text || (isVoice ? '음성 메모' : '사진 메모')}, ${s?.name ?? '과목 없음'}, ${when}${memo.pinned ? ', 고정' : ''}`
+  const label = `${memo.text || (memo.kind === 'ink' ? '손글씨 메모' : isVoice ? '음성 메모' : '사진 메모')}, ${s?.name ?? '과목 없음'}, ${when}${memo.pinned ? ', 고정' : ''}`
   return (
     <motion.li
       className={`dust-row${open ? ' is-open' : ''}${selected ? ' is-sel' : ''}${memo.pinned ? ' is-pin' : ''}`}
@@ -179,6 +207,7 @@ function Row({ memo, subjects, archive, selecting, selected, onSelect, onFocusMo
         ) : (
           memo.text && <p className="dust-text">{memo.text}</p>
         )}
+        {memo.kind === 'ink' && <InkThumb memoId={memo.id} pageId={memo.pageId} />}
         <p className="dust-meta">
           <span className="dust-chip-wrap">
             <button type="button" className="ibtn dust-subj" tabIndex={-1} {...tip(`${s?.name ?? '과목 없음'} · ${fmtMD(memo.createdAt)} ${when}`)} onClick={(e) => { e.stopPropagation(); setPick(true) }}>

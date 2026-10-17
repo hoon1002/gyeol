@@ -504,3 +504,183 @@
     animation: none;
   }
 }
+
+/* 서랍 머리 제목 */
+.ink-drawer-head {
+  gap: 2px;
+}
+.ink-drawer-title {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  margin-right: auto;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-1);
+  font: 600 15px/36px var(--f-kr-d, var(--f-kr));
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+  -webkit-user-select: text;
+  touch-action: auto;
+}
+input.ink-drawer-title {
+  background: var(--surface-2);
+  outline: 1px solid var(--border-strong);
+}
+
+/* 내보내기 팝오버 */
+.ink-export {
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  flex-wrap: nowrap;
+  max-width: none;
+  align-items: center;
+  z-index: 26;
+}
+.ink-arc {
+  position: absolute;
+  inset: -2px;
+  width: calc(100% + 4px);
+  height: calc(100% + 4px);
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+.ink-arc circle {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  transition: stroke-dasharray 160ms;
+}
+
+/* 첫 회 무음 안내 카드 (글자 없음) */
+.ink-hint {
+  position: absolute;
+  z-index: 24;
+  width: 120px;
+  height: 72px;
+  border-radius: 14px;
+  background: var(--ink-face);
+  box-shadow: var(--shadow-2);
+  color: var(--text-2);
+  animation: ink-hint-in 240ms var(--ease-out);
+}
+.ink-hint.at-bottom {
+  left: 50%;
+  bottom: 24px;
+  margin-left: -60px;
+}
+.ink-hint.at-top {
+  left: 50%;
+  top: 24px;
+  margin-left: -60px;
+}
+.ink-hint.at-left {
+  left: 24px;
+  top: 50%;
+  margin-top: -36px;
+}
+.ink-hint.at-right {
+  right: 24px;
+  top: 50%;
+  margin-top: -36px;
+}
+.ink-hint .ih-tap,
+.ink-hint .ih-swipe {
+  fill: color-mix(in srgb, var(--accent) 25%, transparent);
+  stroke: var(--accent);
+}
+.ink-hint * {
+  animation-duration: 2.4s;
+  animation-iteration-count: 2;
+  animation-fill-mode: both;
+}
+.ink-hint .ih-draw {
+  stroke-dasharray: 120;
+  animation-name: ih-draw;
+}
+.ink-hint .ih-tap {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation-name: ih-tap;
+}
+.ink-hint .ih-late {
+  animation-name: ih-tap-late;
+}
+.ink-hint .ih-ring {
+  stroke-dasharray: 101;
+  animation-name: ih-ring;
+}
+.ink-hint .ih-pie {
+  fill: currentColor;
+  stroke: none;
+  animation-name: ih-pie;
+}
+.ink-hint .ih-tape {
+  fill: var(--text-3);
+  stroke: none;
+  animation-name: ih-tape;
+}
+.ink-hint .ih-swipe {
+  animation-name: ih-swipe;
+}
+.ink-hint .ih-thumb {
+  animation-name: ih-thumb;
+}
+.ink-hint .ih-word {
+  animation-name: ih-fade-end;
+}
+.ink-hint .ih-zig {
+  stroke-dasharray: 130;
+  animation-name: ih-zig;
+}
+@keyframes ink-hint-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes ih-draw {
+  0% { stroke-dashoffset: 120; opacity: 1 }
+  25% { stroke-dashoffset: 0 }
+  42% { opacity: 1 }
+  50%, 100% { stroke-dashoffset: 0; opacity: 0 }
+}
+@keyframes ih-tap { 0%, 100% { opacity: 1; transform: scale(1) } 10% { transform: scale(.85) } 20% { transform: scale(1) } }
+@keyframes ih-tap-late { 0%, 32% { opacity: 0 } 34% { opacity: 1; transform: scale(1) } 38% { transform: scale(.85) } 42% { transform: scale(1) } 55%, 100% { opacity: 0 } }
+@keyframes ih-ring { 0%, 8% { stroke-dashoffset: 101; opacity: 0 } 30% { stroke-dashoffset: 0; opacity: .8 } 36%, 100% { opacity: 0 } }
+@keyframes ih-pie { 0%, 30% { opacity: 0 } 36%, 60% { opacity: 1 } 70%, 100% { opacity: 0 } }
+@keyframes ih-tape { 0%, 20% { opacity: 1 } 25%, 60% { opacity: .15 } 65%, 100% { opacity: 1 } }
+@keyframes ih-swipe { 0% { transform: translateX(0) } 30%, 100% { transform: translateX(26px); opacity: 0 } }
+@keyframes ih-thumb { 0%, 10% { transform: translateX(-30px); opacity: 0 } 40%, 80% { transform: none; opacity: 1 } 100% { opacity: 0 } }
+@keyframes ih-zig { 0%, 15% { stroke-dashoffset: 130 } 45% { stroke-dashoffset: 0; opacity: 1 } 60%, 100% { stroke-dashoffset: 0; opacity: 0 } }
+@keyframes ih-fade-end { 0%, 45% { opacity: 1 } 60%, 100% { opacity: 0 } }
+@media (prefers-reduced-motion: reduce) {
+  .ink-hint * {
+    animation: none !important;
+  }
+}
+
+/* 펜 처음 감지: 손가락 + 사선, 1.2초에 흐려짐 */
+.ink-penonly {
+  position: absolute;
+  z-index: 21;
+  transform: translateY(-50%);
+  color: var(--text-2);
+  pointer-events: none;
+  animation: ink-penonly 1.4s var(--ease-out) forwards;
+}
+.ink-penonly-slash {
+  position: absolute;
+  left: 0;
+  top: 0;
+  stroke-dasharray: 20;
+  animation: ink-slash 300ms 100ms var(--ease-out) both;
+}
+@keyframes ink-penonly { 0% { opacity: 0 } 15%, 40% { opacity: 1 } 100% { opacity: 0 } }
+@keyframes ink-slash { from { stroke-dashoffset: 20 } to { stroke-dashoffset: 0 } }

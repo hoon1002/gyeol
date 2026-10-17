@@ -16,6 +16,11 @@
 .pal-m2 .pal-snip { font-size: 13px; color: var(--text-3); margin-top: 1px; }
 .pal-m2 .pal-snip mark { background: rgba(243, 210, 154, .14); color: var(--text-2); font-weight: 400; }
 .pal-meta { display: inline-flex; align-items: center; gap: 6px; font: 400 11px var(--f-mono); color: var(--text-3); white-space: nowrap; }
+/* 손글씨 명령(종이가 펼쳐져 있을 때 먼저): 단축키 모노 · 켬 점 · 고를 수 없음 30% · 묶음 끝 가는 선 */
+.pal-m2 .pal-kbd { gap: 6px; }
+.pal-m2 .pal-on { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.pal-m2 .pal-item[data-disabled="true"] { opacity: .3; }
+.pal-m2 .pal-k-ink + .pal-item:not(.pal-k-ink) { margin-top: 6px; box-shadow: 0 -4px 0 -3px var(--border); }
 /* 해석 칩 = 아이콘 + 값 */
 .pal-m2 .pal-parse { gap: 6px; }
 .pal-m2 .tok { gap: 5px; padding: 0 10px 0 8px; background: color-mix(in srgb, var(--text-1) 6%, transparent); color: var(--text-1); }
@@ -42,7 +47,7 @@
 .notes-hero .notes-list .notes-snip { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; padding-left: 36px; }
 .notes-hero .notes-list .notes-snip mark { color: var(--text-2); }
 /* 줄: 종류 아이콘 13px · 과목 점 · 제목 (시간은 툴팁) */
-.notes-hero .nl-line { display: flex; align-items: center; gap: 9px; min-width: 0; max-width: 100%; }
+.notes-hero .nl-line { display: flex; align-items: center; gap: 9px; min-width: 0; width: 100%; max-width: 100%; }
 .notes-hero .nl-mark { display: inline-flex; align-items: center; gap: 5px; flex: none; color: var(--text-3); }
 .notes-hero .nl-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .notes-hero .notes-list li button.is-on .nl-mark { color: var(--accent); }
@@ -154,3 +159,24 @@
   }
   .space .notes-hero:not(.is-reading) .notes-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; align-content: start; }
 }
+
+/* ---------- 노트 화면 M3: 금빛 ＋ 둥근 고르기 · 필기 썸네일 · 펼치기 ---------- */
+.notes-hero .nn-wrap { position: relative; display: inline-grid; flex: none; }
+.notes-hero .nn-pick { position: absolute; left: 50%; top: 50%; width: 0; height: 0; z-index: 30; }
+.notes-hero .nn-i {
+  position: absolute; display: grid; place-items: center; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%;
+  background: color-mix(in srgb, var(--surface-2) 96%, transparent); border: 1px solid var(--border-strong); box-shadow: var(--shadow-2); color: var(--text-1);
+  animation: nn-in 160ms var(--ease-out) both;
+}
+.notes-hero .nn-i:hover, .notes-hero .nn-i:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.notes-hero .nn-i:active { scale: .94; }
+.notes-hero .nn-i-0 { translate: 0 -60px; }
+.notes-hero .nn-i-1 { translate: 52px 30px; animation-delay: 20ms; }
+.notes-hero .nn-i-2 { translate: -52px 30px; animation-delay: 40ms; }
+@keyframes nn-in { from { opacity: 0; scale: .6; } }
+:root[data-motion="off"] .notes-hero .nn-i { animation: none; }
+.notes-hero .nl-thumb { flex: none; width: 22px; height: 30px; margin-left: auto; object-fit: cover; object-position: top; border-radius: 3px; border: 1px solid var(--border); background: #fff; }
+.np-other .np-o-open { display: grid; place-items: center; width: 96px; height: 132px; margin: 8px 0 4px; border-radius: 8px; border: 1px solid var(--border); background: color-mix(in srgb, var(--text-1) 4%, transparent); color: var(--text-2); overflow: hidden; transition: transform 160ms var(--ease-out), border-color var(--dur-fast); }
+.np-other .np-o-open:hover { border-color: var(--accent); color: var(--accent); }
+.np-other .np-o-open:active { transform: scale(.96); transition-duration: 90ms; }
+.np-other .np-o-open img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
