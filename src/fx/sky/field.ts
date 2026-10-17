@@ -1093,6 +1093,15 @@ export class FieldEngine {
   /* ---------- 사건 API (design-v3-motion §5-2) ---------- */
 
   birthStar(o: { id: string; at?: At; kind: StarKind; subject?: string; level?: number }): void {
+    if (this.g3d && o.kind === 'note') {
+      // M2: 노트의 탄생은 노트 층(useSkyStars notes)의 같은 id에서 — 따로 별을 만들지 않는다.
+      // 아직 그 id가 노트 층에 없으면(동기화 전) 들어오는 순간에 V1s
+      const r = this.notes.get(o.id)
+      if (r) {
+        if (this.mode !== 'off') this.g3d.sparkle(r.pos)
+      } else this.pendingBirths.set(o.id, performance.now())
+      return
+    }
     const layer: Layer = o.kind === 'card' ? 'review' : o.kind === 'note' ? 'graph' : o.kind === 'exam' ? 'exam' : 'today'
     const ex = this.stars.get(o.id)
     if (ex) {
@@ -1596,6 +1605,14 @@ export class FieldEngine {
   }
 
   flyTo(t: CameraTarget, o?: { duration?: number }): Promise<void> {
+    if (this.g3d && t.focus && t.scene === this.preset && this.lastPickNote && this.notes.has(this.lastPickNote)) {
+      // 방금 고른 노트 별 쪽으로 짧게 다가감(1.4u) — 노트 별은 하늘 좌표가 없다(sky [0, 0])
+      this.camStack.push(this.camCur)
+      if (this.camStack.length > 8) this.camStack.shift()
+      this.camCur = t
+      const ms = this.g3d.approach(this.notes.get(this.lastPickNote)!.pos, 1.4)
+      return new Promise((res) => window.setTimeout(res, ms))
+    }
     if (this.g3d && t.focus && t.scene === this.preset) {
       // design-m1 #31: 데이터 별 쪽으로 짧게 다가감만 (자세·롤 그대로) — 노트 별 1.4u · 오늘·나의 별 1.6u
       let best: StarRec | null = null
@@ -1649,12 +1666,27 @@ export class FieldEngine {
   }
 
   /** 누른 자리(화면 px)에서 가장 가까운 보이는 데이터 별 (반경 px) */
-  pick(x: number, y: number, radius = 28): { id: string; layer: string; sky: [number, number]; screen: [number, number]; dist: number; world: [number, number, number] } | null {
+  pick(x: number, y: number, radius = 28): { id: string; layer: string; kind?: 'note'; sky: [number, number]; screen: [number, number]; dist: number; world: [number, number, number] } | null {
     if (this.g3d) {
       const r = this.g3d.pick(x, y, radius)
-      if (!r) return null
-      const s = this.stars.get(r.id)
-      return { id: r.id, layer: s?.layer ?? 'today', sky: [s?.x ?? 0, s?.y ?? 0], screen: r.screen, dist: r.dist, world: r.world }
+      let best: { id: string; layer: string; kind?: 'note'; sky: [number, number]; screen: [number, number]; dist: number; world: [number, number, number] } | null = null
+      if (r) {
+        const s = this.stars.get(r.id)
+        best = { id: r.id, layer: s?.layer ?? 'today', sky: [s?.x ?? 0, s?.y ?? 0], screen: r.screen, dist: r.dist, world: r.world }
+      }
+      // M2: 지도에서는 노트 층 별도 고른다 (id · kind 'note' · world)
+      const raw = this.g3d.raw
+      if (raw && (this.preset === 'map' || this.preset === 'graph') && this.notes.size) {
+        const R = Math.max(18, radius)
+        for (const [id, n] of this.notes) {
+          const sp = raw.project(n.pos)
+          if (!sp) continue
+          const d = Math.hypot(sp[0] - x, sp[1] - y)
+          if (d <= R && (!best || d < best.dist)) best = { id, layer: 'notes', kind: 'note', sky: [0, 0], screen: sp, dist: d, world: raw.toWorld(n.pos) }
+        }
+      }
+      this.lastPickNote = best?.kind === 'note' ? best.id : null
+      return best
     }
     let best: { id: string; layer: string; sky: [number, number]; screen: [number, number]; dist: number; world: [number, number, number] } | null = null
     radius = Math.max(18, radius) // 마우스 히트 반경 최소 18px (review #14)
@@ -1885,11 +1917,22 @@ export class FieldEngine {
   private search: Set<string> | null = null
   private dusts: Array<{ id: string; subjectId?: string; t0: number; gone?: boolean; path?: { to: [number, number, number]; t0: number; dur: number }; fadeT0?: number }> = []
   private dustN = 0
-  private nebulae = new Map<string, { t0: number }>()
+  private nebulae = new Map<string, { t0: number; dur: number }>()
+  private bloomQueue: Array<[string, string]> = []
+  private bloomCalls: number[] = []
+  private bloomTimer = 0
+  private bloomBurst = false
+  private drainBloom() {
+    this.bloomTimer = 0
+    const next = this.bloomQueue.shift()
+    if (next) this.bloomNebula(next[0], next[1])
+  }
   private nebTimer = 0
 
-  private subjectOf(id: string | undefined | null): { color: [number, number, number]; k: number; bloomed: boolean } | null {
-    if (!id) return null
+  /** 과목 없음(null · '' · '_none'): 지도 성운 한가운데 '과목 없음' 가지, 중립 흰빛 */
+  private static NONE = { color: [0.86, 0.89, 1] as [number, number, number], k: -1, bloomed: false }
+  private subjectOf(id: string | undefined | null): { color: [number, number, number]; k: number; bloomed: boolean } {
+    if (!id || id === '_none') return FieldEngine.NONE
     let sj = this.subjects.get(id)
     if (!sj) {
       sj = { color: [0.86, 0.89, 1], k: this.subjects.size % 6, bloomed: false }
@@ -1900,6 +1943,7 @@ export class FieldEngine {
   /** 과목 가지 중심: 지도 성운 + 1.5u × 방향 k (6방향) */
   private branchCenter(k: number): [number, number, number] {
     const g = LANDMARKS.graph
+    if (k < 0) return [g[0], g[1], g[2]]
     const a = (k / 6) * Math.PI * 2
     return [g[0] + 1.5 * Math.cos(a), g[1], g[2] + 1.5 * Math.sin(a)]
   }
@@ -1908,7 +1952,7 @@ export class FieldEngine {
     const t0 = performance.now()
     if (subjects) for (const sj of subjects) {
       const c = cssColor(sj.color)
-      const rec = this.subjectOf(sj.id)!
+      const rec = this.subjectOf(sj.id)
       if (c) rec.color = c
     }
     const perSubject = new Map<string, number>()
@@ -1916,7 +1960,7 @@ export class FieldEngine {
     this.notes.clear()
     this.noteOrder = []
     for (const n of list) {
-      const sj = this.subjectOf(n.subjectId)!
+      const sj = this.subjectOf(n.subjectId)
       const cnt = perSubject.get(n.subjectId) ?? 1
       const sig = 0.5 * (cnt > 150 ? Math.sqrt(cnt / 150) : 1)
       // 자리는 (id, 과목 가지, σ)에만 달려 있다 → 바뀌지 않았으면 다시 계산하지 않는다
@@ -1949,11 +1993,33 @@ export class FieldEngine {
         this.noteLinkPairs.push([a, b])
       }
     }
-    this.uploadNotes()
-    this.uploadNoteLinks()
+    this.scheduleUpload(list.length)
+    // 탄생을 기다리던 노트(birthStar가 먼저 온 것): 지금 V1s
+    if (this.pendingBirths.size) {
+      const now = performance.now()
+      for (const [id, at] of this.pendingBirths) {
+        const r = this.notes.get(id)
+        if (r && now - at < 5000 && this.mode !== 'off') window.setTimeout(() => this.g3d?.sparkle(r.pos), 60)
+        if (r || now - at >= 5000) this.pendingBirths.delete(id)
+      }
+    }
     this.perfNotesMs = performance.now() - t0
   }
   private perfNotesMs = 0
+  private pendingBirths = new Map<string, number>()
+  private lastPickNote: string | null = null
+  private uploadIdle = 0
+  /** 노트가 많으면(> 300) GPU 버퍼 다시 쌓기를 다음 유휴 시간으로 미룬다(최대 200ms) — 비행·입력 프레임을 지키려고 */
+  private scheduleUpload(n: number) {
+    const run = () => {
+      this.uploadIdle = 0
+      this.uploadNotes()
+      this.uploadNoteLinks()
+    }
+    if (n <= 300 || typeof requestIdleCallback === 'undefined') return run()
+    if (this.uploadIdle) return
+    this.uploadIdle = requestIdleCallback(run, { timeout: 200 })
+  }
   private posCache = new Map<string, { key: string; pos: [number, number, number]; s: number }>()
   private uploadNotes() {
     const g = this.g3d?.raw
@@ -2019,7 +2085,6 @@ export class FieldEngine {
       segs[o + 10] = b
       m++
     }
-    const W = [1, 1, 1]
     for (const [ia, ib] of pairs) {
       const A = this.notes.get(ia)
       const B = this.notes.get(ib)
@@ -2029,8 +2094,8 @@ export class FieldEngine {
       const len = Math.sqrt(dx * dx + dz * dz)
       let al = base * (len > 4 ? 0.5 : 1)
       if (sel) al = ia === sel || ib === sel ? 0.6 : 0.16 * (base / 0.14)
-      const ca = this.subjects.get(A.subjectId)?.color ?? W
-      const cb = this.subjects.get(B.subjectId)?.color ?? W
+      const ca = this.subjectOf(A.subjectId).color
+      const cb = this.subjectOf(B.subjectId).color
       // 두 끝 과목색을 흰빛과 30%씩 섞은 평균
       const r = 0.35 * (ca[0]! + cb[0]!) + 0.3
       const gg = 0.35 * (ca[1]! + cb[1]!) + 0.3
@@ -2083,8 +2148,7 @@ export class FieldEngine {
     const t = this.nowS()
     const off = this.mode === 'off'
     if (to === 'note') {
-      const sj = this.subjectOf(subjectId)
-      d.path = { to: sj ? this.branchCenter(sj.k) : [LANDMARKS.graph[0], LANDMARKS.graph[1], LANDMARKS.graph[2]], t0: t, dur: off ? 0.001 : 1.2 }
+      d.path = { to: this.branchCenter(this.subjectOf(subjectId).k), t0: t, dur: off ? 0.001 : 1.2 }
       d.fadeT0 = t + (off ? 0 : 1.2)
     } else if (to === 'task') {
       if (!off) this.g3d?.sparkle(this.dustPos(d))
@@ -2118,14 +2182,32 @@ export class FieldEngine {
   }
   /** D9 성운 피기 (순간 ①): 과목 가지 중심에 반지름 0.9u, 22% → 12%로 쉼. 젊은 별 3–5개 V1s. 카메라는 그대로 */
   bloomNebula(subjectId: string, color: string): void {
-    const sj = this.subjectOf(subjectId)!
+    // 큰 사건 대기열 (design-m2 D9): 동시 1개. 짧게 몰려 오면(샘플) 4개까지 겹치고 절제판 800ms
+    const now = performance.now()
+    this.bloomCalls = this.bloomCalls.filter((t) => now - t < 1500)
+    this.bloomCalls.push(now)
+    const burst = this.bloomCalls.length >= 3
+    const busy = [...this.nebulae.values()].filter((n) => this.nowS() - n.t0 < n.dur).length
+    if (this.mode !== 'off' && busy >= (burst ? 4 : 1)) {
+      this.bloomQueue.push([subjectId, color])
+      if (!this.bloomTimer)
+        this.bloomTimer = window.setTimeout(() => {
+          this.bloomTimer = 0
+          const next = this.bloomQueue.shift()
+          if (next) this.bloomNebula(next[0], next[1])
+          if (this.bloomQueue.length && !this.bloomTimer) this.bloomTimer = window.setTimeout(() => this.drainBloom(), 250)
+        }, burst ? 250 : 1600)
+      return
+    }
+    this.bloomBurst = burst
+    const sj = this.subjectOf(subjectId)
     const c = cssColor(color)
     if (c) {
       const l = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]
       sj.color = [l + (c[0] - l) * 0.8, l + (c[1] - l) * 0.8, l + (c[2] - l) * 0.8] // 채도 −20%
     }
     sj.bloomed = true
-    this.nebulae.set(subjectId, { t0: this.mode === 'off' ? -1e9 : this.nowS() })
+    this.nebulae.set(subjectId, { t0: this.mode === 'off' ? -1e9 : this.nowS(), dur: this.bloomBurst ? 0.8 : 1.6 })
     if (this.mode !== 'off') {
       const cen = this.branchCenter(sj.k)
       const n = 3 + (hashStr(subjectId) % 3)
@@ -2193,9 +2275,9 @@ export class FieldEngine {
       for (const [id, nb] of this.nebulae) {
         const sj = this.subjects.get(id)
         if (!sj) continue
-        const k = t - nb.t0
+        const k = (t - nb.t0) * (1.6 / nb.dur) // 절제판(800ms)은 같은 곡선을 두 배 빠르게
         const lv = k < 0.6 ? 0.22 * (1 - Math.pow(1 - k / 0.6, 3)) : k < 1.6 ? 0.22 - 0.1 * (0.5 - 0.5 * Math.cos(Math.PI * (k - 0.6))) : 0.12
-        out.push({ id: 'neb:' + id, group: 'nebula', pos: this.branchCenter(sj.k), L: 1, color: sj.color, wr: 0.9 * Math.min(1, k / 0.6 + 0.001), from: lv, to: k < 1.6 ? 0.12 : lv, t0: t, dur: k < 1.6 ? 1.6 - k : 0 })
+        out.push({ id: 'neb:' + id, group: 'nebula', pos: this.branchCenter(sj.k), L: 1, color: sj.color, wr: 0.9 * Math.min(1, k / 0.6 + 0.001), from: lv, to: k < 1.6 ? 0.12 : lv, t0: t, dur: k < 1.6 ? (1.6 - k) * (nb.dur / 1.6) : 0 })
         if (k < 1.6 && !this.nebTimer)
           this.nebTimer = window.setTimeout(() => {
             this.nebTimer = 0

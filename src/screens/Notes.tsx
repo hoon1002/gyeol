@@ -46,8 +46,14 @@ export function NotesScreen() {
   const ever = useRef(false)
   if (active) ever.current = true
 
-  // 다른 화면으로 나가면 '이 노트로' 초점은 풀린다
-  const clearFocus = () => useUi.getState().setNoteFocusId(null)
+  // 다른 화면으로 나가면 '이 노트로' 초점은 풀린다. 활성 → 비활성으로 바뀔 때만 푼다.
+  // (ActiveMood onLeave는 도착할 때 Leave가 새로 마운트되며 StrictMode 개발 모드의 effect 두 번 실행으로 cleanup이 불려,
+  //  지도 별 [열기] · ⌘K · 집중 별 '노트 열기'가 넘겨 준 초점을 도착하자마자 지웠다)
+  const wasActive = useRef(active)
+  useEffect(() => {
+    if (wasActive.current && !active) useUi.getState().setNoteFocusId(null)
+    wasActive.current = active
+  }, [active])
 
   const alive = notes ?? []
   const list = alive.filter((n) => !lens || n.subjectId === lens)
@@ -142,7 +148,7 @@ export function NotesScreen() {
   const meta = lensSubject ? `${lensSubject.name} ${list.length}` : `${list.length}개${topSubject?.s ? ` · ${topSubject.s.short} ${topSubject.n}` : ''}`
 
   const skyStars = useMemo(() => (stars ? { notes: stars.notes, noteLinks: stars.noteLinks, subjects: skySubjects } : undefined), [stars, skySubjects])
-  const mood = <FieldMood preset={SKY.mood} drag={SKY.drag} onLeave={clearFocus} stars={skyStars} />
+  const mood = <FieldMood preset={SKY.mood} drag={SKY.drag} stars={skyStars} />
 
   const paper = focus ? (
     <PaperSlot

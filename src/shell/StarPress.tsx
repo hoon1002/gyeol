@@ -99,6 +99,19 @@ export function StarPress() {
         zoom: () => 3.4,
       }
     }
+    // M2: 지도의 노트 별 (useSkyStars notes 층) — 누르면 그 노트를 연다
+    if (layer === 'notes') {
+      const note = await db.notes.get(id)
+      if (!note || note.deletedAt) return null
+      const links = (await db.links.where('from').equals(id).count()) + (await db.links.where('to').equals(id).count())
+      return {
+        id,
+        title: note.title || '제목 없음',
+        meta: `${await subjectName(note.subjectId)} · 링크 ${links}`,
+        action: { label: '열기', run: (el) => { ui.setNoteFocusId(note.id); goTo('/notes', el) } },
+        zoom: () => 3.4,
+      }
+    }
     return null
   }
 

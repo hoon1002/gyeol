@@ -1,6 +1,6 @@
 {
   "project": "결 GYEOL · M0 3D 품질 관문",
-  "subtitle": "M2 · 입구 (1초 메모·별가루함·노트 편집기·링크·검색·시간표·백업·첫 실행)",
+  "subtitle": "M2 · 입구 구현 완료(편집기·링크·검색·메모·시간표·백업·첫 실행) → 하늘 마무리 · 검수",
   "phases": [
     {
       "name": "v4 기획 · 3D 시제품 · M0 · M1",
@@ -15,7 +15,7 @@
     },
     {
       "name": "M2 구현: 글(편집기·링크·검색) · 입구(메모·시간표·백업·첫 실행) · 하늘",
-      "status": "active",
+      "status": "done",
       "members": [
         "app",
         "app2",
@@ -24,7 +24,7 @@
     },
     {
       "name": "M2 검수 · 측정 · 보고",
-      "status": "todo",
+      "status": "active",
       "members": [
         "ad"
       ]

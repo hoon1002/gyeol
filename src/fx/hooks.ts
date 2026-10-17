@@ -516,7 +516,7 @@ export function useSkyCamera(): {
 /** 별 누르기: 화면 px ↔ 하늘 좌표, 누른 자리에서 가장 가까운 데이터 별 */
 export function useSkyPick(): {
   /** world: 3D 은하 좌표 [x, y, z] (M1 추가). 2.5D 대체에서는 [하늘 x, 하늘 y, 0] */
-  pick: (x: number, y: number, radius?: number) => { id: string; layer: string; sky: [number, number]; screen: [number, number]; dist: number; world: [number, number, number] } | null
+  pick: (x: number, y: number, radius?: number) => { id: string; layer: string; kind?: 'note'; sky: [number, number]; screen: [number, number]; dist: number; world: [number, number, number] } | null
   toSky: (x: number, y: number) => [number, number]
   toScreen: (skyX: number, skyY: number) => [number, number]
 } {

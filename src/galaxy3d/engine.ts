@@ -307,6 +307,7 @@ const P = {
   fg: prog(SH.FG_VS, SH.FG_FS),
   down4: prog(SH.FULL_VS, SH.DOWN4_FS),
   dot: prog(SH.DOT_VS, SH.DOT_FS),
+  lclamp: prog(SH.FULL_VS, SH.LINECLAMP_FS),
   seg: prog(SH.SEG_VS, SH.SEG_FS),
 }
 
@@ -1826,20 +1827,39 @@ function drawEvents(m: Float32Array, now: number) {
     gl.bindVertexArray(segVao)
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, ns)
   }
-  if (nl) {
+  if (nl && dustRT) {
+    // 빛줄기: 반 해상도 층(먼지 투과율 버퍼를 다시 씀)에 더한 뒤 한 픽셀 35%에서 잘라 얹는다 (design-m2 4-3)
+    const lw = Math.max(1, W >> 1)
+    const lh = Math.max(1, H >> 1)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dustRT.fb)
+    gl.viewport(0, 0, lw, lh)
+    gl.clearColor(0, 0, 0, 1)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    gl.blendFunc(gl.ONE, gl.ONE)
     const L = P.seg
     gl.useProgram(L.p)
     gl.uniformMatrix4fv(L.u.uVP!, false, m)
     gl.uniform1f(L.u.uTime!, simT)
     gl.uniform4fv(L.u['uZone[0]']!, zoneUv)
     gl.uniform3f(L.u.uZoneP!, cssW, cssH, featherPx)
-    gl.uniform2f(L.u.uView!, W, H)
-    gl.uniform1f(L.u.uWidth!, 0.375 * dpr) // 0.75px
+    gl.uniform2f(L.u.uView!, lw, lh)
+    gl.uniform1f(L.u.uWidth!, Math.max(0.5, 0.1875 * dpr)) // 0.75px (반 해상도)
     gl.uniform1f(L.u.uDay!, day)
     gl.uniform1f(L.u.uSegK!, noteViewK.lines)
     gl.uniform1f(L.u.uCart!, 1)
     gl.bindVertexArray(nlinkVao)
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nlinkN)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.viewport(0, 0, W, H)
+    if (day) gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_COLOR)
+    else gl.blendFunc(gl.ONE, gl.ONE)
+    gl.useProgram(P.lclamp.p)
+    gl.bindVertexArray(vaoEmpty)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, dustRT.tex)
+    gl.uniform1i(P.lclamp.u.uTex!, 0)
+    gl.uniform4f(P.lclamp.u.uSrc!, lw / dustRT.w, lh / dustRT.h, (lw - 0.5) / dustRT.w, (lh - 0.5) / dustRT.h)
+    gl.drawArrays(gl.TRIANGLES, 0, 3)
   }
   if (nn) {
     const D = P.dot
@@ -2265,6 +2285,10 @@ return {
     }
     return 2600
   },
+  /** 패턴 좌표(t=0) 점의 지금 화면 위치(CSS px) — 노트 별 고르기 등 */
+  project: (p: [number, number, number]): [number, number] | null => (lastVP ? projectCss(lastVP, dataWorld({ id: '', pos: p, L: 0, color: [0, 0, 0], from: 0, to: 0, t0: 0, dur: 0 })) : null),
+  /** 패턴 좌표 → 지금 세계 좌표 */
+  toWorld: (p: [number, number, number]): [number, number, number] => dataWorld({ id: '', pos: p, L: 0, color: [0, 0, 0], from: 0, to: 0, t0: 0, dur: 0 }),
   /** 편집 중(useFieldPause): 자전·공전 ×0.3, 전경 별 0 (300ms) */
   setCalm: (on: boolean) => {
     calm = on

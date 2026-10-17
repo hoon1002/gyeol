@@ -527,3 +527,13 @@ uniform float uDay;
 out vec4 o;
 void main() { o = uDay > 0.5 ? vec4(vA * (1.0 - vec3(0.271, 0.294, 0.345)), 1.0) : vec4(vC * vA, 1.0); }
 `
+
+/* 빛줄기 층 얹기 (design-m2 4-3): 반 해상도 층에 더한 선을 한 픽셀 35%에서 잘라 캔버스에 */
+export const LINECLAMP_FS = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform vec4 uSrc;
+out vec4 o;
+void main() { o = vec4(min(texture(uTex, min(vUv * uSrc.xy, uSrc.zw)).rgb, vec3(0.35)), 1.0); }
+`

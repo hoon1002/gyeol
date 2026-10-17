@@ -475,3 +475,22 @@
 
 - 콘솔에서 사건 보기: lab.html이나 앱에서 `__gyeolPerf.events()`로 FieldEngine을 얻는다. 예: `.dust({ id: 'm1' })` · `.setDust(30)` · `.fileDust('m1', 's0')` · `.glintNotes(['n1', 'n2'])` · `.bloomNebula('s0', '#7FB0FF')` · `__gyeolPerf.fly('onboarding')` 뒤 `.revealGalaxy()` · `.importNotes(['n1'])`.
 - 시제품 galaxy3d.html은 FieldEngine이 없는 엔진 데모라서, M2 사건 확인은 lab.html의 콘솔로 한다.
+
+### 13-4. M2 마무리 (앱 A가 찾은 3건 + 남은 것, 2026-10-17)
+- **노트 별 고르기:** 지도에서 `useSkyPick().pick()`이 노트 층도 본다. 데이터 별과 노트 별 가운데 가까운 것을 돌려준다.
+  - 결과는 `{ id, layer: 'notes', kind: 'note', world, screen, dist, sky: [0, 0] }`다.
+  - 바로 뒤 `useSkyCamera().flyTo({ scene, focus })`를 부르면, 방금 고른 노트 별 쪽으로 1.4u 다가간다(자세·롤 변화 0).
+- **노트 탄생:** `birthStar({ kind: 'note', id })`는 이제 노트 층의 같은 id를 가리킨다(graph 층에 별을 따로 만들지 않는다).
+  - 그 id가 이미 `useSkyStars({ notes })`에 있으면 바로 V1s, 아직 없으면 기다렸다가 5초 안에 들어오는 순간 V1s를 한다.
+  - **앱 할 일 없음.** 지금처럼 birthStar를 부르고 useSkyStars를 갱신하면 된다. 순서는 상관없다.
+- **과목 없음:** subjectId가 null · '' · '_none'이면 모두 '과목 없음' 가지(지도 성운 한가운데, 중립 흰빛 #DCE4FF)로 간다. 터지지 않는다.
+- **빛줄기 35%:** 빛줄기를 반 해상도 층(먼지 투과율 버퍼를 다시 씀)에 더한 뒤, 한 픽셀 35%에서 잘라 얹는다. 낮에는 먹 농도를 35%에서 자른다.
+- **성운 피기 대기열:** 동시 1개이고, 1.5초 안에 3번 넘게 몰리면(샘플로 시작) 4개까지 겹치며 절제판 800ms다. 넘치는 것은 차례로 피운다.
+- **전체 다시 쌓기:**
+  - 노트 자리는 (id, 과목 가지, σ)가 같으면 다시 계산하지 않는다(캐시).
+  - 노트가 300개를 넘으면 GPU 버퍼 다시 쌓기는 다음 유휴 시간(requestIdleCallback, 최대 200ms)으로 미룬다. 데이터 갱신 프레임 안의 JS는 자리 계산뿐이다.
+- 확인(앱 `/map`): 과목 없음 3종 문제없음 · 기다리던 탄생 해소 · 노트 별 고르기 a1/kind 'note' · 성운 대기열 동작 · 콘솔 오류 0.
+- **남은 것:**
+  - 지도 활동 GPU 측정(보이는 창 필요 — 이번에도 측정 중 창이 숨김으로 바뀌었다)
+  - D1 레일 점
+  - D3 꼬리
