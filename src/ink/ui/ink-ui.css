@@ -684,3 +684,18 @@ input.ink-drawer-title {
 }
 @keyframes ink-penonly { 0% { opacity: 0 } 15%, 40% { opacity: 1 } 100% { opacity: 0 } }
 @keyframes ink-slash { from { stroke-dashoffset: 20 } to { stroke-dashoffset: 0 } }
+
+/* 폰: 칸이 화면 밖으로 나가지 않게 */
+.ink-pill {
+  max-width: calc(100% - 16px);
+}
+.ink-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.ink-export.is-fail {
+  animation: ink-shake 160ms linear 2;
+}

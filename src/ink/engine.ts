@@ -192,6 +192,9 @@ export class InkEngine {
     const pad = this.mode === 'pad' ? o.padSize ?? [this.host.clientWidth || 320, this.host.clientHeight || 240] : null
     await this.doc.open(pad ? { template: 'blank', w: pad[0], h: pad[1] } : { template: o.template ?? 'ruled' })
     if (this.destroyed) return
+    // 메모 칸: 쪽이 하나뿐이니 미리 읽는다 (다시 붙였을 때 획 · 획 수가 바로 맞게)
+    if (this.mode === 'pad' && this.doc.pages[0]) await this.doc.load(this.doc.pages[0])
+    if (this.destroyed) return
     const [scratch, penPie, eraserReturn] = await Promise.all([getInkMeta(this.db, 'ink.scratch', true), getInkMeta(this.db, 'ink.penPie', true), getInkMeta(this.db, 'ink.eraserReturn', false)])
     this.prefs = { scratch, penPie, eraserReturn }
     this.readColors()

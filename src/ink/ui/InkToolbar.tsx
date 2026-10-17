@@ -49,14 +49,16 @@ const TEMPLATE_NAME: Record<PageTemplate, string> = { blank: '빈', ruled: '줄'
 const phone = () => innerWidth < 600
 const dockKey = () => (phone() ? 'phone' : innerWidth > innerHeight ? 'land' : 'port')
 const run = (id: string, e: InkEngine) => void INK_COMMAND_MAP.get(id)?.run(e)
+/** 엔진마다: 열린 서랍 닫기 (선택 층이 위에 쌓였어도 서랍이 먼저 닫히게) */
+const drawerClose = new WeakMap<InkEngine, () => void>()
 
 /** 층(layers.ts)에 올렸다 내린다 */
-function useLayer(open: boolean, id: string, close: () => void) {
+function useLayer(open: boolean, id: string, close: () => void | boolean) {
   const c = useRef(close)
   c.current = close
   useEffect(() => {
     if (!open) return
-    return pushLayer({ id, close: () => c.current() })
+    return pushLayer({ id, close: () => c.current() as void | boolean })
   }, [open, id])
 }
 
@@ -75,7 +77,7 @@ export function InkToolbar({ engine: e, title, onRename, onExport }: InkToolbarP
   const [k, setK] = useState<Tools>(DEF_TOOLS)
   const [dock, setDock] = useState<Dock>({ edge: phone() ? 'bottom' : 'top', t: 0.5 })
   const [bead, setBead] = useState(false)
-  const [pop, setPop] = useState<null | 'color' | 'width' | 'opts' | 'more'>(null)
+  const [pop, setPop] = useState<null | 'color' | 'width' | 'opts' | 'more' | 'slots'>(null)
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null)
   const [, force] = useState(0)
   const pillRef = useRef<HTMLDivElement>(null)
@@ -233,6 +235,8 @@ export function InkToolbar({ engine: e, title, onRename, onExport }: InkToolbarP
   const shown = (hex: string) => (tool === 'tape' ? tapeColor(hex, e.night) : tool === 'highlighter' ? hex : inkColor(hex, e.night))
   const dotColor = tool === 'eraser' || tool === 'lasso' ? 'var(--text-1)' : shown(curColor)
   const mid = tool === 'pen' || tool === 'highlighter' || tool === 'tape' || tool === 'text' ? 'color' : tool === 'eraser' ? 'eraser' : 'none'
+  // 좁은 화면(폰 390): 도구 5 + 지금 색 하나 + ⋯ 만 (설계 11장). 색 3 · 굵기는 위 줄로
+  const narrow = e.view.W < 480 && !vertical
 
   const style: React.CSSProperties = drag
     ? { left: drag.x - e.host.getBoundingClientRect().left, top: drag.y - e.host.getBoundingClientRect().top, transform: 'translate(-50%, -50%) scale(1.04)' }
@@ -276,7 +280,12 @@ export function InkToolbar({ engine: e, title, onRename, onExport }: InkToolbarP
               ))}
             </div>
             {mid !== 'none' && <i className="ink-sep" />}
-            {mid === 'color' && (
+            {mid === 'color' && narrow && (
+              <button className={'ink-btn' + (pop === 'slots' ? ' is-on' : '')} {...tip('색 · 굵기')} onClick={() => setPop(pop === 'slots' ? null : 'slots')}>
+                <IconColorDot color={shown(curColor)} size={20} ring />
+              </button>
+            )}
+            {mid === 'color' && !narrow && (
               <div className="ink-mid">
                 {(tool === 'highlighter' ? k.hl.slots : tool === 'tape' ? k.tape.slots : k.pen.slots).map((hex, i) => {
                   const sel = (tool === 'highlighter' ? k.hl.sel : tool === 'tape' ? k.tape.sel : k.pen.sel) === i
@@ -323,7 +332,33 @@ export function InkToolbar({ engine: e, title, onRename, onExport }: InkToolbarP
             </button>
           </>
         )}
-        {pop && !bead && <Popover kind={pop} engine={e} tool={tool} k={k} save={save} close={() => setPop(null)} vertical={vertical} edge={dock.edge} />}
+        {pop === 'slots' && !bead && (
+          <div className={'ink-pop ink-seg at-' + dock.edge}>
+            {(tool === 'highlighter' ? k.hl.slots : tool === 'tape' ? k.tape.slots : k.pen.slots).map((hex, i) => (
+              <button
+                key={i}
+                className="ink-btn ink-sw"
+                aria-label={'색 ' + (i + 1)}
+                onClick={() => {
+                  const n = { ...k }
+                  if (tool === 'highlighter') n.hl = { ...n.hl, sel: i }
+                  else if (tool === 'tape') n.tape = { ...n.tape, sel: i }
+                  else n.pen = { ...n.pen, sel: i }
+                  save(n)
+                }}
+              >
+                <IconColorDot color={shown(hex)} size={20} ring={(tool === 'highlighter' ? k.hl.sel : tool === 'tape' ? k.tape.sel : k.pen.sel) === i} />
+              </button>
+            ))}
+            <button className="ink-btn" aria-label="색 고르기" onClick={() => setPop('color')}>
+              <IconMore />
+            </button>
+            <button className="ink-btn" aria-label="굵기" onClick={() => setPop('width')}>
+              <i className="ink-wdot" style={{ width: widthDot(k, tool), height: widthDot(k, tool), background: dotColor }} />
+            </button>
+          </div>
+        )}
+        {pop && pop !== 'slots' && !bead && <Popover kind={pop} engine={e} tool={tool} k={k} save={save} close={() => setPop(null)} vertical={vertical} edge={dock.edge} />}
       </div>
       <RadialMenu engine={e} />
       <SelectionBar engine={e} />
@@ -624,7 +659,14 @@ function SelectionBar({ engine: e }: { engine: InkEngine }) {
       setMore(false)
     }
   }, [s])
-  useLayer(!!s, 'ink-sel', () => e.clearSelection())
+  useLayer(!!s, 'ink-sel', () => {
+    const d = drawerClose.get(e)
+    if (d) {
+      d()
+      return false
+    }
+    e.clearSelection()
+  })
   useLayoutEffect(() => {
     if (!s || !ref.current) return setPos(null)
     const w = ref.current.offsetWidth, h = ref.current.offsetHeight
@@ -833,6 +875,13 @@ function PageDrawer({ engine: e, title, onRename }: { engine: InkEngine; title?:
   const q = useRef<{ list: string[]; busy: boolean }>({ list: [], busy: false })
   useLayer(open, 'ink-drawer', () => setOpen(false))
   useEffect(() => {
+    if (!open) return
+    drawerClose.set(e, () => setOpen(false))
+    return () => {
+      drawerClose.delete(e)
+    }
+  }, [open, e])
+  useEffect(() => {
     if (title !== undefined) setName(title)
     else void e.db.notes.get(e.noteId).then((n) => n && setName(n.title))
   }, [e, title])
@@ -1025,7 +1074,8 @@ async function deliver(blob: Blob, name: string, kind: 'pdf' | 'png', onExport?:
   if (onExport) return onExport(kind, blob)
   const file = new File([blob], name, { type: blob.type })
   const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean }
-  if ('ontouchend' in document && nav.canShare?.({ files: [file] })) {
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  if (ios && nav.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file] })
       return
@@ -1045,31 +1095,39 @@ function ExportPop({ engine: e, onExport }: { engine: InkEngine; onExport?: (kin
   const [tapes, setTapes] = useState<'none' | 'hidden'>('none')
   const [busy, setBusy] = useState<null | 'pdf' | 'png'>(null)
   const [done, setDone] = useState(0)
+  const [fail, setFail] = useState(0)
   useLayer(open, 'ink-export', () => setOpen(false))
   const go = async (kind: 'pdf' | 'png', t: 'none' | 'hidden' = tapes) => {
     if (busy) return
     setBusy(kind)
     setDone(0)
+    setFail(0)
+    let ok = false
     try {
       const stamp = new Date().toISOString().slice(0, 10)
       if (kind === 'pdf') await deliver(await e.exportPdf({ tapes: t }), `gyeol-${stamp}.pdf`, 'pdf', onExport)
       else {
         const b = await e.exportPng(undefined, { tapes: t })
-        if (b) await deliver(b, `gyeol-${stamp}.png`, 'png', onExport)
+        if (!b) throw new Error('no page')
+        await deliver(b, `gyeol-${stamp}.png`, 'png', onExport)
       }
+      ok = true
     } catch (err) {
       e.emit('error', err instanceof Error ? err : new Error(String(err)))
+      setFail((n) => n + 1)
     } finally {
       setBusy(null)
-      setOpen(false)
+      if (ok) setTimeout(() => setOpen(false), 300)
     }
   }
   useEffect(() => {
     const offs = [
       e.on('ui', ({ id }) => {
         if (id === 'ink.export.open') setOpen((o) => !o)
-        else if (id === 'ink.export.pdf') void go('pdf', 'none')
-        else if (id === 'ink.export.png') void go('png', 'none')
+        else if (id === 'ink.export.pdf' || id === 'ink.export.png') {
+          setOpen(true)
+          void go(id === 'ink.export.pdf' ? 'pdf' : 'png', 'none')
+        }
       }),
       e.on('progress', (p) => p.kind === 'export' && setDone(p.done / Math.max(1, p.total))),
     ]
@@ -1083,7 +1141,8 @@ function ExportPop({ engine: e, onExport }: { engine: InkEngine; onExport?: (kin
       </svg>
     ) : null
   return (
-    <div className="ink-pop ink-export" data-ink-ui="" role="dialog" aria-label="내보내기">
+    <div key={fail} className={'ink-pop ink-export' + (fail ? ' is-fail' : '')} data-ink-ui="" role="dialog" aria-label="내보내기">
+      <span className="ink-sr" aria-live="polite">{fail ? '내보낼 수 없어요' : busy ? '만드는 중' : ''}</span>
       <button className="ink-btn" {...tip('PDF 전체')} onClick={() => void go('pdf')}>
         <IconShare />
         {arc(busy === 'pdf')}

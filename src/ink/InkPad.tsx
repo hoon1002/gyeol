@@ -8,13 +8,15 @@
  */
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useFieldPause } from '@/fx'
-import type { InkDB } from '@/db/ink'
+import { appInkDB, type InkDB } from '@/db/ink'
 import { createInkEngine, type InkEngine } from './engine'
 import { PEN_SLOTS } from './palette'
 import './ink.css'
 
 export interface InkPadProps {
   memoId: string
+  /** 이미 있는 쪽 (memo.pageId). 주면 그 쪽의 노트 id로 연다(없으면 'memo:<memoId>') */
+  pageId?: string | null
   /** 칸 크기 (pt = CSS px) */
   width: number
   height: number
@@ -33,18 +35,30 @@ export function InkPad(props: InkPadProps) {
   useEffect(() => {
     const host = ref.current
     if (!host) return
-    const eng = createInkEngine({ host, noteId: 'memo:' + props.memoId, db: props.db, mode: 'pad', padSize: [props.width, props.height], night: document.documentElement.getAttribute('data-theme') !== 'light' })
-    eng.setPen({ color: PEN_SLOTS[0], width: 2, kind: 'ball' })
-    const offs = [eng.on('active', setInking), eng.on('change', () => cb.current.onChange?.(eng.doc.strokeCount))]
-    void eng.ready.then(() => {
-      cb.current.onReady?.(eng)
-      cb.current.onChange?.(eng.doc.strokeCount)
-    })
+    let eng: InkEngine | null = null
+    let offs: Array<() => void> = []
+    let dead = false
+    const d = props.db ?? appInkDB
+    void (async () => {
+      // 기존 쪽이 있으면 그 쪽의 노트 id로 (획을 다시 불러온다)
+      const page = props.pageId ? await d.pages.get(props.pageId).catch(() => undefined) : undefined
+      if (dead) return
+      const noteId = page?.noteId ?? 'memo:' + props.memoId
+      const e = createInkEngine({ host, noteId, db: d, mode: 'pad', padSize: [props.width, props.height], night: document.documentElement.getAttribute('data-theme') !== 'light' })
+      eng = e
+      e.setPen({ color: PEN_SLOTS[0], width: 2, kind: 'ball' })
+      offs = [e.on('active', setInking), e.on('change', () => cb.current.onChange?.(e.doc.strokeCount))]
+      await e.ready
+      if (dead) return
+      cb.current.onReady?.(e)
+      cb.current.onChange?.(e.doc.strokeCount)
+    })()
     return () => {
+      dead = true
       offs.forEach((f) => f())
-      eng.destroy()
+      eng?.destroy()
     }
-  }, [props.memoId, props.db, props.width, props.height])
+  }, [props.memoId, props.pageId, props.db, props.width, props.height])
   useFieldPause(inking, 'ink')
   return <div ref={ref} className={'ink-pad-host' + (props.className ? ' ' + props.className : '')} style={{ position: 'relative', width: props.width, height: props.height, ...props.style }} aria-label="손글씨 메모" role="application" />
 }
