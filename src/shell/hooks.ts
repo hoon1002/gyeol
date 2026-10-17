@@ -2,9 +2,9 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { flightMs, useFieldTransition, type MotionLevel } from '@/fx'
-import { useSettings } from '@/stores/settings'
+import { useSettings, type RotationPref } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
-import { spaceIndex, type SpacePath } from './spaces'
+import { spaceIndex, spaceOf, type SpacePath } from './spaces'
 
 /* ---------- 미디어 쿼리 ---------- */
 
@@ -38,6 +38,8 @@ export function useMediaQuery(q: string): boolean {
 export const useOsReducedMotion = () => useMediaQuery('(prefers-reduced-motion: reduce)')
 export const useIsPhone = () => useMediaQuery('(max-width: 599px)')
 export const useIsDesktop = () => useMediaQuery('(min-width: 1200px)')
+/** 독·레일 v4: ≥ 768 왼쪽 레일(장소 6), 그보다 좁으면 아래 독(오늘·노트·복습·집중) */
+export const useIsRail = () => useMediaQuery('(min-width: 768px)')
 
 /** 실제 적용 모션 수준: OS '동작 줄이기'면 off */
 export function useEffectiveMotion(): MotionLevel {
@@ -46,16 +48,22 @@ export function useEffectiveMotion(): MotionLevel {
   return os ? 'off' : pref
 }
 
+/** 실제 적용 은하 회전: OS 동작 줄이기·움직임 '정지'면 끔 */
+export function useEffectiveRotation(): RotationPref {
+  const pref = useSettings((s) => s.rotation)
+  const level = useEffectiveMotion()
+  return level === 'off' ? 'off' : pref
+}
+
 /* ---------- 이동 (결 와이프로 감싼 라우터 이동) ---------- */
 
 /** 장소 좌표 (design-v3-camera §1, iPad 값) — 글자 들어오는 시점 = 비행 길이 D − 320ms */
 const PLACE: Record<string, { x: number; y: number; z: number }> = {
   '/': { x: 0.5, y: 0.5, z: 1 },
-  '/settings': { x: 0.5, y: 0.5, z: 1 },
-  '/planner': { x: 0.55, y: 0.47, z: 0.88 },
+  '/plan': { x: 0.55, y: 0.47, z: 0.88 },
   '/notes': { x: 0.4, y: 0.74, z: 1.4 },
   '/review': { x: 0.66, y: 0.5, z: 1.9 },
-  '/graph': { x: 0.7, y: 0.36, z: 2.3 },
+  '/map': { x: 0.7, y: 0.36, z: 2.3 },
   '/focus': { x: 0.48, y: 0.33, z: 3.0 },
 }
 
@@ -85,7 +93,8 @@ export function useGo() {
           await router.navigate({ to })
           window.scrollTo(0, 0)
         },
-        { origin: origin ?? undefined, direction },
+        // 목적지 장소를 직접 알린다(href 추정에 기대지 않음 — /map·/plan)
+        { origin: origin ?? undefined, direction, to: spaceOf(to).mood },
       )
     },
     [router, transition, level, travel],

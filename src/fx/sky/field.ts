@@ -1,4 +1,7 @@
 /**
+ * 결 하늘 엔진 — M1: 3D 은하(src/galaxy3d/engine.ts)를 FieldProvider 뒤에서 돌린다.
+ * WebGL2가 없거나 C 등급이면 v3 2.5D 은하수(src/galaxy/sky/sky.ts)를 동적 import로 늦게 불러 대체한다.
+ * (아래는 v3 설명 — 2.5D 대체 경로에 그대로 해당)
  * 결 하늘 엔진 — v3 은하수를 FieldProvider 뒤에서 돌린다 (team/v3-integration-brief.md, team/design-v3-motion.md).
  *
  * 캔버스 1개·rAF 1개(src/galaxy/sky/sky.ts). React는 이 객체의 메서드만 부른다(프레임마다 리렌더 없음).
@@ -7,7 +10,9 @@
  * 레이어 규칙(그대로): html에 배경, body는 transparent, 하늘은 position:fixed; inset:0; z-index:0,
  * 앱 루트는 position:relative; z-index:1.
  */
-import { Sky, type Cam, type LookOverride, type SpecialStar } from '../../galaxy/sky/sky'
+import type { Sky, Cam, LookOverride, SpecialStar } from '../../galaxy/sky/sky'
+import { Galaxy3D, type Anchor, type AnchorName, type DataStar, type PlaceId } from '../../galaxy3d/engine'
+import { LANDMARKS } from '../../galaxy3d/galaxy'
 import type { SceneName } from '../../galaxy/sky/compositions'
 import { deviceOf, pickComposition } from '../../galaxy/sky/compositions'
 import { mulberry32 } from '../../galaxy/sky/rng'
@@ -87,12 +92,14 @@ function sceneFor(preset: MoodName, phase: Exclude<SkyPhase, 'auto'>): { scene: 
     case 'notes':
       return { scene: 'notes', look: { bright: 0.55 } }
     case 'graph':
+    case 'map':
       return { scene: 'graph', look: { bright: 0.45 } } // 띠 45% — 노트 별자리가 주인공 (review #6)
     case 'review':
       return { scene: 'review', look: { bright: 0.7 } }
     case 'focus':
       return { scene: 'focus', look: { bright: 0.65 } }
     case 'planner':
+    case 'plan':
       return { scene: 'review', look: { bright: 0.7, fall: 0.4 } }
     case 'settings': {
       // 오늘과 같은 자리, 노출 × 0.65 (review #8)
@@ -110,7 +117,9 @@ const LAYERS: Record<MoodName, Partial<Record<Layer, number>>> = {
   review: { review: 1 },
   notes: {},
   graph: { graph: 1 },
+  map: { graph: 1 },
   planner: { exam: 1, today: 0.5 },
+  plan: { exam: 1, today: 0.5 },
   settings: {},
 }
 
@@ -132,6 +141,8 @@ const PLACES: Record<MoodName, Cam> = {
   notes: { x: 0.28, y: 0.36, z: 1.4 }, // 띠 몸통이 아닌 바깥 헤이즈 (review #8)
   review: { x: 0.66, y: 0.5, z: 1.9 },
   graph: { x: 0.7, y: 0.36, z: 2.3 },
+  map: { x: 0.7, y: 0.36, z: 2.3 },
+  plan: { x: 0.55, y: 0.47, z: 0.88 },
   focus: { x: 0.48, y: 0.33, z: 3.0 },
 }
 const PLACES_PHONE: Partial<Record<MoodName, Cam>> = {
@@ -202,6 +213,38 @@ interface LinkRec {
   drawn: boolean
 }
 
+/** 무드 → 3D 장소 (design-v4 §8). 설정은 장소가 아니라 시트 → null(비행 없음), 장소가 아닌 무드는 오늘 시점 */
+function place3d(m: MoodName): PlaceId | null {
+  switch (m) {
+    case 'notes':
+      return 'notes'
+    case 'graph':
+    case 'map':
+      return 'graph'
+    case 'review':
+      return 'review'
+    case 'planner':
+    case 'plan':
+      return 'planner'
+    case 'focus':
+      return 'focus'
+    case 'settings':
+      return null
+    default:
+      return 'today'
+  }
+}
+/** 데이터 별 층 → 은하 속 자리(패턴 좌표) · 넓이(u). 하늘 좌표(집 화면 비율 0..1)를 그 둘레에 펼친다 — 사건 51개 표(design-m1) 전 임시 배치 */
+const LAYER3D: Record<Layer, { c: [number, number, number]; span: number }> = {
+  today: { c: LANDMARKS.focus, span: 6 },
+  focus: { c: LANDMARKS.focus, span: 3 },
+  review: { c: LANDMARKS.review, span: 2.4 },
+  graph: { c: LANDMARKS.graph, span: 4 },
+  exam: { c: [8.5, 0.3, 5.5], span: 6 },
+}
+/** 빈 하늘 드래그 기본값 (m1-brief 계약): 오늘·지도·집중은 켬, 노트·복습·계획은 끔 */
+const DRAG_DEFAULT: Partial<Record<MoodName, boolean>> = { landing: true, today: true, graph: true, map: true, focus: true }
+
 export class FieldEngine {
   private level: MotionLevel = 'rich'
   private theme: ThemeName = 'dark'
@@ -213,6 +256,11 @@ export class FieldEngine {
   private canvas: HTMLCanvasElement | null = null
   private svg: SVGSVGElement | null = null
   private sky: Sky | null = null
+  /** M1: 3D 은하 (있으면 이쪽이 하늘) */
+  private g3d: Galaxy3D | null = null
+  private rotation: 'on' | 'slow' | 'off' = 'on'
+  private sheets = new Set<number>()
+  private drags = new Map<number, boolean>()
   private hud: HTMLElement | null = null
   private cleanups: Array<() => void> = []
   private vw = 1
@@ -290,8 +338,9 @@ export class FieldEngine {
     this.prefSubs.forEach((f) => f())
   }
 
-  configure(o: { level: MotionLevel; theme: ThemeName; tier: 'auto' | Tier; debug: boolean; travel?: Travel; meteors?: boolean }): void {
+  configure(o: { level: MotionLevel; theme: ThemeName; tier: 'auto' | Tier; debug: boolean; travel?: Travel; meteors?: boolean; rotation?: 'on' | 'slow' | 'off' }): void {
     if (o.travel) this.travel = o.travel
+    if (o.rotation) this.rotation = o.rotation
     if (typeof o.meteors === 'boolean') this.meteorsOn = o.meteors
     const themeChanged = o.theme !== this.theme
     const tierChanged = o.tier !== this.tierSetting
@@ -299,6 +348,7 @@ export class FieldEngine {
     this.theme = o.theme
     this.debug = o.debug
     this.tierSetting = o.tier
+    this.config3d()
     const sky = this.sky
     if (sky) {
       sky.setReduced(this.mode === 'off')
@@ -307,6 +357,15 @@ export class FieldEngine {
       if (themeChanged) sky.setPlate(o.theme === 'light', this.mode === 'off' ? 1 : 680)
     }
     this.emitPrefs()
+  }
+
+  private config3d() {
+    const g = this.g3d
+    if (!g) return
+    g.setMotion(this.mode)
+    g.setRotation(this.rotation)
+    g.setTheme(this.theme)
+    g.setTravel(this.travelMode())
   }
 
   /* ---------- DOM ---------- */
@@ -327,8 +386,51 @@ export class FieldEngine {
     this.svg = svg
     this.linkG = document.createElementNS('http://www.w3.org/2000/svg', 'g')
     svg.appendChild(this.linkG)
+    // M1: 3D 은하가 기본. WebGL2가 없거나 C 등급이면 2.5D 하늘을 늦게 불러 쓴다
+    if (this.tierSetting !== 'C' && Galaxy3D.supported()) {
+      try {
+        this.g3d = new Galaxy3D({
+          tier: this.tierSetting,
+          rotation: this.rotation,
+          input: window,
+          dragFilter: this.dragFilter,
+          onFirstFrame: () => {
+            host.classList.add('is-ready')
+            if (this.mode === 'off') this.revealData(true)
+            else window.setTimeout(() => this.revealData(false), 700)
+          },
+        }).mount(canvas)
+        svg.style.display = 'none' // 별자리 선(SVG)은 3D 자리 표(design-m1) 전까지 그리지 않는다
+        this.config3d()
+      } catch {
+        this.g3d = null
+      }
+    }
+    if (!this.g3d) this.start2D(host, canvas)
+    this.attachCommon(host, canvas)
+  }
+
+  /** 2.5D 하늘(대체): 동적 import — 3D가 되는 기기에서는 내려받지도 않는다 */
+  private start2D(host: HTMLDivElement, canvas: HTMLCanvasElement) {
+    void import('../../galaxy/sky/sky')
+      .then(({ Sky: SkyCtor }) => {
+        if (this.host !== host || this.canvas !== canvas) return
+        this.make2D(host, canvas, SkyCtor)
+        this.resize()
+        const phone = deviceOf(this.vw, this.vh) === 'phone'
+        this.sky?.setTiles(Object.keys(PLACES).map((k) => (phone ? PLACES_PHONE[k as MoodName] : undefined) ?? PLACES[k as MoodName]))
+        this.applyMood(true)
+        this.pushStars()
+      })
+      .catch(() => {
+        host.classList.add('is-ready', 'is-css')
+        this.gate = false
+      })
+  }
+
+  private make2D(host: HTMLDivElement, canvas: HTMLCanvasElement, SkyCtor: typeof Sky) {
     try {
-      const sky = new Sky(canvas, { tier: this.tierSetting, reduced: this.mode === 'off', meteors: this.mode === 'rich' && this.meteorsOn })
+      const sky = new SkyCtor(canvas, { tier: this.tierSetting, reduced: this.mode === 'off', meteors: this.mode === 'rich' && this.meteorsOn })
       this.sky = sky
       sky.onStats = () => {
         this.emitPrefs()
@@ -347,6 +449,9 @@ export class FieldEngine {
       host.classList.add('is-ready', 'is-css')
       this.gate = false
     }
+  }
+
+  private attachCommon(_host: HTMLDivElement, canvas: HTMLCanvasElement) {
     let lostTimer = 0
     const onLost = () => {
       window.clearTimeout(lostTimer)
@@ -367,7 +472,7 @@ export class FieldEngine {
       canvas.removeEventListener('webglcontextrestored', onRestored)
     })
     this.resize()
-    // 가까이 갈 장소(그래프·집중)는 유휴 시간에 고해상도 타일로 미리 굽는다
+    // 가까이 갈 장소(그래프·집중)는 유휴 시간에 고해상도 타일로 미리 굽는다 (2.5D만)
     const phone = deviceOf(this.vw, this.vh) === 'phone'
     this.sky?.setTiles(Object.keys(PLACES).map((k) => (phone ? PLACES_PHONE[k as MoodName] : undefined) ?? PLACES[k as MoodName]))
     this.applyMood(true)
@@ -421,6 +526,8 @@ export class FieldEngine {
   detach(): void {
     this.cleanups.forEach((f) => f())
     this.cleanups = []
+    this.g3d?.destroy()
+    this.g3d = null
     this.sky?.destroy()
     this.sky = null
     // 떼어 낸 캔버스의 WebGL 컨텍스트는 바로 돌려준다 — 핫 업데이트·재마운트가 쌓여 브라우저 컨텍스트 한도(16)에 걸리면
@@ -446,6 +553,11 @@ export class FieldEngine {
 
   private drawHud() {
     if (!this.hud || !this.debug) return
+    const g3 = this.g3d?.stats()
+    if (g3) {
+      this.hud.textContent = `3D · ${g3.power} · ${g3.fps} fps · ${g3.tier} · ${g3.megapixels.toFixed(1)}MP · gpu ${g3.gpuMs?.toFixed(2) ?? '–'}ms · js ${g3.jsMs.toFixed(2)}ms · ${g3.place}`
+      return
+    }
     const s = this.sky?.stats()
     if (!s) {
       this.hud.textContent = 'CSS 하늘 (WebGL2 없음)'
@@ -492,6 +604,7 @@ export class FieldEngine {
   }
 
   holdFlight(on: boolean): void {
+    this.g3d?.holdFlight(on)
     this.sky?.holdFlight(on)
   }
 
@@ -517,6 +630,19 @@ export class FieldEngine {
     const preset = forced ?? spec?.preset ?? this.preset
     const changed = preset !== this.preset
     this.preset = preset
+    if (this.g3d) {
+      const dim3 = spec?.preset === preset ? spec?.override?.dim : undefined
+      this.g3d.setExposure(typeof dim3 === 'number' ? Math.max(0.5, Math.min(1, dim3)) : 1)
+      this.g3d.setSheet(preset === 'settings' || this.sheets.size > 0)
+      this.g3d.setDrag(this.dragEnabled())
+      if (changed || instant) {
+        this.camStack = []
+        this.goCamera({ scene: preset }, instant)
+        this.fadeLayers(instant)
+        if (preset === 'graph' || preset === 'map') this.flushDeferred()
+      }
+      return
+    }
     const ph = this.phase === 'auto' ? autoPhase() : this.phase
     const { scene, look } = sceneFor(preset, ph)
     const dim = spec?.preset === preset ? spec?.override?.dim : undefined
@@ -587,7 +713,7 @@ export class FieldEngine {
   }
 
   private nowS(): number {
-    return this.sky?.now() ?? performance.now() / 1000
+    return this.sky?.now() ?? this.g3d?.now() ?? performance.now() / 1000
   }
 
   private curLevel(s: StarRec, t = this.nowS()): number {
@@ -762,6 +888,26 @@ export class FieldEngine {
     this.pushQueued = true
     queueMicrotask(() => {
       this.pushQueued = false
+      if (this.g3d) {
+        const list: DataStar[] = []
+        for (const s of this.stars.values()) {
+          if (s.to <= 0.001 && this.curLevel(s) <= 0.001) continue
+          const sel = this.selected === s.id
+          const z = LAYER3D[s.layer]
+          list.push({
+            id: s.id,
+            pos: [z.c[0] + (s.x - 0.5) * z.span, z.c[1] + 0.12, z.c[2] + (s.y - 0.5) * z.span],
+            L: (sel ? 3 : 1.6) + Math.min(6, s.L / 40),
+            color: sel ? GOLD : s.color,
+            from: s.from,
+            to: s.to,
+            t0: s.t0,
+            dur: s.dur,
+          })
+        }
+        this.g3d.setDataStars(list)
+        return
+      }
       if (!this.sky) return
       const list: SpecialStar[] = []
       for (const s of this.stars.values()) {
@@ -1283,6 +1429,24 @@ export class FieldEngine {
 
   private goCamera(t: CameraTarget, instant = false, dur?: number): number {
     this.camCur = t
+    if (this.g3d) {
+      const id = place3d(t.scene)
+      const mode = this.travelMode()
+      this.g3d.setTravel(mode)
+      // 3D 비행 길이는 회전각으로 정해진다(1.2–3.0s, 동작 줄이기·끔·짧게는 0.5초 어둡게 바꾸기) — dur는 무시
+      void dur
+      const ms = id ? this.g3d.setPlace(id, { instant }) : 0
+      this.lastFlightS = Math.max(SKY_TIMING.navMs, ms) / 1000
+      this.camCur = { ...t, durationMs: ms }
+      const fly = mode === 'fly' && ms > 0
+      const inMs = fly ? Math.max(170, ms - 320) : 170
+      const root = document.documentElement.style
+      root.setProperty('--sky-flight-ms', (fly ? ms : 170) + 'ms')
+      root.setProperty('--sky-content-in-ms', inMs + 'ms')
+      this.onFlight?.(ms, inMs)
+      if (ms > 0) this.perf.navUntil = Math.max(this.perf.navUntil, performance.now() + ms + 150)
+      return ms
+    }
     if (!this.sky) return 0
     const mode = this.travelMode()
     const now = this.sky.camera()
@@ -1335,14 +1499,20 @@ export class FieldEngine {
   }
 
   /** 누른 자리(화면 px)에서 가장 가까운 보이는 데이터 별 (반경 px) */
-  pick(x: number, y: number, radius = 28): { id: string; layer: string; sky: [number, number]; screen: [number, number]; dist: number } | null {
-    let best: { id: string; layer: string; sky: [number, number]; screen: [number, number]; dist: number } | null = null
+  pick(x: number, y: number, radius = 28): { id: string; layer: string; sky: [number, number]; screen: [number, number]; dist: number; world: [number, number, number] } | null {
+    if (this.g3d) {
+      const r = this.g3d.pick(x, y, radius)
+      if (!r) return null
+      const s = this.stars.get(r.id)
+      return { id: r.id, layer: s?.layer ?? 'today', sky: [s?.x ?? 0, s?.y ?? 0], screen: r.screen, dist: r.dist, world: r.world }
+    }
+    let best: { id: string; layer: string; sky: [number, number]; screen: [number, number]; dist: number; world: [number, number, number] } | null = null
     radius = Math.max(18, radius) // 마우스 히트 반경 최소 18px (review #14)
     for (const s of this.stars.values()) {
       if (this.visTarget(s) < 0.05) continue
       const [sx, sy] = this.toScreenPx(s.x, s.y)
       const d = Math.hypot(sx - x, sy - y)
-      if (d <= radius && (!best || d < best.dist)) best = { id: s.id, layer: s.layer, sky: [s.x, s.y], screen: [sx, sy], dist: d }
+      if (d <= radius && (!best || d < best.dist)) best = { id: s.id, layer: s.layer, sky: [s.x, s.y], screen: [sx, sy], dist: d, world: [s.x, s.y, 0] }
     }
     return best
   }
@@ -1350,6 +1520,19 @@ export class FieldEngine {
   /* ---------- 계측 · 검증 ---------- */
 
   skyStats(): SkyStatsOut {
+    const g = this.g3d?.stats()
+    if (g) {
+      const f = g.flights.map((x) => x.maxFrame).sort((a, b) => a - b)
+      return {
+        bakes: 0,
+        lastBakeMs: 0,
+        longTasksInNav: this.perf.longTasksInNav,
+        navP95Ms: g.p95,
+        tier: g.tier,
+        fps: g.fps,
+        flights: { count: g.flights.length, p95FrameMs: f.length ? f[Math.floor(0.95 * (f.length - 1))]! : 0, maxFrameMs: f.length ? f[f.length - 1]! : 0 },
+      }
+    }
     const s = this.sky?.stats()
     const navs = this.perf.navs
     const all = navs.flatMap((n) => n.frames).sort((a, b) => a - b)
@@ -1407,6 +1590,23 @@ export class FieldEngine {
   }
 
   stats(): FieldStats {
+    const g = this.g3d?.stats()
+    if (g)
+      return {
+        fps: g.fps,
+        tier: g.tier,
+        tierAuto: this.tierSetting === 'auto',
+        res: 1,
+        megapixels: g.megapixels,
+        jsMs: g.jsMs,
+        p95: g.p95,
+        renderer: 'galaxy3d',
+        render: 'webgl2',
+        mode: this.mode,
+        running: g.power !== 'rest',
+        paused: this.paused,
+        view: [this.vw, this.vh],
+      }
     const s = this.sky?.stats()
     return {
       fps: s?.fps ?? 0,
@@ -1423,6 +1623,50 @@ export class FieldEngine {
       paused: this.paused,
       view: [this.vw, this.vh],
     }
+  }
+
+  /* ---------- M1 계약: 설정 시트 · 빈 하늘 드래그 · 앵커 ---------- */
+
+  /** useSkySheet: 열려 있는 동안 노출 ×0.65 + 느리게, 비행 없음 */
+  setSheet(id: number, open: boolean): void {
+    if (open) this.sheets.add(id)
+    else this.sheets.delete(id)
+    this.g3d?.setSheet(this.preset === 'settings' || this.sheets.size > 0)
+  }
+  /** useSkyDrag: 마지막으로 선언한 화면의 값이 이긴다. 선언이 없으면 장소 기본값 */
+  setDrag(id: number, enabled: boolean | null): void {
+    this.drags.delete(id)
+    if (enabled !== null) this.drags.set(id, enabled)
+    this.g3d?.setDrag(this.dragEnabled())
+  }
+  private dragEnabled(): boolean {
+    const v = [...this.drags.values()].pop()
+    return v ?? DRAG_DEFAULT[this.preset] ?? false
+  }
+  /** 빈 하늘에서만 받는다 — 글·버튼·입력 위의 드래그·휠은 앱 것 */
+  private dragFilter = (e: Event): boolean => {
+    if (this.paused || this.overlay) return false
+    const t = e.target
+    if (!(t instanceof Element)) return true
+    if (t.closest('[data-no-sky-drag]')) return false
+    const sky = t.closest('[data-sky-drag]')
+    if (e.type === 'wheel') return !!sky || t === document.body || t === document.documentElement
+    if (sky) return true
+    if (t.closest('a,button,input,textarea,select,label,summary,video,audio,iframe,[contenteditable=""],[contenteditable="true"],[role="button"],[role="slider"],[role="dialog"],[role="menu"],[role="listbox"],[draggable="true"]')) return false
+    for (const n of Array.from(t.childNodes)) if (n.nodeType === 3 && (n.textContent ?? '').trim()) return false
+    return true
+  }
+  /** useSkyAnchor: 은하의 화면 위치(CSS px). 3D만 정확하고, 2.5D 대체에서는 화면 비율 근사 */
+  onAnchor(name: AnchorName, cb: (a: Anchor) => void): () => void {
+    if (this.g3d) return this.g3d.anchors(name, cb)
+    const w = this.vw
+    const h = this.vh
+    cb(name === 'core' ? { x: w * 0.64, y: h * 0.42, r: h * 0.35, visible: true } : { x: w * 0.5, y: h * 0.46, r: Math.min(w, h) * 0.36, visible: this.preset === 'focus' })
+    return () => {}
+  }
+  /** 3D 엔진 (검증·측정용) */
+  galaxy3d(): Galaxy3D | null {
+    return this.g3d
   }
 
   simulateContextLoss(): boolean {

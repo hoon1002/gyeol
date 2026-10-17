@@ -23,6 +23,8 @@ export const MOODS: Record<MoodName, Mood> = {
   },
   review: { speed: 0.8, step: 0.09, aniso: [0.8, 1.2], knot: [0.5, 0.42], knotStrength: 0.7 },
   planner: { speed: 0.5, step: 0.11, aniso: [0.4, 1.8], knot: [0.5, 0.5], knotStrength: 0.5, tintAmount: 0.4 },
+  map: { speed: 0.6, step: 0.1, aniso: [1, 1], knots: [[0.3, 0.35], [0.68, 0.3], [0.5, 0.7]], knotStrength: 0.6, tintAmount: 0.7, dim: 0.85 },
+  plan: { speed: 0.5, step: 0.11, aniso: [0.4, 1.8], knot: [0.5, 0.5], knotStrength: 0.5, tintAmount: 0.4 },
   focus: { speed: 0.25, step: 0.12, aniso: [1, 1], knot: [0.5, 0.46], knotStrength: 1.0, breath: true, dim: 0.8 },
   settings: { speed: 0.4, step: 0.1, aniso: [0.55, 1.45], knot: [0.72, 0.4], knotStrength: 0.5 },
 }

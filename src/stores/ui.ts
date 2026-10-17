@@ -1,4 +1,4 @@
-/** 화면 상태 (저장하지 않음): ⌘K, 렌즈 시트, 토스트, 크롬 숨김, 시계 */
+/** 화면 상태 (저장하지 않음): ⌘K, 설정 시트, 렌즈 시트, 토스트, 크롬 숨김, 시계 */
 import { create } from 'zustand'
 
 export interface Toast {
@@ -18,6 +18,10 @@ interface UiState {
   paletteQuery: string
   paletteOrigin: Element | null
   lensOpen: boolean
+  /** 설정 시트 (장소가 아니라 지금 장소 위에 열린다) */
+  settingsOpen: boolean
+  /** 닫으면 포커스를 돌려줄 자리 */
+  settingsOrigin: Element | null
   toast: Toast | null
   /** 집중 진행 중 등: 상단 바·독을 접는다 */
   chromeHidden: boolean
@@ -34,6 +38,8 @@ interface UiState {
   openPalette: (query?: string, origin?: Element | null) => void
   closePalette: () => void
   setLensOpen: (v: boolean) => void
+  openSettings: (origin?: Element | null) => void
+  closeSettings: () => void
   showToast: (text: string, color?: string) => void
   clearToast: () => void
   setChromeHidden: (v: boolean) => void
@@ -51,6 +57,8 @@ export const useUi = create<UiState>()((set) => ({
   paletteQuery: '',
   paletteOrigin: null,
   lensOpen: false,
+  settingsOpen: false,
+  settingsOrigin: null,
   toast: null,
   chromeHidden: false,
   scrollHidden: false,
@@ -62,6 +70,9 @@ export const useUi = create<UiState>()((set) => ({
     set({ paletteOpen: true, paletteQuery: query, paletteOrigin: origin ?? (typeof document !== 'undefined' ? document.activeElement : null), lensOpen: false }),
   closePalette: () => set({ paletteOpen: false }),
   setLensOpen: (lensOpen) => set({ lensOpen }),
+  openSettings: (origin = null) =>
+    set({ settingsOpen: true, settingsOrigin: origin ?? (typeof document !== 'undefined' ? document.activeElement : null), lensOpen: false }),
+  closeSettings: () => set({ settingsOpen: false }),
   showToast: (text, color) => set({ toast: { id: ++toastSeq, text, color } }),
   clearToast: () => set({ toast: null }),
   setChromeHidden: (chromeHidden) => set({ chromeHidden }),

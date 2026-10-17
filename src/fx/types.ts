@@ -16,6 +16,9 @@ export type MoodName =
   | 'planner'
   | 'focus'
   | 'settings'
+  /** M1: 지도(← 그래프) · 계획(← 플래너). 옛 이름도 같은 장소로 간다 */
+  | 'map'
+  | 'plan'
 
 /** 필드 분위기. 좌표는 화면 비율(0..1). */
 export interface Mood {
@@ -59,6 +62,8 @@ export interface FieldProviderProps {
   debug?: boolean
   /** v3 카메라: 설정 '공간 이동' — 비행(기본) / 짧게(줌 30% + 크로스페이드) / 끔. 동작 줄이기면 언제나 끔 */
   travel?: 'fly' | 'short' | 'off'
+  /** M1: '은하 회전: 켬 · 느리게 · 끔' (자동 공전·자전). 끔·OS 동작 줄이기면 장소 이동은 0.5초 어둡게 바꾸기 */
+  rotation?: 'on' | 'slow' | 'off'
   /** 유성 켬·끔 (기본 true). false면 자동 유성 없음, 사건 유성(meteor)은 띠가 잠깐 밝아지는 것(V13 +4%)으로 대체 */
   meteors?: boolean
   children?: ReactNode

@@ -8,6 +8,8 @@ import type { MotionLevel, Tier } from '@/fx'
 
 export type ThemePref = 'system' | 'dark' | 'light'
 export type TravelPref = 'fly' | 'short' | 'off'
+/** 은하 회전 (design-v4 7-3): 자동 공전 + 은하 자전을 함께 정한다 */
+export type RotationPref = 'on' | 'slow' | 'off'
 export type ClockPreset = 'live' | 'morning' | 'class' | 'gap' | 'before' | 'night' | 'late' | 'exam' | 'empty'
 
 export interface SettingsState {
@@ -15,6 +17,8 @@ export interface SettingsState {
   motion: MotionLevel
   /** 공간 이동: 비행 · 짧게 · 끔 (design-v3-camera §5) */
   travel: TravelPref
+  /** 은하 회전: 켬 · 느리게 · 끔 (기본 켬). OS 동작 줄이기면 끔으로 고정 */
+  rotation: RotationPref
   /** 유성: 켬 · 끔 (끄면 자동 유성 없음, 신호 유성은 띠가 잠깐 밝아지는 것으로 대체) */
   meteors: boolean
   /** 과목 렌즈: null = 전체 */
@@ -26,6 +30,7 @@ export interface SettingsState {
   setTheme: (t: ThemePref) => void
   setMotion: (m: MotionLevel) => void
   setTravel: (t: TravelPref) => void
+  setRotation: (r: RotationPref) => void
   setMeteors: (v: boolean) => void
   setLens: (id: string | null) => void
   setClock: (c: ClockPreset) => void
@@ -65,6 +70,7 @@ export const useSettings = create<SettingsState>()(
       theme: 'dark',
       motion: 'rich',
       travel: 'fly',
+      rotation: 'on',
       meteors: true,
       lens: null,
       clock: 'live',
@@ -73,6 +79,7 @@ export const useSettings = create<SettingsState>()(
       setTheme: (theme) => set({ theme }),
       setMotion: (motion) => set({ motion }),
       setTravel: (travel) => set({ travel }),
+      setRotation: (rotation) => set({ rotation }),
       setMeteors: (meteors) => set({ meteors }),
       setLens: (lens) => set({ lens }),
       setClock: (clock) => set({ clock }),
@@ -83,7 +90,7 @@ export const useSettings = create<SettingsState>()(
       name: SETTINGS_KEY,
       version: 1,
       storage: createJSONStorage(() => safeStorage),
-      partialize: (s) => ({ theme: s.theme, motion: s.motion, travel: s.travel, meteors: s.meteors, lens: s.lens, clock: s.clock, tier: s.tier, fps: s.fps }),
+      partialize: (s) => ({ theme: s.theme, motion: s.motion, travel: s.travel, rotation: s.rotation, meteors: s.meteors, lens: s.lens, clock: s.clock, tier: s.tier, fps: s.fps }),
     },
   ),
 )

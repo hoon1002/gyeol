@@ -55,12 +55,13 @@ void main() {
   float L = (sky ? a0.w * 24.0 : a0.w) * gain;
   float dd = sky ? 30.0 : d;
   // 원반 안에 들어갔을 때 가까운 별이 같은 크기 점으로 화면을 덮지 않게: 3u 안은 밀도를 줄이고(정점마다 고정 난수) 밝기를 부드럽게 묶는다
-  if (!sky) {
+  bool data = kind > 4.5; // 데이터 별(kind 5): 가까워도 솎거나 누르지 않는다
+  if (!sky && !data) {
     float keep = 0.15 + 0.85 * smoothstep(0.5, 6.0, d);
     if (fract(sin(float(gl_VertexID) * 12.9898) * 43758.5453) > keep) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vCol = vec3(0.0); vSig = 1.0; vPx = 1.0; return; }
   }
   // 빛의 양 = 밝기 / 거리² (가까이 갈수록 별은 커지지 않고 밝아진다 — 1u 안은 완만하게)
-  float flux = L / (dd * dd + (sky ? 0.0 : 0.6)) * uExpo * (sky ? 1.0 : mix(0.3, 1.0, smoothstep(1.5, 9.0, d))); // 가까운 별은 대부분 어둡게(밝은 별만 남는다)
+  float flux = L / (dd * dd + (sky ? 0.0 : 0.6)) * uExpo * (sky || data ? 1.0 : mix(0.3, 1.0, smoothstep(1.5, 9.0, d))); // 가까운 별은 대부분 어둡게(밝은 별만 남는다)
   // 피사계 심도: 초점에서 멀수록 번진다(빛의 총량은 같게)
   float coc = sky ? 0.0 : uDof * uPx * abs(1.0 / d - 1.0 / uFocus) * 0.004;
   float sig = max(0.5 * uDpr, min(coc, 6.0 * uDpr)); // 흐림 상한 σ 6px — 가까운 장소(그래프)에서 큰 점이 채우기 비용을 키우지 않게 // 최소 σ 0.5px(DPR 1 기준) — 점 하나 5×5px
@@ -242,6 +243,7 @@ uniform float uBloomK;
 uniform float uExposure;
 uniform float uAspect;
 uniform float uRest;
+uniform float uLight; // 낮 테마(임시): 0 밤 → 1 유리 건판 음화
 out vec4 o;
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
@@ -258,6 +260,9 @@ void main() {
   vec2 q = (vUv - 0.5) * vec2(uAspect, 1.0) / max(uAspect, 1.0);
   t *= 1.0 - 0.32 * pow(clamp(length(q) * 1.3, 0.0, 1.0), 2.4);
   t = pow(t, vec3(1.0 / 2.2));
+  // 낮 테마 — 임시(아트 디렉터 design-m1 낮 방향 전): 천체 사진 유리 건판 음화. 종이빛 바탕에 먹색 별·은하
+  float lum = dot(t, vec3(0.299, 0.587, 0.114));
+  t = mix(t, mix(vec3(0.925, 0.906, 0.871), vec3(0.2, 0.18, 0.17), clamp(lum * 1.25, 0.0, 1.0)), uLight);
   t += (hash12(gl_FragCoord.xy) - 0.5) / 255.0;
   o = vec4(t, 1.0);
 }

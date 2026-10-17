@@ -25,14 +25,14 @@ import './fx.css'
  * - tier: 'auto'면 GPU 이름으로 첫 등급을 정하고, 처음 120프레임 p95가 예산의 1.2배를 넘으면 한 단계 낮춘다.
  * - debug: 왼쪽 아래에 FPS·등급·해상도 표시.
  */
-export function FieldProvider({ level, theme, tier = 'auto', debug = false, travel = 'fly', meteors = true, children }: FieldProviderProps) {
+export function FieldProvider({ level, theme, tier = 'auto', debug = false, travel = 'fly', meteors = true, rotation = 'on', children }: FieldProviderProps) {
   const [engine] = useState(() => new FieldEngine())
   const hostRef = useRef<HTMLDivElement>(null)
   const hudRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
-    engine.configure?.({ level, theme, tier, debug, travel, meteors })
-  }, [engine, level, theme, tier, debug, travel, meteors])
+    engine.configure?.({ level, theme, tier, debug, travel, meteors, rotation })
+  }, [engine, level, theme, tier, debug, travel, meteors, rotation])
 
   useEffect(() => {
     const host = hostRef.current

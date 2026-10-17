@@ -26,7 +26,8 @@ export const IconNote = (p: P) => (
     <path d="M14 3.5V8h4.5M8.5 12.5h7M8.5 16h5" />
   </Svg>
 )
-export const IconGraph = (p: P) => (
+/** 지도(← 그래프): 이어진 별 세 개 */
+export const IconMap = (p: P) => (
   <Svg {...p}>
     <circle cx="6" cy="7" r="2.2" />
     <circle cx="18" cy="6" r="2.2" />
@@ -116,6 +117,14 @@ export const IconSettings = (p: P) => (
   <Svg {...p}>
     <circle cx="12" cy="12" r="3" />
     <path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8" />
+  </Svg>
+)
+/** 상단 점 3개 — 설정 시트 */
+export const IconMore = (p: P) => (
+  <Svg {...p}>
+    <circle cx="5.5" cy="12" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="18.5" cy="12" r="1.1" fill="currentColor" stroke="none" />
   </Svg>
 )
 export const IconPlus = (p: P) => (
