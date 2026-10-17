@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerE
 import type { CourseSlot, Subject, SubjectColor } from '@/db/schema'
 import { addDays, hm, minutesOfDay, startOfWeek, weekdayShort } from '@/lib/time'
 import { useIsPhone } from '@/shell/hooks'
-import { COLORS, nextColor, type TimetableStore } from './slots'
+import { COLORS, COLOR_NAME, nextColor, type TimetableStore } from './slots'
 import { tip } from '@/shell/Tip'
 import { pushLayer } from '@/shell/layers'
 import { IconCheck, IconChevron, IconClose, IconRepeat, IconRoom, IconTrash, IconUndo } from '@/shell/icons'
@@ -286,7 +286,7 @@ function SlotForm({ draft, subjects, side, style, onChange, onSave, onCancel, on
       {!exist && draft.name.trim() && (
         <div className="tt-colors" role="radiogroup" aria-label="색">
           {COLORS.map((c) => (
-            <button key={c} type="button" role="radio" aria-checked={draft.color === c} aria-label={c} className="tt-swatch" style={{ background: `var(--s-${c})` }} onClick={() => onChange({ ...draft, color: c })} />
+            <button key={c} type="button" role="radio" aria-checked={draft.color === c} {...tip(COLOR_NAME[c])} className="tt-swatch" style={{ background: `var(--s-${c})` }} onClick={() => onChange({ ...draft, color: c })} />
           ))}
         </div>
       )}

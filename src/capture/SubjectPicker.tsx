@@ -2,6 +2,7 @@
 import { useEffect, useRef } from 'react'
 import type { Subject } from '@/db/schema'
 import { pushLayer } from '@/shell/layers'
+import { COLOR_NAME } from './slots'
 
 export function SubjectPicker({ subjects, value, onPick, onClose, className = '' }: { subjects: Subject[]; value: string | null; onPick: (id: string | null) => void; onClose: () => void; className?: string }) {
   const ref = useRef<HTMLUListElement>(null)
@@ -39,7 +40,7 @@ export function SubjectPicker({ subjects, value, onPick, onClose, className = ''
     >
       {opts.map((s) => (
         <li key={s?.id ?? 'none'}>
-          <button type="button" role="option" aria-selected={(s?.id ?? null) === value} onClick={() => onPick(s?.id ?? null)}>
+          <button type="button" role="option" aria-selected={(s?.id ?? null) === value} aria-label={s ? `${s.name} · ${COLOR_NAME[s.color]}` : '과목 없음'} onClick={() => onPick(s?.id ?? null)}>
             <i style={{ background: s ? `var(--s-${s.color})` : 'transparent', borderColor: s ? 'transparent' : 'var(--text-3)' }} aria-hidden="true" />
             {s ? s.name : '과목 없음'}
           </button>

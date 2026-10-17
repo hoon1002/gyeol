@@ -4,6 +4,18 @@ import type { IcsClass } from '@/lib/ics'
 
 export const COLORS: SubjectColor[] = ['phys', 'math', 'chem', 'bio', 'econ', 'writing', 'eng', 'hist']
 
+/** 과목 색의 한글 이름 (tokens.css --s-* 실제 색: #5CB8FF · #8F9BFF · #3ED6C0 · #8EDB6B · #F5C451 · #FF8DB5 · #C29BFF · #D9B38C) — 견본 aria-label·툴팁 */
+export const COLOR_NAME: Record<SubjectColor, string> = {
+  phys: '하늘색',
+  math: '남보라',
+  chem: '청록',
+  bio: '연두',
+  econ: '금색',
+  writing: '분홍',
+  eng: '보라',
+  hist: '모래색',
+}
+
 export type SlotInput = Pick<CourseSlot, 'subjectId' | 'weekday' | 'start' | 'end' | 'room'> & { id?: string }
 
 export interface TimetableStore {

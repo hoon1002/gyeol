@@ -12,7 +12,7 @@ import { seedSample } from '@/db/seed'
 import { useNow, usePlanner, useSubjects } from '@/db/hooks'
 import { useUi } from '@/stores/ui'
 import { useCapture, type OnboardingMode } from '@/capture/store'
-import { COLORS, dbStore, makeSlot, makeSubject, nextColor, type TimetableStore } from '@/capture/slots'
+import { COLORS, COLOR_NAME, dbStore, makeSlot, makeSubject, nextColor, type TimetableStore } from '@/capture/slots'
 import { skyBloom, skyReveal, subjectColorValue } from '@/capture/sky'
 import { Timetable } from '@/capture/Timetable'
 import { IcsButton } from '@/capture/IcsImport'
@@ -259,7 +259,7 @@ function Subjects({ store, mode, onNext, removeMem }: { store: TimetableStore; m
         <div className="tt-colors" role="radiogroup" aria-label="색">
           {COLORS.map((c) => {
             const used = list.some((s) => s.color === c)
-            return <button key={c} type="button" role="radio" aria-checked={pick === c} aria-label={c} disabled={used} className="tt-swatch" style={{ background: `var(--s-${c})` }} onClick={() => setColor(c)} />
+            return <button key={c} type="button" role="radio" aria-checked={pick === c} {...tip(used ? `${COLOR_NAME[c]} · 사용 중` : COLOR_NAME[c])} disabled={used} className="tt-swatch" style={{ background: `var(--s-${c})` }} onClick={() => setColor(c)} />
           })}
         </div>
       </div>
