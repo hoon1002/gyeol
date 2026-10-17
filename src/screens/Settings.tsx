@@ -245,11 +245,11 @@ function MemorySection() {
         </span>
       </IRow>
       <IRow icon={IconRest} label="쉬는 요일">
-        <div className="week-dots" role="group" aria-label="쉬는 요일">
+        <div className="week-dots" role="group" aria-label="쉬는 요일 (누름 = 쉬는 날로 지정)">
           {WEEK.map((w, i) => {
             const rest = restDays.includes(i)
             return (
-              <button key={i} type="button" className={`week-dot${rest ? ' is-rest' : ''}`} aria-pressed={rest} {...tip(`${w}요일 ${rest ? '쉼' : '공부'}`)} onClick={() => setRestDays(rest ? restDays.filter((d) => d !== i) : [...restDays, i])}>
+              <button key={i} type="button" className={`week-dot${rest ? ' is-rest' : ''}`} aria-pressed={rest} {...tip(`${w} · ${rest ? '쉬는 날' : '공부하는 날'}`)} onClick={() => setRestDays(rest ? restDays.filter((d) => d !== i) : [...restDays, i])}>
                 {w}
               </button>
             )
