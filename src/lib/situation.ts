@@ -5,6 +5,7 @@
  * 1분마다, 그리고 앱이 다시 보일 때 재평가(useNow).
  */
 import type { CourseSlot, FocusSession, Note, Subject, Task } from '@/db/schema'
+import type { PlanToday } from '@/memory/plan'
 import { addDays, atTime, clamp, ddayOf, fmtDday, hm, minutesOfDay, MIN, weekdayShort } from './time'
 
 export type SitKey = 'empty' | 'class' | 'exam' | 'before' | 'gap' | 'night' | 'morning' | 'late' | 'free'
@@ -24,6 +25,8 @@ export interface DayModel {
   goalMin: number
   notes: Note[]
   forceEmpty?: boolean
+  /** M4 시험 역산 계획의 오늘 몫(없으면 null) */
+  plan?: PlanToday | null
 }
 
 export interface ShelfRow {
@@ -62,6 +65,8 @@ export interface SitLine {
   tip: string
   /** 스크린리더 문장 */
   sr: string
+  /** 숫자 뒤 조각 (아이콘 + 숫자): ▤ 카드 · ✎ 떠올리기 · ✓ 오늘 몫 끝 */
+  parts?: Array<{ icon: 'cards' | 'recall' | 'check'; text: string }>
 }
 
 export interface Situation {
@@ -106,7 +111,7 @@ export function nextSlotAfter(now: Date, slots: CourseSlot[]): SlotAt | null {
   return null
 }
 
-export function evaluateSituation(m: DayModel): Situation {
+function evaluateBase(m: DayModel): Situation {
   const { now, subjects } = m
   const nm = (id: string | null | undefined) => subjects.find((s) => s.id === id)?.name ?? '자유'
   const hour = now.getHours()
@@ -216,4 +221,29 @@ export function evaluateSituation(m: DayModel): Situation {
     mood: { speed: 1.0, knotStrength: 0.9 },
     tintSubject: nextToday?.slot.subjectId ?? null,
   }
+}
+
+/**
+ * 오늘의 한 줄 (design-m4 4-3): ① 수업 중 → 과목 이름 ② 시험 계획의 오늘 몫이 남음 → 인주 점 `D-6 · ▤ 18 · ✎ 2` + ▶ 복습
+ * ③ 오늘 몫 끝 → `D-6 ✓` + 다음 일의 버튼 ④ 다음 수업 ⑤ 없음. 쉬는 날·계획 없는 날은 ④·⑤.
+ */
+export function evaluateSituation(m: DayModel): Situation {
+  const base = evaluateBase(m)
+  const p = m.plan
+  if (base.key === 'class' || base.key === 'empty' || !p?.exam || p.exam.dday < 0 || p.kind !== 'study') return base
+  const dd = fmtDday(p.exam.dday)
+  const left = Math.max(0, p.cards - p.done)
+  if (left > 0 || p.recall > 0) {
+    const parts: NonNullable<SitLine['parts']> = []
+    if (left) parts.push({ icon: 'cards', text: String(left) })
+    if (p.recall) parts.push({ icon: 'recall', text: String(p.recall) })
+    return {
+      ...base,
+      key: 'exam',
+      line: { text: dd, num: true, dot: 'var(--seal)', tip: p.exam.title, sr: `${p.exam.title}까지 ${p.exam.dday}일, 오늘 카드 ${left}장${p.recall ? `, 떠올리기 ${p.recall}개` : ''}`, parts },
+      primary: { icon: 'review', label: '시험 복습', badge: null, action: { kind: 'review' } },
+      pressure: Math.max(base.pressure, 0.6),
+    }
+  }
+  return { ...base, line: { text: dd, num: true, dot: 'var(--seal)', tip: p.exam.title, sr: `${p.exam.title}까지 ${p.exam.dday}일, 오늘 몫 끝`, parts: [{ icon: 'check', text: '' }] } }
 }

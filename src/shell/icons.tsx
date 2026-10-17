@@ -402,6 +402,55 @@ export const IconSelect = (p: P) => (
   </Svg>
 )
 
+/* ===== M4 새 아이콘 (design-m4 0-2) ===== */
+export const IconCandidate = (p: P) => (
+  <Svg {...p}>
+    <rect x="4.5" y="6" width="15" height="12" rx="2.5" strokeDasharray="2.5 2.2" />
+    <path d="M12 10v4M10 12h4" />
+  </Svg>
+)
+export const IconRecall = (p: P) => (
+  <Svg {...p}>
+    <path d="M3.5 11c2.3 2.6 5.2 4 8.5 4s6.2-1.4 8.5-4M6 14.5l-1.5 2M10 15.8l-.6 2.4M14 15.8l.6 2.4M18 14.5l1.5 2" />
+  </Svg>
+)
+export const IconFresh = (p: P) => (
+  <Svg {...p}>
+    <path d="M3.5 17.5h17M7 17.5a5 5 0 0 1 10 0M12 7v2.5M6.3 9.8l1.6 1.6M17.7 9.8l-1.6 1.6" />
+  </Svg>
+)
+export const IconTarget = (p: P) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="7.5" />
+    <circle cx="12" cy="12" r="3.5" />
+    <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+  </Svg>
+)
+export const IconNewCard = (p: P) => (
+  <Svg {...p}>
+    <rect x="4.5" y="6.5" width="12" height="13" rx="2.5" />
+    <path d="M18.5 3.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z" />
+  </Svg>
+)
+const STAR = 'M12 3.8l2.4 5 5.4.6-4 3.7 1.1 5.4L12 15.8l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z'
+export const IconBright = (p: P) => (
+  <Svg {...p}>
+    <defs>
+      <clipPath id="ib-half">
+        <rect x="0" y="0" width="12" height="24" />
+      </clipPath>
+    </defs>
+    <path d={STAR} />
+    <path d={STAR} fill="currentColor" stroke="none" clipPath="url(#ib-half)" />
+  </Svg>
+)
+export const IconExam = (p: P) => (
+  <Svg {...p}>
+    <path d="M6 21V4M6 4.5h10.5l-2 3.5 2 3.5H6" />
+    <circle cx="17.5" cy="17.5" r="2" fill="var(--seal, #FF8F78)" stroke="none" />
+  </Svg>
+)
+
 /** 결 심볼 v3: 57° 사선 위 별 5개(은하의 결) + 인주 점 하나(낙관) */
 export function Symbol({ size = 26, className }: { size?: number; className?: string }) {
   return (

@@ -1,1 +1,1 @@
-{"percent": 0, "doing": "대기: 설계 뒤", "state": "waiting"}
+{ "percent": 100, "doing": "M4 B 완료: extract.ts(extractCandidates·mergeCandidates·syncCandidates, 8규칙 시험 PASS) · plan.ts(planDay·planRange·computePlan·scopeCards·examSky, 2000장 2.4ms) · 오늘 한 줄 · 시험 넣기 · 계획 띠 · 설정 기억 단원(retention·newPerDay·maxPerDay·restDays·restDates·memoryBrightness) · 30′ · 펜 버퍼", "state": "done" }

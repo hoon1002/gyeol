@@ -12,7 +12,7 @@ import { BackupCard } from '@/capture/BackupCard'
 import { tip } from '@/shell/Tip'
 import { resetHints } from '@/shell/hints'
 import { announce } from '@/shell/announce'
-import { IconAuto, IconFade, IconFlat, IconLock, IconMoon, IconMotion, IconOrbit, IconOrbitOff, IconOrbitSlow, IconReplay, IconSample, IconShield, IconStorage, IconSun, IconTheme, IconTrash, IconTravel, IconTravelShort, IconWave1, IconWave3 } from '@/shell/icons'
+import { IconBright, IconFresh, IconNewCard, IconRest, IconTarget, IconAuto, IconFade, IconFlat, IconLock, IconMoon, IconMotion, IconOrbit, IconOrbitOff, IconOrbitSlow, IconReplay, IconSample, IconShield, IconStorage, IconSun, IconTheme, IconTrash, IconTravel, IconTravelShort, IconWave1, IconWave3 } from '@/shell/icons'
 import { useCapture } from '@/capture/store'
 import { switchTheme } from '@/lib/theme'
 import { useSettings, type ClockPreset, type RotationPref, type ThemePref, type TravelPref } from '@/stores/settings'
@@ -176,6 +176,101 @@ function SegIcon<T extends string>({ label, value, options, onChange, disabled }
   )
 }
 
+/** 숫자 세그먼트 (role=radiogroup) — 바꾸면 값 낱말 1.2초 */
+function SegNum({ label, value, options, onChange, fmt = String }: { label: string; value: number; options: number[]; onChange: (v: number) => void; fmt?: (v: number) => string }) {
+  const [flash, setFlash] = useState<{ w: string; n: number } | null>(null)
+  const pick = (v: number) => {
+    if (v === value) return
+    setFlash((f) => ({ w: fmt(v), n: (f?.n ?? 0) + 1 }))
+    announce(`${label} ${fmt(v)}`)
+    onChange(v)
+  }
+  return (
+    <div className="seg-ico seg-num" role="radiogroup" aria-label={label} onKeyDown={(e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+      e.preventDefault()
+      const i = options.indexOf(value)
+      const n = options[(i + (e.key === 'ArrowRight' ? 1 : -1) + options.length) % options.length]!
+      pick(n)
+      ;(e.currentTarget.querySelector(`[data-v="${n}"]`) as HTMLElement | null)?.focus()
+    }}>
+      {options.map((v) => (
+        <button key={v} type="button" role="radio" data-v={v} aria-checked={v === value} tabIndex={v === value ? 0 : -1} onClick={() => pick(v)}>
+          <span className="mono">{v}</span>
+        </button>
+      ))}
+      {flash && <span key={flash.n} className="seg-word" aria-hidden="true">{flash.w}</span>}
+    </div>
+  )
+}
+
+const WEEK = ['일', '월', '화', '수', '목', '금', '토']
+
+/** 설정 '기억' 단원 (design-m4 7장): 목표 기억률 · 새 카드 하루(길게 = 전체 상한) · 쉬는 요일 · 기억 밝기 · 새 출발 */
+function MemorySection() {
+  const retention = useSettings((s) => s.retention)
+  const setRetention = useSettings((s) => s.setRetention)
+  const newPerDay = useSettings((s) => s.newPerDay)
+  const setNewPerDay = useSettings((s) => s.setNewPerDay)
+  const maxPerDay = useSettings((s) => s.maxPerDay)
+  const setMaxPerDay = useSettings((s) => s.setMaxPerDay)
+  const restDays = useSettings((s) => s.restDays)
+  const setRestDays = useSettings((s) => s.setRestDays)
+  const bright = useSettings((s) => s.memoryBrightness)
+  const setBright = useSettings((s) => s.setMemoryBrightness)
+  const [cap, setCap] = useState(false)
+  const long = useRef(0)
+  return (
+    <section className="set-sec" aria-labelledby="sec-memory">
+      <h2 id="sec-memory" className="sr-only">기억</h2>
+      <IRow icon={IconTarget} label="목표 기억률">
+        <SegNum label="목표 기억률" value={Math.round(retention * 100)} options={[85, 87, 90, 92, 95]} fmt={(v) => `${v}%`} onChange={(v) => setRetention(v / 100)} />
+      </IRow>
+      <IRow icon={IconNewCard} label={cap ? '하루 전체 상한' : '새 카드 하루 · 길게 = 전체'}>
+        <span
+          className="seg-hold"
+          data-radial=""
+          onPointerDown={() => {
+            long.current = window.setTimeout(() => setCap((v) => !v), 500)
+          }}
+          onPointerUp={() => clearTimeout(long.current)}
+          onPointerLeave={() => clearTimeout(long.current)}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {cap ? (
+            <SegNum label="하루 전체 상한" value={maxPerDay} options={[100, 200, 300]} onChange={setMaxPerDay} />
+          ) : (
+            <SegNum label="새 카드 하루" value={newPerDay} options={[10, 20, 30]} onChange={setNewPerDay} />
+          )}
+        </span>
+      </IRow>
+      <IRow icon={IconRest} label="쉬는 요일">
+        <div className="week-dots" role="group" aria-label="쉬는 요일">
+          {WEEK.map((w, i) => {
+            const rest = restDays.includes(i)
+            return (
+              <button key={i} type="button" className={`week-dot${rest ? ' is-rest' : ''}`} aria-pressed={rest} {...tip(`${w}요일 ${rest ? '쉼' : '공부'}`)} onClick={() => setRestDays(rest ? restDays.filter((d) => d !== i) : [...restDays, i])}>
+                {w}
+              </button>
+            )
+          })}
+        </div>
+      </IRow>
+      <IRow icon={IconBright} label="기억 밝기">
+        <button type="button" role="switch" aria-checked={bright} className={`switch${bright ? ' is-on' : ''}`} onClick={() => { setBright(!bright); announce(`기억 밝기 ${bright ? '끔' : '켬'}`) }}>
+          <span className="sr-only">기억 밝기</span>
+        </button>
+      </IRow>
+      <IRow icon={IconFresh} label="새 출발">
+        {/* 새 출발 확인 칸(design-m4 1-5)은 앱 A의 복습이 연다 — 이 이벤트를 듣는다 */}
+        <button type="button" className="ibtn" {...tip('새 출발')} onClick={() => { useUi.getState().closeSettings(); window.dispatchEvent(new CustomEvent('gyeol:fresh-start')) }}>
+          <IconFresh size={20} />
+        </button>
+      </IRow>
+    </section>
+  )
+}
+
 export function SettingsBody() {
   const theme = useSettings((s) => s.theme)
   const setTheme = useSettings((s) => s.setTheme)
@@ -258,6 +353,8 @@ export function SettingsBody() {
             <SegIcon<RotationPref> label="은하 회전" value={osReduced ? 'off' : rotation} disabled={osReduced} options={[['on', '켬', IconOrbit], ['slow', '느리게', IconOrbitSlow], ['off', '끔', IconOrbitOff]]} onChange={(v) => setRotation(v)} />
           </IRow>
         </section>
+
+        <MemorySection />
 
         {dev && (
           <section className="set-sec set-dev" aria-labelledby="sec-dev">

@@ -21,6 +21,8 @@ import { pushLayer } from '@/shell/layers'
 import { useHintCount } from '@/shell/hints'
 import { IconChecklist, IconClose, IconMic, IconPen, IconPin, IconPlus, IconStop } from '@/shell/icons'
 import { discardInkDraft, findInkDraft } from './inkDraft'
+// 첫 펜 메모 버퍼(QA #25): 의존성 없는 작은 모듈이라 잉크 조각을 기다리지 않고 바로 붙인다
+import { InkPadBuffer } from '@/ink/padbuffer'
 import { SubjectPicker } from './SubjectPicker'
 import '@/styles/capture.css'
 
@@ -66,6 +68,7 @@ export function MemoSheet() {
   const inkIdRef = useRef<string | null>(null)
   inkIdRef.current = inkId
   const discardTimer = useRef(0)
+  const bufRef = useRef<InkPadBuffer | null>(null)
   /** 패드가 실제 획 수를 알려 줬는가(알기 전에 닫으면 초안을 지우지 않는다) */
   const [inkKnown, setInkKnown] = useState(false)
   const voice = useVoice()
@@ -96,6 +99,11 @@ export function MemoSheet() {
       layer.classList.add('is-open')
       layer.removeAttribute('aria-hidden')
       setPenWait(pen)
+      // 펜으로 열면 패드가 준비되기 전 점을 받아 두는 버퍼를 같은 틱에 붙인다
+      if (pen && !bufRef.current) {
+        const box = layer.querySelector('.memo-box') as HTMLElement | null
+        if (box) bufRef.current = new InkPadBuffer(box)
+      }
       if (initial !== undefined && initial !== '') {
         ta.value = initial
         setText(initial)
@@ -128,6 +136,8 @@ export function MemoSheet() {
       setPicker(false)
       // 펜 대기는 한 번 열 때만: 다음에 손가락으로 열면 글, 펜이면 다시 펜 대기(초안은 남는다)
       setPenWait(false)
+      bufRef.current?.dispose()
+      bufRef.current = null
       const o = originRef.current as HTMLElement | null
       originRef.current = null
       if (o && o !== document.body && document.contains(o) && typeof o.focus === 'function') o.focus({ preventScroll: true })
@@ -417,7 +427,7 @@ export function MemoSheet() {
           {penWait && inkId && padW > 0 && (
             <div className="memo-ink" data-ink-slot="memo" style={{ height: phone ? 200 : 220 }}>
               <Suspense fallback={<div className="memo-ink-wait" />}>
-                <InkPad memoId={inkId} width={padW} height={phone ? 200 : 220} onChange={(n) => { setInkCount(n); setInkKnown(true) }} />
+                <InkPad memoId={inkId} width={padW} height={phone ? 200 : 220} pending={bufRef.current} onChange={(n) => { setInkCount(n); setInkKnown(true) }} />
               </Suspense>
             </div>
           )}

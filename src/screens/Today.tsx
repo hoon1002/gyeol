@@ -16,7 +16,7 @@ import { useGo, useMediaQuery } from '@/shell/hooks'
 import { DustBox } from '@/capture/DustBox'
 import { useCapture } from '@/capture/store'
 import { spaceOf } from '@/shell/spaces'
-import { IconDust, IconFocus, IconGridDraw, IconNote, IconPlan, IconReview } from '@/shell/icons'
+import { IconCheck, IconDust, IconFocus, IconGridDraw, IconNote, IconPlan, IconRecall, IconReview } from '@/shell/icons'
 import { tip } from '@/shell/Tip'
 import { Hint } from '@/shell/Hint'
 import { useActive } from '@/app/keepAlive'
@@ -103,6 +103,12 @@ export function TodayScreen() {
             <div className={`today-line${sit.line.num ? ' is-num' : ''}`} {...tip(sit.line.tip)} tabIndex={0} key={sit.key + sit.line.text}>
               {sit.line.dot && <i className="sdot is-lg" style={{ ['--c' as string]: sit.line.dot }} aria-hidden="true" />}
               <FocusLines lines={[sit.line.text]} swapKey={sit.key + sit.line.text} as="h2" />
+              {sit.line.parts?.map((pt, i) => (
+                <span key={i} className={`inum today-part${pt.icon === 'check' ? ' is-check' : ''}`} aria-hidden="true">
+                  {pt.icon === 'cards' ? <IconReview size={18} /> : pt.icon === 'recall' ? <IconRecall size={18} /> : <IconCheck size={16} />}
+                  {pt.text}
+                </span>
+              ))}
             </div>
           </Block>
         )}

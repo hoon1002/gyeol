@@ -268,3 +268,28 @@ kbd.memo-hint { font: 400 11px var(--f-mono); color: var(--text-3); border: 1px 
 .tt .tt-slot.is-shake { animation: ttshake 400ms var(--ease-out); }
 @keyframes ttshake { 20% { translate: -4px 0; } 40% { translate: 4px 0; } 60% { translate: -3px 0; } 80% { translate: 2px 0; } }
 :root[data-motion="off"] .tt .tt-slot.is-shake { animation: none; }
+/* 시험 넣기 · 계획 띠 (design-m4 4장) */
+.plan-add-menu { position: absolute; left: calc(100% + 8px); top: 50%; translate: 0 -50%; display: inline-flex; gap: 4px; padding: 4px; border-radius: 12px; background: color-mix(in srgb, var(--surface-2) 96%, transparent); border: 1px solid var(--border); box-shadow: var(--shadow-2); z-index: 5; }
+.exam-layer { position: fixed; inset: 0; z-index: 76; }
+.exam-catch { position: absolute; inset: 0; background: rgba(4, 6, 12, .3); }
+.exam-sheet { position: absolute; display: grid; gap: 12px; padding: 16px; box-sizing: border-box; background: color-mix(in srgb, var(--surface-2) 97%, transparent); border: 1px solid var(--border-strong); box-shadow: var(--shadow-3); }
+.exam-layer.is-land .exam-sheet { width: 480px; left: calc(var(--chrome-left) + 6vw); top: 14svh; border-radius: 16px; }
+.exam-layer.is-sheet .exam-sheet { left: 0; right: 0; bottom: 0; border-radius: 20px 20px 0 0; padding-bottom: max(16px, env(safe-area-inset-bottom)); max-height: 80svh; overflow-y: auto; }
+.exam-days { display: flex; align-items: center; gap: 4px; }
+.exam-grid { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.exam-day { display: grid; place-items: center; height: 40px; border-radius: 10px; color: var(--text-1); }
+.exam-day small { font-size: 9px; color: var(--text-3); line-height: 1; }
+.exam-day .mono { font-size: 13px; }
+.exam-day.is-on .mono { box-shadow: 0 0 0 1.5px var(--seal); border-radius: 50%; padding: 2px 5px; }
+.exam-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tt-chip.is-on { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.exam-find { display: grid; gap: 4px; }
+.plan-band { position: absolute; left: 0; right: 0; top: calc(var(--za-y1) * 100svh + 22px); height: 34px; pointer-events: none; }
+.pb-day { position: absolute; bottom: 0; translate: -50% 0; width: 18px; height: 34px; display: grid; place-items: end center; pointer-events: auto; padding: 0; }
+.pb-day i { display: block; width: 3px; height: var(--h, 6px); border-radius: 1.5px; background: color-mix(in srgb, var(--text-3) 35%, transparent); transition: height 240ms var(--ease-in-out); }
+.pb-day.is-today i { box-shadow: 0 0 0 1px var(--accent); }
+.pb-day.is-rest i { width: 5px; height: 5px; border-radius: 50%; background: none; box-shadow: inset 0 0 0 1px var(--text-3); }
+.pb-day.is-slack i { width: 8px; height: 1.5px; background: var(--text-3); }
+.pb-day.is-exam i { width: 6px; height: 6px; border-radius: 50%; background: var(--seal); }
+.pb-day.is-free i { height: 2px; }
+.pb-day.is-far { display: inline-flex; align-items: end; gap: 2px; font-size: 11px; color: var(--seal); }

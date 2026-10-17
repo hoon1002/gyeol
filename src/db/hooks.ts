@@ -6,6 +6,7 @@ import { useSettings, type ClockPreset } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import { atTime, addDays, DAY, MIN, studyDayRange, studyDayStart } from '@/lib/time'
 import type { DayModel } from '@/lib/situation'
+import { planDay } from '@/memory/plan'
 
 /* ---------- 시계 ---------- */
 
@@ -107,6 +108,7 @@ export function useToday(now: Date, forceEmpty: boolean): TodayData | undefined 
     const done = sessions.filter((s) => s.completed && s.endedAt <= t)
     const todaySessions = done.filter((s) => s.startedAt >= a && s.startedAt < b).sort((x, y) => x.startedAt - y.startedAt)
 
+    const plan = forceEmpty ? null : await planDay(now).catch(() => null)
     const model: DayModel = {
       now,
       name,
@@ -121,6 +123,7 @@ export function useToday(now: Date, forceEmpty: boolean): TodayData | undefined 
       goalMin,
       notes,
       forceEmpty,
+      plan,
     }
 
     return { model, recent: notes.slice(0, 3) }

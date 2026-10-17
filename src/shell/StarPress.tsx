@@ -84,7 +84,7 @@ export function StarPress() {
         id,
         title: await subjectName(s.subjectId),
         meta: `${fmtMD(s.startedAt)} ${fmtHM(s.startedAt)} · ${Math.round((s.endedAt - s.startedAt) / MIN)}분`,
-        chips: [await subjectDot(s.subjectId), { kind: 'num', text: fmtMD(s.startedAt), tip: fmtHM(s.startedAt) }, { kind: 'focus', text: `${Math.round((s.endedAt - s.startedAt) / MIN)}:00`, tip: '집중' }],
+        chips: [await subjectDot(s.subjectId), { kind: 'num', text: fmtMD(s.startedAt), tip: fmtHM(s.startedAt) }, { kind: 'focus', text: `${Math.round((s.endedAt - s.startedAt) / MIN)}′`, tip: '집중' }],
         action: note ? { icon: 'note', label: '노트 열기', run: (el) => { ui.setNoteFocusId(note.id); goTo('/notes', el) } } : null,
         zoom: (z) => z * 2.4,
       }

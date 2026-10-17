@@ -8,14 +8,14 @@
     },
     {
       "name": "M4 설계 (아트 디렉터)",
-      "status": "active",
+      "status": "done",
       "members": [
         "ad"
       ]
     },
     {
       "name": "M4 구현: FSRS·복습·떠올리기 / 추출·시험 계획 / 테이프 카드 / 하늘",
-      "status": "todo",
+      "status": "active",
       "members": [
         "app",
         "app2",

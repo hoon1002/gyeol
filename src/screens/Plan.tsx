@@ -16,7 +16,8 @@ import { NO_DUE } from '@/capture/file'
 import { Block, FocusLines } from './parts'
 import { tip } from '@/shell/Tip'
 import { Hint } from '@/shell/Hint'
-import { IconPlus } from '@/shell/icons'
+import { IconExam, IconPlus, IconTask } from '@/shell/icons'
+import { ExamSheet, PlanBand } from '@/capture/ExamPlan'
 import { useActive } from '@/app/keepAlive'
 
 const SKY = spaceOf('/plan')
@@ -29,6 +30,9 @@ export function PlanScreen() {
   const openPalette = useUi((s) => s.openPalette)
   const [menu, setMenu] = useState(false)
   const active = useActive()
+  const [addMenu, setAddMenu] = useState(false)
+  const [examOpen, setExamOpen] = useState(false)
+  const holdT = useRef(0)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -67,9 +71,36 @@ export function PlanScreen() {
             )}
             <p className="sr-only">{meta}</p>
             <div className="today-acts">
-              <button type="button" className="gold-btn" {...tip('과제')} onClick={(e) => openPalette('과제 추가 ', e.currentTarget)}>
-                <IconPlus size={24} />
-              </button>
+              <span className="hint-host">
+                {/* ＋ = 과제, 길게 누르면 과제 · 시험 (design-m4 4-1) */}
+                <button
+                  type="button"
+                  className="gold-btn"
+                  data-radial=""
+                  {...tip('과제 · 길게 = 시험')}
+                  onPointerDown={() => {
+                    holdT.current = window.setTimeout(() => {
+                      holdT.current = -1
+                      setAddMenu(true)
+                    }, 500)
+                  }}
+                  onPointerUp={() => clearTimeout(holdT.current)}
+                  onPointerLeave={() => clearTimeout(holdT.current)}
+                  onContextMenu={(e) => e.preventDefault()}
+                  onClick={(e) => {
+                    if (holdT.current === -1) return
+                    openPalette('과제 추가 ', e.currentTarget)
+                  }}
+                >
+                  <IconPlus size={24} />
+                </button>
+                {addMenu && (
+                  <span className="plan-add-menu" role="menu">
+                    <button type="button" className="ibtn" role="menuitem" {...tip('과제')} onClick={(e) => { setAddMenu(false); openPalette('과제 추가 ', e.currentTarget) }}><IconTask size={20} /></button>
+                    <button type="button" className="ibtn" role="menuitem" {...tip('시험')} onClick={() => { setAddMenu(false); setExamOpen(true) }}><IconExam size={20} /></button>
+                  </span>
+                )}
+              </span>
               <div className="plan-more" ref={menuRef}>
                 <button type="button" className="icon-btn ghost" {...tip('더 보기')} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((v) => !v)}>
                   <IconMore size={20} />
@@ -81,11 +112,13 @@ export function PlanScreen() {
               </div>
             </div>
           </div>
+          {examOpen && <ExamSheet onClose={() => setExamOpen(false)} />}
           <section className="week-grid-wrap hint-host-block" aria-label="이번 주 시간표">
             <Hint id="H2" side="top" active={active} />
             {data && subjects && <Timetable store={store} now={now} knotRef={knotRef} />}
           </section>
         </div>
+        <PlanBand />
       </section>
     </>
   )
