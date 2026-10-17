@@ -4,7 +4,7 @@ logs()
 for (const [w, h, touch] of [[1440, 900, false], [390, 844, true]]) {
   await size(w, h, { touch }); setMode(touch ? 'touch' : 'mouse')
   await nav(B + '/', 3000)
-  const sk = await find('.onb-skip'); if (sk[0]) { await tap(sk[0].x, sk[0].y); await sleep(1800) }
+  const sk = await find('.onb-corner button'); print('corner', sk.map((b) => b.t).join('/')); if (sk.length) { const b = sk[sk.length - 1]; await tap(b.x, b.y); await sleep(1800) }
   for (const p of ['/', '/notes', '/map', '/review', '/plan', '/focus']) {
     await nav(B + p, 2600)
     const t = await ev(`(() => { const s = document.querySelector('#stage'); const txt = [...s.querySelectorAll('h1,h2,p,button,li,span')].filter(e => { const r = e.getBoundingClientRect(); return r.width && !e.closest('[inert],[aria-hidden=true]') && +getComputedStyle(e).opacity > 0.05 }).map(e => (e.getAttribute('aria-label') || e.innerText || '').trim()).filter(Boolean); const bad = /NaN|undefined|Invalid|null|\\[object/.test(s.innerText); return [...new Set(txt)].slice(0, 10).join(' / ').slice(0, 220) + (bad ? '  ⚠ ' + s.innerText.match(/.{0,20}(NaN|undefined|Invalid|null|\\[object).{0,20}/)[0] : '') })()`)

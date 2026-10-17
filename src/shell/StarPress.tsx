@@ -195,6 +195,9 @@ export function StarPress() {
     let last: PointerEvent | null = null
     const onMove = (e: PointerEvent) => {
       if (e.pointerType !== 'mouse' && e.pointerType !== 'pen') return
+      // 종이가 펼쳐졌거나 쓰는 중이면 하늘 판정을 하지 않는다 (펜 이동마다 rAF를 걸지 않게 — 전력)
+      const root = document.documentElement
+      if ('paper' in root.dataset || root.hasAttribute('data-inking') || e.buttons !== 0) return
       last = e
       if (raf) return
       raf = requestAnimationFrame(() => {

@@ -618,6 +618,13 @@ export function useSkyPaper(open: boolean): void {
   const eng = useFieldEngine()
   useEffect(() => {
     if (!open || !eng) return
-    return eng.paperHold?.()
+    // 종이가 펼쳐진 동안 루트에 표시 — 별 위 커서 판정 등 하늘 관련 rAF를 앱이 건너뛸 수 있게
+    const root = document.documentElement
+    root.dataset.paper = ''
+    const release = eng.paperHold?.()
+    return () => {
+      delete root.dataset.paper
+      release?.()
+    }
   }, [open, eng])
 }
