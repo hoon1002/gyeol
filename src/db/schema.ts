@@ -6,6 +6,8 @@
  *
  * v2(M2): noteBodies · links · memos · assets 추가, notes에 classKey·title 인덱스.
  *
+ * v3(손글씨 라운드): pages · strokes · pageItems 추가.
+ *
  * 이후 예고(아직 테이블 없음):
  *  - strokes: 'id, pageId, [pageId+layer], updatedAt'
  *    획 1개 = 행 1개, points는 ArrayBuffer(Float32: x, y, pressure, t).
@@ -170,6 +172,76 @@ export interface Asset {
   createdAt: number
 }
 
+/* ---------- v3 (손글씨 라운드): 페이지 · 획 · 페이지 위 물건 ---------- */
+
+/** 쪽 배경 틀 */
+export type PageTemplate = 'blank' | 'ruled' | 'grid' | 'dot' | 'cornell'
+
+/** 필기·PDF 노트의 한 쪽. 크기는 pt(1/72in), A4 = 595×842 */
+export interface Page {
+  id: string
+  noteId: string
+  /** 노트 안 순서 (0부터, 정렬용 실수 허용: 사이에 끼우기) */
+  index: number
+  template: PageTemplate
+  w: number
+  h: number
+  /** PDF 쪽이면 원본 파일(assets)과 쪽 번호(1부터) */
+  pdf?: { assetId: string; pageNo: number } | null
+  /** 종이 색 토큰 (없으면 기본 종이) */
+  paper?: string | null
+  createdAt: number
+  updatedAt: number
+  deletedAt?: number | null
+}
+
+export type InkTool = 'pen' | 'pencil' | 'marker' | 'highlighter' | 'tape'
+
+/**
+ * 획 1개 = 행 1개. points = Float32Array 버퍼 [x, y, pressure, t] 반복.
+ * x·y는 쪽 좌표(pt), t는 획 시작부터 ms가 아니라 **절대 시각 epoch ms − createdAt** (녹음–필기 싱크용, 지우지 말 것).
+ */
+export interface Stroke {
+  id: string
+  pageId: string
+  /** 'ink' 위, 'highlight'는 글 아래(곱하기) */
+  layer: 'ink' | 'highlight'
+  tool: InkTool
+  /** '#RRGGBB' */
+  color: string
+  /** 기본 굵기(pt) */
+  width: number
+  points: ArrayBuffer
+  /** [x0, y0, x1, y1] 쪽 좌표 */
+  bbox: [number, number, number, number]
+  /** 도형으로 바뀐 획이면 그 모양 (다시 고치기용) */
+  shape?: { kind: 'line' | 'arrow' | 'rect' | 'ellipse' | 'triangle' | 'polyline'; params: number[] } | null
+  createdAt: number
+  updatedAt: number
+  deletedAt?: number | null
+}
+
+/** 쪽 위 물건: 사진 · 글 상자 · 가리개 테이프 */
+export interface PageItem {
+  id: string
+  pageId: string
+  kind: 'image' | 'text' | 'tape'
+  x: number
+  y: number
+  w: number
+  h: number
+  rot: number
+  assetId?: string | null
+  /** 글 상자 내용 (평문) */
+  text?: string | null
+  /** 테이프: 가려진 상태인지 */
+  hidden?: boolean
+  z: number
+  createdAt: number
+  updatedAt: number
+  deletedAt?: number | null
+}
+
 export class GyeolDB extends Dexie {
   subjects!: EntityTable<Subject, 'id'>
   courseSlots!: EntityTable<CourseSlot, 'id'>
@@ -183,6 +255,9 @@ export class GyeolDB extends Dexie {
   links!: EntityTable<NoteLink, 'id'>
   memos!: EntityTable<Memo, 'id'>
   assets!: EntityTable<Asset, 'id'>
+  pages!: EntityTable<Page, 'id'>
+  strokes!: EntityTable<Stroke, 'id'>
+  pageItems!: EntityTable<PageItem, 'id'>
 
   constructor() {
     super('gyeol')
@@ -203,6 +278,12 @@ export class GyeolDB extends Dexie {
       links: 'id, from, to, toTitle, [from+to]',
       memos: 'id, state, createdAt, subjectId',
       assets: 'id, ownerId, createdAt',
+    })
+    // v3 (손글씨 라운드): 쪽 · 획 · 쪽 위 물건
+    this.version(3).stores({
+      pages: 'id, noteId, [noteId+index], updatedAt',
+      strokes: 'id, pageId, [pageId+layer], updatedAt',
+      pageItems: 'id, pageId, updatedAt',
     })
   }
 }
