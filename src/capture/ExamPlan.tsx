@@ -14,6 +14,7 @@ import { announce } from '@/shell/announce'
 import { pushLayer } from '@/shell/layers'
 import { IconBack, IconCheck, IconNote, IconReview } from '@/shell/icons'
 import { useIsPhone, useMediaQuery } from '@/shell/hooks'
+import { useSkyAnchor } from '@/fx'
 import { guessSubject } from './api'
 
 const WD = ['일', '월', '화', '수', '목', '금', '토']
@@ -122,6 +123,13 @@ export function PlanBand() {
   const cardsN = useLiveQuery(() => db.cards.count(), [])
   const logsN = useLiveQuery(() => db.reviewLogs.count(), [])
   const timer = useRef(0)
+  // 하늘의 계획 띠 자리(CSS px): 날 표시의 y와 x 범위를 그 띠에 맞춘다(없으면 band(d) 어림)
+  const [anchor, setAnchor] = useState<{ y: number; x0: number; x1: number } | null>(null)
+  useSkyAnchor('plan-band', (a) => {
+    if (!a.visible || a.x0 === undefined || a.x1 === undefined) return
+    const n = { y: Math.round(a.y), x0: Math.round(a.x0), x1: Math.round(a.x1) }
+    setAnchor((o) => (o && o.y === n.y && o.x0 === n.x0 && o.x1 === n.x1 ? o : n))
+  })
   useEffect(() => {
     let alive = true
     const now = new Date()
@@ -136,9 +144,11 @@ export function PlanBand() {
   const today = keyOf(new Date())
   const far = exams.filter((e) => keyOf(new Date(e.dueAt)) > addDay(today, 14))
   return (
-    <div className="plan-band" aria-label="시험 계획">
+    <div className="plan-band" aria-label="시험 계획" style={anchor ? { top: `${anchor.y - 34}px` } : undefined}>
       {plan.map((d, i) => {
-        const x = `calc((0.10 + 0.80 * ${Math.min(i, 14) / 14}) * 100vw - var(--chrome-left))`
+        const f = Math.min(i, 14) / 14
+        // x = band(d) (하늘과 같은 식). 띠(anchor x0–x1)는 화면 밖까지 이어지므로 x에는 쓰지 않고 y만 맞춘다
+        const x = `calc((0.10 + 0.80 * ${f}) * 100vw - var(--chrome-left))`
         const label = d.kind === 'rest' ? `${d.day} 쉬는 날` : d.kind === 'slack' ? `${d.day} 여유` : d.kind === 'exam' ? `${d.day} 시험` : `▤ ${d.cards}${d.recall ? ` · ✎ ${d.recall}` : ''}`
         const canRest = d.kind !== 'exam' && d.kind !== 'slack'
         return (

@@ -1,7 +1,8 @@
 /** 하늘 다리 + 별가루 수 동기화(D2). RootLayout의 FieldProvider 안에 한 번 */
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect } from 'react'
-import { useSkyEvent } from '@/fx'
+import { useSkyEvent, useSkyExams } from '@/fx'
+import { examSky } from '@/memory/plan'
 import { db } from '@/db/schema'
 import { setSkyBridge, skyPinDust, skySetDust } from './sky'
 import { sweepInkDrafts } from './inkDraft'
@@ -9,6 +10,9 @@ import { sweepInkDrafts } from './inkDraft'
 export function CaptureSky(): null {
   const ev = useSkyEvent()
   const inbox = useLiveQuery(() => db.memos.where('state').equals('inbox').count(), [])
+  // 시험 별자리(순간 ④): 시험·카드·복습 기록이 바뀔 때만 다시 계산해 하늘에 넘긴다(live query가 읽은 표만 지켜본다)
+  const exams = useLiveQuery(() => examSky().catch(() => []), [])
+  useSkyExams(exams)
   // 고정된 별가루(시작할 때 · 바뀔 때 상태를 맞춘다 — pinDust는 멱등)
   const pinned = useLiveQuery(async () => (await db.memos.where('state').equals('inbox').filter((m) => !!m.pinned).primaryKeys()).join(','), [])
   // 펜이 처음 보이면(호버·누름) 잉크 코드를 미리 받는다 — 첫 펜 메모의 획이 로드 중에 빠지지 않게(QA #25)

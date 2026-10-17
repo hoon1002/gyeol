@@ -206,19 +206,24 @@ export async function planDay(date: Date): Promise<PlanToday> {
 }
 
 /** 하늘용 요약 (모션 · 시험 별자리 순간 ④): 공부 날 수 · 오늘까지 끝낸 날 수 · 범위 카드 id */
-export async function examSky(now = new Date()): Promise<Array<{ examId: string; dday: number; studyDays: number; doneDays: number; cardIds: string[] }>> {
+export async function examSky(now = new Date()): Promise<Array<{ examId: string; dday: number; studyDays: number; doneDays: number; cardIds: string[]; noteIds: string[] }>> {
   const k = keyOf(now)
   const { db, exams, cards } = await load(k, k)
   const out = []
   for (const e of exams) {
-    const ids = scopeCards(e, cards).map((c) => c.id)
+    const sc = scopeCards(e, cards)
+    const ids = sc.map((c) => c.id)
+    // 범위 노트: scope.noteIds ∪ 범위 카드의 노트, 카드가 많은 순 (하늘이 시험 별자리 선을 이 노트 별 사이에 긋는다)
+    const per = new Map<string, number>((e.scope?.noteIds ?? []).map((n) => [n, 0]))
+    sc.forEach((c) => c.noteId && per.set(c.noteId, (per.get(c.noteId) ?? 0) + 1))
+    const noteIds = [...per.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n)
     const dueK = keyOf(new Date(e.dueAt))
     const startK = keyOf(new Date(e.createdAt))
     const plan = await planRange(dateOf(startK < k ? k : startK), dateOf(addDay(dueK, -1)))
     const set = new Set(ids)
     const logs = await db.reviewLogs.where('reviewedAt').between(dateOf(startK).getTime(), dateOf(k).getTime()).toArray()
     const doneDays = new Set(logs.filter((l) => set.has(l.cardId)).map((l) => keyOf(new Date(l.reviewedAt)))).size
-    out.push({ examId: e.id, dday: daysBetween(k, dueK), studyDays: plan.filter((p) => p.kind === 'study').length + doneDays, doneDays, cardIds: ids })
+    out.push({ examId: e.id, dday: daysBetween(k, dueK), studyDays: plan.filter((p) => p.kind === 'study').length + doneDays, doneDays, cardIds: ids, noteIds })
   }
   return out
 }
