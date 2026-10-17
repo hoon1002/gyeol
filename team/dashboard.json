@@ -1,6 +1,6 @@
 {
   "project": "결 GYEOL · M0 3D 품질 관문",
-  "subtitle": "M1 · 앱 하늘 = 3D 은하 · 장소 6·설정 시트 완료 → 마지막 손질·재측정",
+  "subtitle": "M1 완료 · 앱 하늘 = 3D 은하 · 장소 6 + 설정 시트 · 이동 30번 최장 17.7ms · GPU ≤4ms → 다음 M2(입구)",
   "phases": [
     {
       "name": "v4 기획 · 3D 시제품",
@@ -30,7 +30,7 @@
     },
     {
       "name": "M1 검수 · 30번 이동 측정 · 보고",
-      "status": "active",
+      "status": "done",
       "members": [
         "ad"
       ]
@@ -74,7 +74,7 @@
       },
       {
         "phase": "M1-M4",
-        "label": "M1–M4 첫 공개판 (M1 앱 이식 진행 중)",
+        "label": "M1–M4 첫 공개판 (M1 완료 · 90만 사용)",
         "estimate": 4300000
       },
       {
