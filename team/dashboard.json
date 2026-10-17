@@ -1,47 +1,56 @@
 {
   "project": "결 GYEOL · M0 3D 품질 관문",
-  "subtitle": "M0 3D 품질 관문 완료 · 구형 360°·전경 별·GPU ≤5ms·장소마다 다른 시점·집중 시계 → 사용자 승인 뒤 M1(앱 이식)",
+  "subtitle": "M1 · 3D 은하를 앱에 옮기기 (장소 6 + 설정 시트 · 은하 회전 설정 · 사건 51개 3D)",
   "phases": [
     {
       "name": "v4 기획 · 3D 시제품",
       "status": "done"
     },
     {
-      "name": "360° · 전경 별 · 품질 · 전력 모드",
+      "name": "M0 3D 품질 (360° · 전경 별 · 장소별 시점 · 전력)",
+      "status": "done"
+    },
+    {
+      "name": "M1 엔진 이식 · 장소 6 · 설정 시트",
       "status": "active",
       "members": [
         "fx",
-        "perf",
+        "app",
         "ad"
       ]
     },
     {
-      "name": "품질 판정 (렌더 검수)",
+      "name": "M1 사건 51개 3D · UI 배치",
+      "status": "todo",
+      "members": [
+        "fx",
+        "app",
+        "ad"
+      ]
+    },
+    {
+      "name": "M1 검수 · 30번 이동 측정 · 보고",
       "status": "todo",
       "members": [
         "ad"
       ]
-    },
-    {
-      "name": "리더 검증 · M0 보고",
-      "status": "todo"
     }
   ],
   "members": [
     {
       "key": "fx",
       "label": "모션 개발자",
-      "task": "360° 회전 · 전경 별 · Q1–Q8 · 전력 모드 · 가로 렌더"
+      "task": "3D 엔진 모듈화 · src/fx 백엔드 교체 · 사건 51개 3D"
     },
     {
-      "key": "perf",
-      "label": "성능 엔지니어",
-      "task": "배터리·발열 예산 · 측정 도구 · 앱 낭비 제거"
+      "key": "app",
+      "label": "앱 개발자",
+      "task": "장소 6 · 설정 시트 · 독/레일 v4 · 은하 회전 설정 · 집중 베젤"
     },
     {
       "key": "ad",
       "label": "아트 디렉터",
-      "task": "360°·전경 별 기준 · 품질 판정"
+      "task": "사건 51개 → 3D 표 · 장소별 UI 배치 · 낮 테마 · 검수"
     }
   ],
   "forecast": {
@@ -65,7 +74,7 @@
       },
       {
         "phase": "M1-M4",
-        "label": "M1–M4 첫 공개판 (3D 앱 이식·입구·기억 엔진·리듬)",
+        "label": "M1–M4 첫 공개판 (M1 앱 이식 진행 중)",
         "estimate": 4300000
       },
       {
