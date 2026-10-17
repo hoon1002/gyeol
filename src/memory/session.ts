@@ -3,29 +3,64 @@
  * 섞기: 같은 과목 연속 3장 이하(interleave). 모드: 섞어서 · 과목 하나 · 시험 범위 · 노트(R 낮은 순 최대 10장 — 흐려진 별).
  * 새 출발: 주 · 학기 경계이면서 상한을 넘는 날이 3일 이상일 때만 보이고, 넘친 카드를 7 · 14 · 28일에 고르게 다시 놓는다.
  */
-import { db, type Card, type Task } from '@/db/schema'
+import { db, type Card } from '@/db/schema'
 import { addDays, DAY, HOUR, studyDayRange, studyDayStart } from '@/lib/time'
 import { retrievability } from './fsrs'
 import { maxPerDay, newPerDay } from './prefs'
+import { scopeCards } from './plan'
 
-export type SessionMode = { kind: 'mix' } | { kind: 'subject'; subjectId: string } | { kind: 'exam'; examId: string } | { kind: 'note'; noteId: string; limit?: number }
+export type SessionMode =
+  | { kind: 'mix' }
+  | { kind: 'subject'; subjectId: string }
+  | { kind: 'exam'; examId: string }
+  /** 흐려진 별: 그 노트 카드 R 낮은 순(기본 10장) */
+  | { kind: 'note'; noteId: string; limit?: number }
+  /** 카드 몇 장 바로 (별 정보 '이 카드 복습') */
+  | { kind: 'cards'; cardIds: string[] }
 
 const live = (c: Card) => !c.suspended
 const noteOf = (c: Card) => c.noteId ?? c.source?.noteId ?? null
 
-/** 같은 과목이 maxRun장 넘게 이어지지 않게(가능한 한) 앞에서부터 고른다 */
+/** 남은 카드로 같은 과목 maxRun장 이하가 아직 가능한가 (끝에 subj가 run장 이어진 상태에서) */
+function feasible(count: Map<string, number>, total: number, subj: string | null, run: number, k: number): boolean {
+  for (const [s, c] of count) {
+    if (!c) continue
+    const others = total - c
+    if (c > (s === subj ? k - run : k) + k * others) return false
+  }
+  return true
+}
+
+/** 같은 과목이 maxRun장 넘게 이어지지 않게, 원래 순서(급한 것 먼저)는 되도록 지키며 고른다 */
 export function interleave<T extends { subjectId: string }>(list: T[], maxRun = 3): T[] {
   const rest = [...list]
   const out: T[] = []
+  const count = new Map<string, number>()
+  rest.forEach((c) => count.set(c.subjectId, (count.get(c.subjectId) ?? 0) + 1))
+  let subj: string | null = null
+  let run = 0
   while (rest.length) {
-    const n = out.length
-    const run = n >= maxRun && out.slice(n - maxRun).every((c) => c.subjectId === out[n - 1]!.subjectId) ? out[n - 1]!.subjectId : null
-    let i = 0
-    if (run !== null) {
-      const j = rest.findIndex((c) => c.subjectId !== run)
-      if (j >= 0) i = j
+    let pick = 0
+    const tried = new Set<string>()
+    for (let i = 0; i < rest.length; i++) {
+      const s = rest[i]!.subjectId
+      if (tried.has(s)) continue
+      tried.add(s)
+      const r = s === subj ? run + 1 : 1
+      if (r > maxRun) continue
+      count.set(s, count.get(s)! - 1)
+      const fine = feasible(count, rest.length - 1, s, r, maxRun)
+      count.set(s, count.get(s)! + 1)
+      if (fine) {
+        pick = i
+        break
+      }
     }
-    out.push(rest.splice(i, 1)[0]!)
+    const c = rest.splice(pick, 1)[0]!
+    count.set(c.subjectId, count.get(c.subjectId)! - 1)
+    run = c.subjectId === subj ? run + 1 : 1
+    subj = c.subjectId
+    out.push(c)
   }
   return out
 }
@@ -48,6 +83,10 @@ export interface Quota {
   minutes: number
   /** 내일 몫(끝 화면 툴팁) */
   tomorrow: number
+  /** 오늘 이미 본 카드 수(끝 ✓를 남길지) */
+  doneToday: number
+  /** 카드가 하나라도 있나(첫 회 그림) */
+  anyCards: boolean
 }
 
 async function todayDone(now: number): Promise<{ all: number; fresh: number }> {
@@ -79,21 +118,18 @@ export async function todayQuota(now = Date.now()): Promise<Quota> {
   const d = Math.min(due.length, left)
   const f = Math.min(fresh.length, Math.max(0, newPerDay() - done.fresh), left - d)
   const [, b] = studyDayRange(now)
-  const tomorrow = Math.min(maxPerDay(), await db.cards.where('due').between(b, b + DAY).filter((c) => live(c) && c.state !== 'new').count())
-  return { total: d + f, due: d, fresh: f, minutes: Math.max(1, Math.round((d + f) * 0.5)), tomorrow }
-}
-
-function inScope(c: Card, exam: Task): boolean {
-  const s = (exam as Task & { scope?: { noteIds?: string[]; subjectIds?: string[]; cardIds?: string[] } }).scope
-  if (c.examId === exam.id) return true
-  if (!s) return false
-  return !!(s.cardIds?.includes(c.id) || (noteOf(c) && s.noteIds?.includes(noteOf(c)!)) || s.subjectIds?.includes(c.subjectId))
+  const [tmr, any] = await Promise.all([db.cards.where('due').between(b, b + DAY).filter((c) => live(c) && c.state !== 'new').count(), db.cards.count()])
+  return { total: d + f, due: d, fresh: f, minutes: Math.max(1, Math.round((d + f) * 0.5)), tomorrow: Math.min(maxPerDay(), tmr), doneToday: done.all, anyCards: any > 0 }
 }
 
 const byLowR = (now: number) => (x: Card, y: Card) => (retrievability(x, now) ?? 0) - (retrievability(y, now) ?? 0)
 
 /** 오늘 세션 카드(순서 포함) */
 export async function buildSession(mode: SessionMode = { kind: 'mix' }, now = Date.now()): Promise<Card[]> {
+  if (mode.kind === 'cards') {
+    const got = await db.cards.bulkGet(mode.cardIds)
+    return got.filter((c): c is Card => !!c && live(c))
+  }
   if (mode.kind === 'note') {
     const all = await db.cards.filter((c) => live(c) && noteOf(c) === mode.noteId && !(c.state === 'new' && !c.lastReview)).toArray()
     return all.sort(byLowR(now)).slice(0, mode.limit ?? 10)
@@ -108,9 +144,12 @@ export async function buildSession(mode: SessionMode = { kind: 'mix' }, now = Da
   if (mode.kind === 'exam') {
     const exam = await db.tasks.get(mode.examId)
     if (exam) {
-      const scoped = [...due, ...fresh].filter((c) => inScope(c, exam)).sort(byLowR(now))
-      const others = due.filter((c) => !inScope(c, exam))
-      return [...scoped, ...others].slice(0, q.total)
+      // 시험 범위 카드부터(오늘 할 것 · 새 것 중, 기억 낮은 순), 남는 자리는 다른 오늘 카드
+      const inExam = new Set(scopeCards(exam, [...due, ...fresh]).map((c) => c.id))
+      const scoped = [...due, ...fresh.slice(0, q.fresh)].filter((c) => inExam.has(c.id)).sort(byLowR(now))
+      const others = due.filter((c) => !inExam.has(c.id))
+      // 오늘 몫을 이미 끝냈으면 범위 카드만 최대 20장
+      return q.total ? [...scoped, ...others].slice(0, q.total) : scoped.slice(0, 20)
     }
   }
   const pick = [...roundRobin(due.slice(0, q.due)), ...fresh.slice(0, q.fresh)]

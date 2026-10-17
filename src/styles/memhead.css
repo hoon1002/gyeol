@@ -1,0 +1,6 @@
+/* M4: 종이 머리 — 후보 수 · 떠올리기 (있을 때만). 글 노트 · 필기 종이가 같이 쓴다 */
+.np-meta-end { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }
+.np-mini { width: 28px; height: 28px; color: var(--text-3); }
+.np-mini:hover { color: var(--text-1); }
+.np-cands { width: auto; padding: 0 6px; gap: 4px; display: inline-flex; align-items: center; }
+.np-cands .mono { font: 400 12px/1 var(--f-mono); font-variant-numeric: tabular-nums; }

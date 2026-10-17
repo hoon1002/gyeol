@@ -1,1 +1,1 @@
-{"percent": 2, "doing": "M4: m4-brief·design-m4 읽는 중", "state": "working"}
+{ "percent": 100, "doing": "M4 A 완료. 하늘 필드: useSkyStars notes[].bright (0.40–1, 카드 있는 노트만). 설정 키(앱 B): retention · newPerDay · maxPerDay · memoryBrightness. 복습 시작 API: requestReview({kind:'note',noteId,limit:10}) | {kind:'exam',examId} | {kind:'cards',cardIds} (src/memory/intent.ts) 뒤 '/review'로 이동. 떠올리기 기록: meta 'recall.log'", "state": "done" }

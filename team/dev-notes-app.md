@@ -303,3 +303,13 @@
 5. 그래프 별자리는 개념 목록에서 결정적으로 생성한 M0 표시용(노드 54·링크 87). 실제 링크 색인은 이후.
 
 - (모션 개발자, 2026-10-17) 전환 뒤 하늘이 검게 꺼지는 버그는 fx 쪽에서 고쳤다(옛 WebGL 컨텍스트 반납·잃으면 다시 붙임·전환 안전장치). 앱 파일(`src/shell/hooks.ts`, RootLayout keep-alive)은 고치지 않았다 — 원인이 아니었다. 상태 확인은 `__gyeolPerf.debug()`.
+
+## M4 — 기억 엔진 (앱 A)
+- **src/memory/fsrs.ts**: ts-fsrs 5. `rate(card, 1–4, now, durationMs)` → cards.put + reviewLogs.add(한 트랜잭션). `nextState`(계산만) · `retrievability`(새 카드 null). 목표 기억률 = 설정 `retention`(기본 0.9), fuzz 켬. FSRS 값 없는 옛 카드는 마지막 간격을 안정도로 어림. 단위 시험: scratchpad `a-fsrs-check.mjs`(vite SSR, 포트 없음) — 75단계가 ts-fsrs 직접 호출과 같음 · R 같음 · 섞기 · 밝기 · 떠올리기 ALL PASS.
+- **session.ts**: 오늘 몫 = min(오늘 할 카드, 상한 남은 수), 새 카드는 newPerDay까지(reviewLogs의 state 'new'로 오늘 센 것 뺌). 섞기 = 과목 돌려 담기 + `interleave`(연속 3장 이하, 남은 카드로 가능한지 검사). 모드 mix · subject · exam(B의 `scopeCards`) · note(R 낮은 순 10) · cards. 새 출발 = 월요일 · 학기(meta 'term'.start) 주 + 밀린 카드로 상한 넘는 날 ≥ 3일 → 넘친 카드를 7/14/28일에 고르게(R 낮은 것 먼저, 시험 카드 제외), 되돌리기.
+- **candidates.ts**: `syncNoteCandidates`는 B의 extractCandidates/mergeCandidates를 쓰되 규칙 8개 후보만 정리(B의 syncCandidates는 떠올리기 · 메모 후보까지 지움). 받기 = 새 Card(source rule/tape/memo, 테이프는 renderTapeRegion의 pageId · rect), 되돌리기 = 카드 지우고 후보 '새'로.
+- **brightness.ts**: 노트 평균 R → bright = clamp(0.40 + 0.60(R−0.5)/0.45), 소수 3자리. 지도 · 노트가 한 계산을 나눠 씀(학습일 · 복습 뒤 · 설정 바뀔 때). `withBright(notes, memory)` → notes[].bright.
+- **intent.ts**: `requestReview(mode)`(reviewIntent도 켬) · `openCandidates(noteId?)` · `openFreshStart()`. 설정의 window 'gyeol:fresh-start'도 복습이 듣는다.
+- **화면**: Review(진행선 · 빈 고리 · popLayout 160/120/200 · 끝 ✓ 선 그리기 · ▶ 길게 3칸 · 후보 점 · 새 출발 칸), CandidateBox(지연), Recall(src/editor, 지연, 0.35는 recall.ts `RECALL_MISS`), 종이 머리 후보 수 · 떠올리기(PaperCands · InkMem), ⌘K 후보함 · 떠올리기 · 새 출발 · 시험 넣기('gyeol:exam-new').
+- 저장 경로: NotePaper 저장 성공 → `scheduleExtract`(2초 디바운스 → idle) → 새 후보면 birthStar(kind 'card', 0.3).
+- 떠올리기 기록: meta `recall.log` = [{ noteId, at, peeks, picked }] (앱 B가 '떠올리기 1번'으로 셀 수 있게).

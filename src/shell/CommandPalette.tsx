@@ -28,7 +28,9 @@ import { useSettings, type ThemePref } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import type { MotionLevel } from '@/fx'
 import { useEffectiveMotion, useGo, useIsPhone } from './hooks'
-import { IconDeck, IconDoc, IconDust, IconExport, IconFlag, IconFocus, IconLock, IconMore, IconMotion, IconNote, IconPdf, IconPen, IconPlan, IconReview, IconSearch, IconTheme, IconUndo } from './icons'
+import { IconCandidate, IconDeck, IconDoc, IconDust, IconExam, IconExport, IconFlag, IconFocus, IconFresh, IconLock, IconMore, IconMotion, IconNote, IconPdf, IconPen, IconPlan, IconRecall, IconReview, IconSearch, IconTheme, IconUndo } from './icons'
+import { openCandidates, openFreshStart } from '@/memory/intent'
+import { openRecall } from '@/editor/recallState'
 import { tip } from './Tip'
 import { useHintCount } from './hints'
 import { pushLayer } from './layers'
@@ -351,6 +353,37 @@ function Palette() {
       id: 'cmd-pdf-import', group: '명령', label: 'PDF 가져오기', keywords: ['pdf', '가져오기', '파일', 'import', '필기'],
       icon: <IconPdf size={17} />,
       run: (el) => after(() => void importPdfAndOpen(el)),
+    })
+    // M4 기억: 후보함 · 떠올리기 · 새 출발 · 시험 넣기(앱 B의 시험 판은 window 'gyeol:exam-new'로 연다)
+    list.push({
+      id: 'cmd-candidates', group: '명령', label: '후보함', keywords: ['후보', '후보함', '카드 후보', '카드 고르기', 'candidates'],
+      icon: <IconCandidate size={17} />,
+      run: (el) => after(() => { openCandidates(null); void go('/review', el) }),
+    })
+    list.push({
+      id: 'cmd-recall', group: '명령', label: '떠올리기', keywords: ['떠올리기', '회상', '백지 복습', 'recall', '기억해 쓰기'],
+      icon: <IconRecall size={17} />,
+      run: (el) =>
+        after(() => {
+          void (async () => {
+            // 보고 있는 노트, 없으면 가장 최근 노트
+            const id = ui().noteFocusId ?? (await db.notes.orderBy('updatedAt').reverse().filter((n) => !n.deletedAt).first())?.id
+            if (!id) return
+            ui().setNoteFocusId(id)
+            openRecall(id)
+            void go('/notes', el)
+          })()
+        }),
+    })
+    list.push({
+      id: 'cmd-fresh', group: '명령', label: '새 출발', keywords: ['새 출발', '다시 나누기', '복습 나누기', 'fresh start'],
+      icon: <IconFresh size={17} />,
+      run: (el) => after(() => { openFreshStart(); void go('/review', el) }),
+    })
+    list.push({
+      id: 'cmd-exam', group: '명령', label: '시험 넣기', keywords: ['시험', '시험 넣기', '중간고사', '기말고사', 'exam'],
+      icon: <IconExam size={17} />,
+      run: (el) => after(() => void go('/plan', el).then(() => window.dispatchEvent(new CustomEvent('gyeol:exam-new')))),
     })
     list.push({
       id: 'cmd-dust', group: '이동', label: '별가루', keywords: ['별가루', '메모', '메모함', 'inbox', 'dust', '별가루함'],

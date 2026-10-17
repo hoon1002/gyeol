@@ -23,6 +23,8 @@ import { tip } from '@/shell/Tip'
 import { IconBack, IconDeck, IconDoc, IconPdf, IconPen, IconPlus, IconSearch } from '@/shell/icons'
 import { Backlinks } from '@/editor/Backlinks'
 import { pickPdf, setPendingPdf } from '@/editor/inkState'
+import { closeRecall, openRecall, useRecallId } from '@/editor/recallState'
+import { useNoteMemory, withBright } from '@/memory/brightness'
 import { pushLayer } from '@/shell/layers'
 import { NotesMapToggle } from './Map'
 import { Hero } from './parts'
@@ -31,6 +33,7 @@ import { isTyping, screenKey } from './keyScope'
 const NotePaper = lazy(() => import('@/editor/NotePaper'))
 /** 필기 · PDF 노트의 종이 펼치기(잉크 엔진과 함께 지연 로드) */
 const InkSheet = lazy(() => import('@/editor/InkSheet'))
+const Recall = lazy(() => import('@/editor/Recall'))
 
 const isPaperKind = (n: Pick<Note, 'kind'> | undefined) => n?.kind === 'ink' || n?.kind === 'pdf'
 const centerOf = (el: Element | null | undefined) => {
@@ -179,6 +182,19 @@ export function NotesScreen() {
     if (!land) setFocus(null)
   }
   // 밖(⌘K · 지도 별 · 별가루)에서 필기 노트에 초점을 주면 펼친다 — 새로 만든 노트는 목록에 들어온 뒤에
+  // ⌥R = 떠올리기 (보고 있는 노트)
+  const recallFor = focus?.id ?? null
+  useEffect(() => {
+    if (!active || !recallFor) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyR' && screenKey(e, '/notes', { typing: true })) {
+        e.preventDefault()
+        openRecall(recallFor)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active, recallFor])
   const pendingFocus = useRef<string | null>(focusId)
   useEffect(() => {
     pendingFocus.current = focusId
@@ -243,7 +259,18 @@ export function NotesScreen() {
     return planner.slots.find((s) => s.subjectId === sid && s.weekday === wd)?.room || null
   }
 
-  const skyStars = useMemo(() => (stars ? { notes: stars.notes, noteLinks: stars.noteLinks, subjects: skySubjects } : undefined), [stars, skySubjects])
+  const memory = useNoteMemory()
+  const skyStars = useMemo(() => (stars ? { notes: withBright(stars.notes, memory), noteLinks: stars.noteLinks, subjects: skySubjects } : undefined), [stars, skySubjects, memory])
+  const recallId = useRecallId()
+  const recall =
+    recallId && active
+      ? createPortal(
+          <Suspense fallback={null}>
+            <Recall key={recallId} noteId={recallId} onClose={closeRecall} />
+          </Suspense>,
+          document.body,
+        )
+      : null
   const sheet =
     inkNote && active
       ? createPortal(
@@ -257,6 +284,7 @@ export function NotesScreen() {
     <>
       <FieldMood preset={SKY.mood} drag={SKY.drag} stars={skyStars} />
       {sheet}
+      {recall}
     </>
   )
 

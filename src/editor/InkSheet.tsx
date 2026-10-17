@@ -12,7 +12,10 @@ import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState, ty
 import { useSkyEvent, useSkyPaper } from '@/fx'
 import { db, type Note, type PageTemplate } from '@/db/schema'
 import type { InkEngine } from '@/ink'
-import { IconBack } from '@/shell/icons'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { IconBack, IconRecall } from '@/shell/icons'
+import { openRecall } from './recallState'
+import { PaperCands } from './PaperCands'
 import { pushLayer } from '@/shell/layers'
 import { tip } from '@/shell/Tip'
 import { paperClosed, paperOpened, takePendingPdf } from './inkState'
@@ -169,6 +172,24 @@ export default function InkSheet({ note, template, origin, active, onClose }: In
       <button type="button" className="ibtn ink-sheet-back" {...tip('노트 목록', { kbd: 'esc', side: 'right' })} onClick={() => void close()}>
         <IconBack size={22} />
       </button>
+      <InkMem noteId={note.id} />
     </div>
+  )
+}
+
+/** 종이 머리(M4): 이 노트의 후보 수(있을 때만) · 떠올리기(쪽이 1장 이상일 때만) */
+function InkMem({ noteId }: { noteId: string }) {
+  const cands = useLiveQuery(() => db.cardCandidates.where('noteId').equals(noteId).filter((c) => c.status === 'new').count(), [noteId]) ?? 0
+  const pages = useLiveQuery(() => db.pages.where('noteId').equals(noteId).filter((p) => !p.deletedAt).count(), [noteId]) ?? 0
+  if (!cands && !pages) return null
+  return (
+    <span className="ink-sheet-mem">
+      {cands > 0 && <PaperCands noteId={noteId} n={cands} />}
+      {pages > 0 && (
+        <button type="button" className="ibtn np-mini" {...tip('떠올리기', { kbd: '⌥R', side: 'right' })} onClick={() => openRecall(noteId)}>
+          <IconRecall size={16} />
+        </button>
+      )}
+    </span>
   )
 }

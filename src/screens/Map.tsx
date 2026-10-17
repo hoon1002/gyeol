@@ -7,6 +7,7 @@
 import { useMemo } from 'react'
 import { ActiveMood as FieldMood } from '@/app/keepAlive'
 import { useNoteStars, useSkySubjects } from '@/db/notes'
+import { useNoteMemory, withBright } from '@/memory/brightness'
 import { useNotes, useSubjects } from '@/db/hooks'
 import { useSettings } from '@/stores/settings'
 import { useGo } from '@/shell/hooks'
@@ -46,7 +47,9 @@ export function MapScreen() {
   const stars = useNoteStars()
   const skySubjects = useSkySubjects(subjects)
   const empty = !!notes && notes.length === 0
-  const skyStars = useMemo(() => (stars ? { notes: stars.notes, noteLinks: stars.noteLinks, subjects: skySubjects } : undefined), [stars, skySubjects])
+  // M4 기억 밝기: 카드가 있는 노트 별에 bright(0.40–1) — 하루 1번 + 복습 뒤 다시 계산
+  const memory = useNoteMemory()
+  const skyStars = useMemo(() => (stars ? { notes: withBright(stars.notes, memory), noteLinks: stars.noteLinks, subjects: skySubjects } : undefined), [stars, skySubjects, memory])
 
   const nStars = stars?.notes.length ?? notes?.length ?? 0
   const nLines = stars?.noteLinks.length ?? 0

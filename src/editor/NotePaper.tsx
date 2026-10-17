@@ -13,11 +13,13 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref, type RefObject } from 'react'
 import { useFieldPause, useSkyEvent } from '@/fx'
 import { db, type Note, type Subject } from '@/db/schema'
-import { applyTemplateMeta, deleteNote, openOrCreateNote, renameNote, saveBody, setNoteSubject } from '@/db/notes'
+import { applyTemplateMeta, deleteNote, docToText, openOrCreateNote, renameNote, saveBody, setNoteSubject } from '@/db/notes'
 import { matchText } from '@/lib/hangul'
 import { fmtMD } from '@/lib/time'
 import { useGo, useIsPhone } from '@/shell/hooks'
-import { IconBack, IconDoc, IconLink, IconMap, IconMore, IconPlus, IconTrash } from '@/shell/icons'
+import { IconBack, IconDoc, IconLink, IconMap, IconMore, IconPlus, IconRecall, IconTrash } from '@/shell/icons'
+import { PaperCands } from './PaperCands'
+import { openRecall, scheduleExtract } from './recallState'
 import { tip } from '@/shell/Tip'
 import { Hint } from '@/shell/Hint'
 import { pushLayer } from '@/shell/layers'
@@ -108,6 +110,9 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
   const [trigger, setTrigger] = useState<TriggerState | null>(null)
   // 빈 문서: 첫 노트 한 번만 키 그림(H6 · '/' '[[') — 그 뒤엔 커서만
   const [empty, setEmpty] = useState(() => !initial.doc.content?.some((b) => (b.content?.length ?? 0) > 0 || (b.type !== 'paragraph')))
+  // 떠올리기 입구는 본문 80자 이상일 때만
+  const [long, setLong] = useState(() => docToText(initial.doc).length >= 80)
+  const cands = useLiveQuery(() => db.cardCandidates.where('noteId').equals(note.id).filter((c) => c.status === 'new').count(), [note.id]) ?? 0
   const scrollRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLTextAreaElement>(null)
   useFieldPause(active && focused, 'ink')
@@ -173,6 +178,8 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
           s.version = r.version
           s.saves++
           r.added.forEach(([a, b]) => sky.drawLink(a, b, { layer: 'graph', deferIfPaused: true }))
+          // M4: 저장 뒤 카드 후보 추출(디바운스 → 한가할 때). 새 후보가 생기면 복습 성단 가장자리에 흐린 별 하나
+          scheduleExtract(noteId, () => sky.birthStar({ id: `cand-${noteId}-${Date.now()}`, kind: 'card', level: 0.3 }))
           if (!s.dead) setSave(s.dirty ? 'dirty' : 'saved')
         } catch {
           if (s.dead) {
@@ -233,6 +240,7 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
       onUpdate: ({ editor: ed, transaction }) => {
         if (!transaction.docChanged) return
         setEmpty(ed.isEmpty)
+        setLong(ed.state.doc.textContent.length >= 80)
         const s = st.current
         s.dirty = true
         setSave('dirty')
@@ -367,7 +375,7 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
               <IconBack size={20} />
             </button>
           )}
-          <NoteMenu note={note} subjects={subjects} onDeleted={props.onDeleted} />
+          <NoteMenu note={note} subjects={subjects} onDeleted={props.onDeleted} onRecall={() => openRecall(note.id)} />
         </div>
         <TitleField ref={titleRef} note={note} placeholder={dateText} onEnter={() => editor?.commands.focus('start')} />
         <p className="np-meta">
@@ -376,6 +384,14 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
             {dateText}
           </span>
           <span className={`np-save is-${save}`} role="status" aria-label={save === 'saved' ? '저장됨' : save === 'dirty' ? '저장 중' : '저장 실패'} />
+          <span className="np-meta-end">
+            {cands > 0 && <PaperCands noteId={note.id} n={cands} />}
+            {long && (
+              <button type="button" className="ibtn np-mini" {...tip('떠올리기', { kbd: '⌥R' })} onClick={() => openRecall(note.id)}>
+                <IconRecall size={16} />
+              </button>
+            )}
+          </span>
         </p>
         {save === 'error' && <p className="np-err">저장하지 못했어요. 저장 공간을 확인해 주세요.</p>}
         <div className="np-editor-wrap">
@@ -492,7 +508,7 @@ function TitleField({ note, placeholder, onEnter, ref }: { note: Note; placehold
 
 /* ---------- ⋯ 메뉴: 과목 바꾸기 · 지도에서 보기 · 지우기 ---------- */
 
-function NoteMenu({ note, subjects, onDeleted }: { note: Note; subjects: Subject[]; onDeleted?: () => void }) {
+function NoteMenu({ note, subjects, onDeleted, onRecall }: { note: Note; subjects: Subject[]; onDeleted?: () => void; onRecall: () => void }) {
   const [open, setOpen] = useState<null | 'menu' | 'subject'>(null)
   const [arm, setArm] = useState(false)
   const cur = subjects.find((s) => s.id === note.subjectId)
@@ -539,6 +555,19 @@ function NoteMenu({ note, subjects, onDeleted }: { note: Note; subjects: Subject
               <IconMap size={18} />
             </span>
             지도에서 보기
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(null)
+              onRecall()
+            }}
+          >
+            <span className="np-pop-ic" aria-hidden="true">
+              <IconRecall size={18} />
+            </span>
+            떠올리기
           </button>
           <button
             type="button"

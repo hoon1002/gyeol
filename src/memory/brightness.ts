@@ -6,16 +6,18 @@
 import { useEffect, useState } from 'react'
 import { db, type Card } from '@/db/schema'
 import { studyDayStart } from '@/lib/time'
-import { retrievability } from './fsrs'
+import { useSettings } from '@/stores/settings'
 import { memoryBrightOn } from './prefs'
 
 export const BRIGHT_FLOOR = 0.4
-export const brightOf = (R: number): number => Math.min(1, Math.max(BRIGHT_FLOOR, 0.4 + (0.6 * (R - 0.5)) / 0.45))
+export const brightOf = (R: number): number => Math.round(Math.min(1, Math.max(BRIGHT_FLOOR, 0.4 + (0.6 * (R - 0.5)) / 0.45)) * 1000) / 1000
 
 const noteOf = (c: Card) => c.noteId ?? c.source?.noteId ?? null
 
 /** 노트 id → { R, bright } */
 export async function noteMemory(now = Date.now()): Promise<Map<string, { R: number; bright: number }>> {
+  // FSRS(ts-fsrs)는 지연 조각 — 첫 화면에 넣지 않는다
+  const { retrievability } = await import('./fsrs')
   const cards = await db.cards.filter((c) => !c.suspended && !!noteOf(c)).toArray()
   const sum = new Map<string, { s: number; n: number }>()
   for (const c of cards) {
@@ -36,16 +38,26 @@ export async function noteMemory(now = Date.now()): Promise<Map<string, { R: num
   return out
 }
 
-/* 복습한 뒤 다시 계산하라는 신호 (fsrs.rate를 부른 쪽이 알린다) */
+/* 복습한 뒤 다시 계산하라는 신호 (fsrs.rate를 부른 쪽이 알린다). 지도 · 노트가 같은 계산을 나눠 쓴다 */
 const listeners = new Set<() => void>()
+let ver = 0
+let shared: { key: string; p: Promise<Map<string, { R: number; bright: number }>> } | null = null
 export function memoryChanged(): void {
+  ver++
   listeners.forEach((f) => f())
+}
+function sharedMemory(): Promise<Map<string, { R: number; bright: number }>> {
+  const key = `${studyDayStart(Date.now()).getTime()}|${ver}|${memoryBrightOn()}`
+  if (!shared || shared.key !== key) shared = { key, p: noteMemory() }
+  return shared.p
 }
 
 /** 노트별 기억 밝기(학습일마다 + 복습 뒤) */
 export function useNoteMemory(): Map<string, { R: number; bright: number }> | undefined {
   const [m, setM] = useState<Map<string, { R: number; bright: number }>>()
   const [tick, setTick] = useState(0)
+  // 설정 '기억 밝기'를 끄면 모두 1(M2 밝기)로
+  const on = useSettings((st) => st.memoryBrightness !== false)
   useEffect(() => {
     const f = () => setTick((n) => n + 1)
     listeners.add(f)
@@ -59,13 +71,22 @@ export function useNoteMemory(): Map<string, { R: number; bright: number }> | un
   }, [])
   useEffect(() => {
     let alive = true
-    const run = () => void noteMemory().then((v) => alive && setM(v))
+    const run = () => void sharedMemory().then((v) => alive && setM(v))
     const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }
     if (w.requestIdleCallback) w.requestIdleCallback(run, { timeout: 3000 })
     else window.setTimeout(run, 400)
     return () => {
       alive = false
     }
-  }, [tick])
+  }, [tick, on])
   return m
+}
+
+/** 하늘 노트 별에 기억 밝기를 얹는다: 카드가 있는 노트만 `bright`(0.40–1)가 붙는다 */
+export function withBright<T extends { id: string }>(notes: T[], m: Map<string, { bright: number }> | undefined): Array<T & { bright?: number }> {
+  if (!m || !m.size) return notes
+  return notes.map((n) => {
+    const b = m.get(n.id)
+    return b ? { ...n, bright: b.bright } : n
+  })
 }
