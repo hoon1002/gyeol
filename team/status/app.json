@@ -1,1 +1,1 @@
-{"percent": 100, "doing": "M4 FSRS·복습·후보함·떠올리기·밝기 완료", "state": "done"}
+{ "percent": 100, "doing": "M4 QA A 7건 고침(#1 섞기 · #2 끝 화면 · #3 ⌘K 명령 우선 · #4 후보함 포커스 · #5·#6 떠올리기 · #7 후보 합치기). 하늘 필드 notes[].bright · 설정 키 retention/newPerDay/maxPerDay/memoryBrightness · requestReview API(src/memory/intent.ts)", "state": "done" }

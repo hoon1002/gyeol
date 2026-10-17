@@ -375,7 +375,7 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
               <IconBack size={20} />
             </button>
           )}
-          <NoteMenu note={note} subjects={subjects} onDeleted={props.onDeleted} onRecall={() => openRecall(note.id)} />
+          <NoteMenu note={note} subjects={subjects} onDeleted={props.onDeleted} onRecall={long ? () => openRecall(note.id) : null} />
         </div>
         <TitleField ref={titleRef} note={note} placeholder={dateText} onEnter={() => editor?.commands.focus('start')} />
         <p className="np-meta">
@@ -508,7 +508,7 @@ function TitleField({ note, placeholder, onEnter, ref }: { note: Note; placehold
 
 /* ---------- ⋯ 메뉴: 과목 바꾸기 · 지도에서 보기 · 지우기 ---------- */
 
-function NoteMenu({ note, subjects, onDeleted, onRecall }: { note: Note; subjects: Subject[]; onDeleted?: () => void; onRecall: () => void }) {
+function NoteMenu({ note, subjects, onDeleted, onRecall }: { note: Note; subjects: Subject[]; onDeleted?: () => void; onRecall: (() => void) | null }) {
   const [open, setOpen] = useState<null | 'menu' | 'subject'>(null)
   const [arm, setArm] = useState(false)
   const cur = subjects.find((s) => s.id === note.subjectId)
@@ -559,9 +559,11 @@ function NoteMenu({ note, subjects, onDeleted, onRecall }: { note: Note; subject
           <button
             type="button"
             role="menuitem"
+            disabled={!onRecall}
+            aria-disabled={!onRecall}
             onClick={() => {
               setOpen(null)
-              onRecall()
+              onRecall?.()
             }}
           >
             <span className="np-pop-ic" aria-hidden="true">

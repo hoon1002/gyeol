@@ -313,3 +313,5 @@
 - **화면**: Review(진행선 · 빈 고리 · popLayout 160/120/200 · 끝 ✓ 선 그리기 · ▶ 길게 3칸 · 후보 점 · 새 출발 칸), CandidateBox(지연), Recall(src/editor, 지연, 0.35는 recall.ts `RECALL_MISS`), 종이 머리 후보 수 · 떠올리기(PaperCands · InkMem), ⌘K 후보함 · 떠올리기 · 새 출발 · 시험 넣기('gyeol:exam-new').
 - 저장 경로: NotePaper 저장 성공 → `scheduleExtract`(2초 디바운스 → idle) → 새 후보면 birthStar(kind 'card', 0.3).
 - 떠올리기 기록: meta `recall.log` = [{ noteId, at, peeks, picked }] (앱 B가 '떠올리기 1번'으로 셀 수 있게).
+- QA M4 고침: 섞기는 '되는 후보 중 남은 수가 많은 과목'을 골라 다른 과목을 사이 칸으로 아낀다(↺ 재삽입 뒤에도 남은 목록을 앞 과목 이어서 다시 섞음, 3이 불가능할 때만 가능한 최솟값). ↺ 카드는 세션 안에서 끝낼 때까지 다시 나오고, 끝나면 진행선 100 → ✓(툴팁 '곧 n · 내일 m'). 오늘 몫 = 오늘 안 본 카드 + 때가 된 학습 단계 카드(곧 = 오늘 본 학습 단계 카드). ⌘K: 명령 이름 정확히 · 2자 이상 앞부분 일치는 늘 첫 줄. 후보: 노트 안 앞면 정규화 글이 같으면 먼저 것에 `rules`만 더함. 떠올리기 입구는 `recallReady`(글 80자 · 필기 획/글 상자 · PDF).
+- 주의: vite SSR 시험 스크립트는 cacheDir를 따로 둔다(같은 node_modules/.vite를 쓰면 돌고 있는 개발 서버의 deps가 'Outdated Optimize Dep' 504가 된다).

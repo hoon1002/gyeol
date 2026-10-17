@@ -23,7 +23,7 @@ import { tip } from '@/shell/Tip'
 import { IconBack, IconDeck, IconDoc, IconPdf, IconPen, IconPlus, IconSearch } from '@/shell/icons'
 import { Backlinks } from '@/editor/Backlinks'
 import { pickPdf, setPendingPdf } from '@/editor/inkState'
-import { closeRecall, openRecall, useRecallId } from '@/editor/recallState'
+import { closeRecall, openRecall, recallReady, useRecallId } from '@/editor/recallState'
 import { useNoteMemory, withBright } from '@/memory/brightness'
 import { pushLayer } from '@/shell/layers'
 import { NotesMapToggle } from './Map'
@@ -189,7 +189,7 @@ export function NotesScreen() {
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyR' && screenKey(e, '/notes', { typing: true })) {
         e.preventDefault()
-        openRecall(recallFor)
+        void recallReady(recallFor).then((ok) => ok && openRecall(recallFor))
       }
     }
     window.addEventListener('keydown', onKey)

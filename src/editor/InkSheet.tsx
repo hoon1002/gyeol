@@ -14,7 +14,7 @@ import { db, type Note, type PageTemplate } from '@/db/schema'
 import type { InkEngine } from '@/ink'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { IconBack, IconRecall } from '@/shell/icons'
-import { openRecall } from './recallState'
+import { openRecall, recallReady } from './recallState'
 import { PaperCands } from './PaperCands'
 import { pushLayer } from '@/shell/layers'
 import { tip } from '@/shell/Tip'
@@ -180,12 +180,13 @@ export default function InkSheet({ note, template, origin, active, onClose }: In
 /** 종이 머리(M4): 이 노트의 후보 수(있을 때만) · 떠올리기(쪽이 1장 이상일 때만) */
 function InkMem({ noteId }: { noteId: string }) {
   const cands = useLiveQuery(() => db.cardCandidates.where('noteId').equals(noteId).filter((c) => c.status === 'new').count(), [noteId]) ?? 0
-  const pages = useLiveQuery(() => db.pages.where('noteId').equals(noteId).filter((p) => !p.deletedAt).count(), [noteId]) ?? 0
-  if (!cands && !pages) return null
+  // 떠올리기는 쓴 것(획 · 글 상자)이 있을 때만 (빈 쪽만 있는 새 필기 노트는 숨김)
+  const ready = useLiveQuery(() => recallReady(noteId), [noteId]) ?? false
+  if (!cands && !ready) return null
   return (
     <span className="ink-sheet-mem">
       {cands > 0 && <PaperCands noteId={noteId} n={cands} />}
-      {pages > 0 && (
+      {ready && (
         <button type="button" className="ibtn np-mini" {...tip('떠올리기', { kbd: '⌥R', side: 'right' })} onClick={() => openRecall(noteId)}>
           <IconRecall size={16} />
         </button>

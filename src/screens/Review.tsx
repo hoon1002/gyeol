@@ -232,7 +232,7 @@ export function ReviewScreen() {
                 <span className="mono">{total}</span>
               </span>
             )}
-            {doneMark && <DoneMark tomorrow={quota.tomorrow} fresh={ended > 0 && Date.now() - ended < 4000} />}
+            {doneMark && <DoneMark soon={quota.soon} tomorrow={quota.tomorrow} fresh={ended > 0 && Date.now() - ended < 4000} />}
             <div className="rv-acts">
               {total > 0 && freshOk && (
                 <button type="button" className="ibtn rv-fresh" {...tip('새 출발')} onClick={() => setFresh((v) => !v)} aria-expanded={fresh}>
@@ -260,15 +260,16 @@ export function ReviewScreen() {
   )
 }
 
-/** 끝 ✓: 금빛 선 64px 원 + 체크(선 그리기 360ms). 툴팁 '내일 n'(0이면 없음). 4초 뒤 40% */
-function DoneMark({ tomorrow, fresh }: { tomorrow: number; fresh: boolean }) {
+/** 끝 ✓: 금빛 선 64px 원 + 체크(선 그리기 360ms). 툴팁 '곧 n · 내일 m'(0이면 그 말은 없음). 4초 뒤 40% */
+function DoneMark({ soon, tomorrow, fresh }: { soon: number; tomorrow: number; fresh: boolean }) {
   const [dim, setDim] = useState(!fresh)
   useEffect(() => {
     if (!fresh) return
     const t = window.setTimeout(() => setDim(true), 4000)
     return () => window.clearTimeout(t)
   }, [fresh])
-  const t = tomorrow ? tip(`내일 ${tomorrow}`) : { 'aria-label': '오늘 끝' }
+  const words = [soon ? `곧 ${soon}` : '', tomorrow ? `내일 ${tomorrow}` : ''].filter(Boolean).join(' · ')
+  const t = words ? tip(words) : { 'aria-label': '오늘 끝' }
   return (
     <span className={`rv-done${dim ? ' is-dim' : ''}${fresh ? ' is-draw' : ''}`} tabIndex={0} {...t}>
       <svg width="64" height="64" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -506,6 +507,7 @@ function ReviewSession({
   const [fan, setFan] = useState(false)
   const [done, setDone] = useState<Set<string>>(() => new Set())
   const again = useRef(new Map<string, number>())
+  const [end, setEnd] = useState(false)
   const shownAt = useRef(performance.now())
   // 처음 10장만 버튼 아래 낱말 (공용 '처음 n번' — 설정 '처음 화면 다시 보기'로 다시 보인다)
   const { fresh: words, bump: bumpWords } = useHintCount('review-words', 10)
@@ -516,7 +518,7 @@ function ReviewSession({
   const active = useActive()
   const busy = useRef(false)
   // 진행 = 끝낸 수 ÷ 처음 수. ↺로 다시 나오는 카드는 세지 않고, 끝 전에는 0.98에서 멈춘다(뒤로 가지 않음)
-  const progress = Math.min(done.size / Math.max(1, cards.length), 0.98)
+  const progress = end ? 1 : Math.min(done.size / Math.max(1, cards.length), 0.98)
 
   useEffect(() => {
     shownAt.current = performance.now()
@@ -528,7 +530,7 @@ function ReviewSession({
   }, [i, queue])
 
   const rate = async (r: Rating) => {
-    if (!card || !flipped || busy.current) return
+    if (!card || !flipped || busy.current || end) return
     busy.current = true
     setFan(false)
     let next = card
@@ -541,17 +543,21 @@ function ReviewSession({
     bumpWords()
     onRate(card, r.level)
     let q = queue
-    const n = again.current.get(card.id) ?? 0
-    if (r.k === 1 && n < 2) {
-      // ↺: 이번 세션에서 몇 장 뒤에 한 번 더(최대 2번). 진행선은 세지 않는다
-      again.current.set(card.id, n + 1)
-      q = [...queue]
-      q.splice(Math.min(i + 4, q.length), 0, next)
+    if (r.k === 1) {
+      // ↺: 재학습 — 이번 세션 안에서 몇 장 뒤에 다시 나와 끝낸다(진행선은 세지 않는다). 다시 넣은 뒤에도 같은 과목 연속 3장 이하
+      again.current.set(card.id, (again.current.get(card.id) ?? 0) + 1)
+      const rest = queue.slice(i + 1)
+      rest.splice(Math.min(3, rest.length), 0, next)
+      const m = await loadMem()
+      q = [...queue.slice(0, i + 1), ...m.interleave(rest, 3, queue.slice(0, i + 1).map((c) => c.subjectId))]
       setQueue(q)
     } else setDone((s) => new Set(s).add(card.id))
     busy.current = false
-    if (i + 1 >= q.length) onDone()
-    else {
+    if (i + 1 >= q.length) {
+      // 끝: 진행선을 100까지 채운 뒤 끝 화면
+      setEnd(true)
+      window.setTimeout(onDone, off ? 0 : 320)
+    } else {
       setI(i + 1)
       setFlipped(false)
     }

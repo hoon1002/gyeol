@@ -1,5 +1,6 @@
 /** 떠올리기 모드 열기 신호 (앱 A). 노트 장소가 Recall(지연 조각)을 띄운다. 입구: 종이 머리 · ⋯ 메뉴 · ⌘K · ⌥R */
 import { useSyncExternalStore } from 'react'
+import { db } from '@/db/schema'
 
 let cur: string | null = null
 const ls = new Set<() => void>()
@@ -39,4 +40,17 @@ export function scheduleExtract(noteId: string, onNew?: (n: number) => void): vo
       else window.setTimeout(run, 200)
     }, 2000),
   )
+}
+
+/** 떠올리기 입구를 보일지: 글 노트는 본문 80자 이상, 필기는 획 · 글 상자가 하나라도, PDF는 늘 (QA M4 #6) */
+export async function recallReady(noteId: string): Promise<boolean> {
+  const n = await db.notes.get(noteId)
+  if (!n || n.deletedAt) return false
+  if (n.kind === 'pdf') return true
+  if (n.kind === 'ink') {
+    const ids = (await db.pages.where('noteId').equals(noteId).toArray()).filter((p) => !p.deletedAt).map((p) => p.id)
+    if (!ids.length) return false
+    return (await db.strokes.where('pageId').anyOf(ids).count()) > 0 || (await db.pageItems.where('pageId').anyOf(ids).count()) > 0
+  }
+  return ((await db.noteBodies.get(noteId))?.text ?? '').trim().length >= 80
 }

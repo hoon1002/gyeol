@@ -4,3 +4,4 @@
 .np-mini:hover { color: var(--text-1); }
 .np-cands { width: auto; padding: 0 6px; gap: 4px; display: inline-flex; align-items: center; }
 .np-cands .mono { font: 400 12px/1 var(--f-mono); font-variant-numeric: tabular-nums; }
+.np-pop button:disabled { opacity: .4; cursor: default; }

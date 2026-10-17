@@ -9,7 +9,40 @@ import { db, uid, type Card, type CardCandidate } from '@/db/schema'
 import { NO_SUBJECT } from '@/db/notes'
 import { extractCandidates, mergeCandidates } from './extract'
 
-export type Cand = CardCandidate & { sort?: number }
+/** sort: 손글씨 테이프 정렬(헷갈림 0) · rules: 같은 앞면으로 합친 다른 규칙 표시(QA M4 #7) */
+export type Cand = CardCandidate & { sort?: number; rules?: string[] }
+
+const normKey = (s: string) => s.normalize('NFC').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '')
+/** 노트 안에서 같은 후보인지: 앞면 정규화 글(빈칸은 답으로 채워 원문 문장으로). 앞면이 빈 그림 후보(테이프 · 영역)는 null */
+export function candKey(front: string, back: string): string | null {
+  if (!front.trim()) return null
+  return normKey(front.includes('[…]') ? front.split('[…]').join(back) : front) || null
+}
+/** 새 후보 중 같은 앞면이 이미 있으면 만들지 않고 먼저 있던 것에 규칙 표시만 더한다 → { add, touched } */
+function dedupe(all: Cand[], fresh: Cand[]): { add: Cand[]; touched: Cand[] } {
+  const byKey = new Map<string, Cand>()
+  all.forEach((c) => {
+    const k = candKey(c.front, c.back)
+    if (k && !byKey.has(k)) byKey.set(k, c)
+  })
+  const add: Cand[] = []
+  const touched = new Set<Cand>()
+  for (const f of fresh) {
+    const k = candKey(f.front, f.back)
+    const ex = k ? byKey.get(k) : undefined
+    if (ex) {
+      if (ex.rule !== f.rule && !(ex.rules ?? []).includes(f.rule)) {
+        ex.rules = [...(ex.rules ?? []), f.rule]
+        ex.updatedAt = Date.now()
+        touched.add(ex)
+      }
+      continue
+    }
+    if (k) byKey.set(k, f)
+    add.push(f)
+  }
+  return { add, touched: [...touched].filter((c) => !add.includes(c)) }
+}
 
 /** 규칙 추출이 만드는 후보 이름 (extract.ts Rule) */
 export const EXTRACT_RULES = new Set(['qa', 'cloze', 'term', 'bold', 'table', 'list', 'qline', 'ask'])
@@ -20,11 +53,14 @@ export async function syncNoteCandidates(noteId: string): Promise<number> {
   const fresh = extractCandidates(body?.doc ?? null, body?.text ?? '', noteId)
   const all = await db.cardCandidates.where('noteId').equals(noteId).toArray()
   const existing = all.filter((c) => EXTRACT_RULES.has(c.rule))
-  const { add, remove } = mergeCandidates(existing, fresh, noteId, Date.now(), () => uid('cand-'))
-  if (!add.length && !remove.length) return 0
+  const merged = mergeCandidates(existing, fresh, noteId, Date.now(), () => uid('cand-'))
+  const gone = new Set(merged.remove)
+  const { add, touched } = dedupe((all as Cand[]).filter((c) => !gone.has(c.id)), merged.add)
+  if (!add.length && !merged.remove.length && !touched.length) return 0
   await db.transaction('rw', db.cardCandidates, async () => {
-    if (remove.length) await db.cardCandidates.bulkDelete(remove)
+    if (merged.remove.length) await db.cardCandidates.bulkDelete(merged.remove)
     if (add.length) await db.cardCandidates.bulkAdd(add)
+    if (touched.length) await db.cardCandidates.bulkPut(touched)
   })
   return add.length
 }
@@ -109,11 +145,17 @@ export async function restoreCandidates(prev: Cand[], cardIds: string[]): Promis
 
 /** 떠올리기에서 고른 빠진 곳 → 후보(규칙 'recall'). 같은 anchor는 다시 만들지 않는다 → 새로 생긴 수 */
 export async function addRecallCandidates(noteId: string, items: Array<{ front: string; back: string; anchor: string }>): Promise<number> {
-  const have = new Set((await db.cardCandidates.where('noteId').equals(noteId).toArray()).map((c) => c.anchor ?? ''))
+  const all = (await db.cardCandidates.where('noteId').equals(noteId).toArray()) as Cand[]
+  const have = new Set(all.map((c) => c.anchor ?? ''))
   const now = Date.now()
-  const add: Cand[] = items
+  const fresh: Cand[] = items
     .filter((it) => !have.has(it.anchor))
     .map((it, k) => ({ id: uid('cand-'), noteId, rule: 'recall', front: it.front, back: it.back, anchor: it.anchor, status: 'new', cardId: null, createdAt: now + k, updatedAt: now }))
-  if (add.length) await db.cardCandidates.bulkAdd(add)
+  const { add, touched } = dedupe(all, fresh)
+  if (add.length || touched.length)
+    await db.transaction('rw', db.cardCandidates, async () => {
+      if (add.length) await db.cardCandidates.bulkAdd(add)
+      if (touched.length) await db.cardCandidates.bulkPut(touched)
+    })
   return add.length
 }

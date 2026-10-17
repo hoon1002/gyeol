@@ -30,7 +30,7 @@ import type { MotionLevel } from '@/fx'
 import { useEffectiveMotion, useGo, useIsPhone } from './hooks'
 import { IconCandidate, IconDeck, IconDoc, IconDust, IconExam, IconExport, IconFlag, IconFocus, IconFresh, IconLock, IconMore, IconMotion, IconNote, IconPdf, IconPen, IconPlan, IconRecall, IconReview, IconSearch, IconTheme, IconUndo } from './icons'
 import { openCandidates, openFreshStart } from '@/memory/intent'
-import { openRecall } from '@/editor/recallState'
+import { openRecall, recallReady } from '@/editor/recallState'
 import { tip } from './Tip'
 import { useHintCount } from './hints'
 import { pushLayer } from './layers'
@@ -133,6 +133,12 @@ function Palette() {
   const notes = useNotes() ?? []
   const { now } = useNow()
   const go = useGo()
+  // ⌘K '떠올리기': 보고 있는 노트(없으면 가장 최근 노트)가 비었으면 흐리게(고를 수 없음)
+  const focusNoteId = useUi((st) => st.noteFocusId)
+  const recallId = useLiveQuery(async () => {
+    const id = focusNoteId ?? (await db.notes.orderBy('updatedAt').reverse().filter((n) => !n.deletedAt).first())?.id
+    return id && (await recallReady(id)) ? id : null
+  }, [focusNoteId])
   const phone = useIsPhone()
   const motionLevel = useEffectiveMotion()
   const setTheme = useSettings((s) => s.setTheme)
@@ -363,16 +369,14 @@ function Palette() {
     list.push({
       id: 'cmd-recall', group: '명령', label: '떠올리기', keywords: ['떠올리기', '회상', '백지 복습', 'recall', '기억해 쓰기'],
       icon: <IconRecall size={17} />,
+      disabled: !recallId,
       run: (el) =>
         after(() => {
-          void (async () => {
-            // 보고 있는 노트, 없으면 가장 최근 노트
-            const id = ui().noteFocusId ?? (await db.notes.orderBy('updatedAt').reverse().filter((n) => !n.deletedAt).first())?.id
-            if (!id) return
-            ui().setNoteFocusId(id)
-            openRecall(id)
-            void go('/notes', el)
-          })()
+          // 보고 있는 노트, 없으면 가장 최근 노트 (본문이 있을 때만)
+          if (!recallId) return
+          ui().setNoteFocusId(recallId)
+          openRecall(recallId)
+          void go('/notes', el)
         }),
     })
     list.push({
@@ -483,8 +487,16 @@ function Palette() {
     // 노트 제목과 정확히(없으면 앞부분이) 맞으면 그 노트가 늘 첫 줄
     const ql = q.toLowerCase()
     const titleOf = (it: Item) => (it.note ? it.note.title : it.label).trim().toLowerCase()
-    const lead = noteHits.find((it) => titleOf(it) === ql) ?? noteHits.find((it) => titleOf(it).startsWith(ql))
-    const rows = [...inkRows.slice(0, 4), ...(lead ? [lead] : []), ...strongHead, ...noteHits.filter((it) => it !== lead), ...memoHits, ...weakHead]
+    const noteExact = noteHits.find((it) => titleOf(it) === ql)
+    const lead = noteExact ?? noteHits.find((it) => titleOf(it).startsWith(ql))
+    // 명령 이름과 정확히(또는 2자 이상 앞부분이) 맞으면 그 명령이 늘 첫 줄 — 자연어 동작('과제 추가' 등)보다 먼저(QA M4 #3)
+    const qn = ql.replace(/\s+/g, ' ')
+    const isCmd = (it: Item) => it.group === '명령' || it.group === '이동'
+    const cmdExact = list.find((it) => isCmd(it) && it.label.trim().toLowerCase() === qn)
+    const cmdPrefix = cmdExact ?? (qn.length >= 2 ? list.find((it) => isCmd(it) && it.label.trim().toLowerCase().startsWith(qn)) : undefined)
+    const top = cmdExact ? [cmdExact, ...(lead ? [lead] : [])] : noteExact ? [noteExact, ...(cmdPrefix ? [cmdPrefix] : [])] : cmdPrefix ? [cmdPrefix, ...(lead ? [lead] : [])] : lead ? [lead] : []
+    const seen = new Set<string>()
+    const rows = [...inkRows.slice(0, 4), ...top, ...strongHead, ...noteHits, ...memoHits, ...weakHead].filter((it) => !seen.has(it.id) && !!seen.add(it.id))
     // 8줄 고정: 마지막 줄은 늘 '메모로 저장'
     return [...rows.slice(0, 7), save]
   }, [query, parsed, subjects, notes, now, themePref, motionLevel, indexVer, sky, paperId, inkMod])

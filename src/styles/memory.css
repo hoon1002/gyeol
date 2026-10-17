@@ -24,7 +24,7 @@
 .cb-list { list-style: none; margin: 0; padding: 4px 0; overflow: auto; flex: 1; overscroll-behavior: contain; }
 .cb-li { overflow: hidden; }
 .cb-row {
-  position: relative; display: grid; grid-template-columns: 34px 1fr auto; align-items: start; gap: 10px; min-height: 72px; max-height: none; padding: 14px 12px 12px 14px;
+  position: relative; display: grid; grid-template-columns: minmax(34px, auto) 1fr auto; align-items: start; gap: 10px; min-height: 72px; max-height: none; padding: 14px 12px 12px 14px;
   border-radius: 12px; margin: 2px 6px; cursor: pointer; touch-action: pan-y; user-select: none; -webkit-touch-callout: none;
   transition: background var(--dur-fast), translate 200ms var(--ease-out);
 }

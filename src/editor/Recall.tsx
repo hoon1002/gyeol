@@ -63,6 +63,7 @@ export default function Recall({ noteId, onClose }: { noteId: string; onClose: (
   const [rects, setRects] = useState<Array<{ pageId: string; r: Rect }>>([])
   const [show, setShow] = useState<'mine' | 'orig'>('orig')
   const peeks = useRef(0)
+  const writeRef = useRef<HTMLTextAreaElement>(null)
   const box = useRef<HTMLElement>(null)
   const sky = useSkyEvent()
   const ink = note?.kind === 'ink' || note?.kind === 'pdf'
@@ -161,8 +162,12 @@ export default function Recall({ noteId, onClose }: { noteId: string; onClose: (
     window.addEventListener('pointerup', cancel)
   }
 
+  const ready = note ? (ink ? !!pages : !!orig) : false
+  // 열면 쓰기 칸에 포커스 (준비되기 전엔 disabled라 autoFocus가 듣지 않는다 — QA M4 #5)
+  useEffect(() => {
+    if (ready && step === 'write') writeRef.current?.focus({ preventScroll: true })
+  }, [ready, step])
   if (!note) return null
-  const ready = ink ? !!pages : !!orig
   return (
     <section className={`rc${step === 'compare' ? ' is-cmp' : ''}`} ref={box} tabIndex={-1} aria-label="떠올리기" onKeyDown={onKey}>
       <header className="rc-head">
@@ -194,7 +199,7 @@ export default function Recall({ noteId, onClose }: { noteId: string; onClose: (
               </div>
             )}
             <div className={`rc-fog${peek ? ' is-peek' : ''}`} aria-hidden="true" />
-            <textarea className="rc-write" value={mine} onChange={(e) => setMine(e.target.value)} aria-label="기억나는 것" autoFocus disabled={!ready} style={peek ? { opacity: 0 } : undefined} />
+            <textarea ref={writeRef} className="rc-write" value={mine} onChange={(e) => setMine(e.target.value)} aria-label="기억나는 것" autoFocus disabled={!ready} style={peek ? { opacity: 0 } : undefined} />
           </>
         ) : (
           <div className="rc-cols" data-show={show}>

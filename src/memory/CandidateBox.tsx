@@ -100,6 +100,26 @@ export default function CandidateBox({ noteId, onClose }: { noteId?: string | nu
   closeRef.current = onClose
   const list = useMemo(() => data ?? [], [data])
   const count = list.length
+  // 받기 · 버리기 뒤 포커스: 다음 후보 → (마지막이면) 이전 후보 → (없으면) 닫기 단추 (QA M4 #4)
+  const backRef = useRef<HTMLButtonElement>(null)
+  const focusNext = useRef<string | null | undefined>(undefined)
+  const planFocus = (gone: Cand[]) => {
+    const ids = new Set(gone.map((c) => c.id))
+    const at = Math.max(...gone.map((c) => list.findIndex((x) => x.c.id === c.id)))
+    const after = list.slice(at + 1).find((x) => !ids.has(x.c.id)) ?? [...list.slice(0, at)].reverse().find((x) => !ids.has(x.c.id))
+    focusNext.current = after?.c.id ?? null
+  }
+  useEffect(() => {
+    const id = focusNext.current
+    if (id === undefined) return
+    const i = id ? list.findIndex((x) => x.c.id === id) : -1
+    if (id && i < 0) return // 아직 목록이 바뀌기 전
+    focusNext.current = undefined
+    if (i >= 0) {
+      setCur(i)
+      requestAnimationFrame(() => (box.current?.querySelector(`.cb-row[data-id="${id}"]`) as HTMLElement | null)?.focus())
+    } else backRef.current?.focus()
+  }, [list])
 
   // 겹침 층: Esc는 고치기를 먼저 접고, 그다음 판을 닫는다
   useEffect(() => {
@@ -143,6 +163,7 @@ export default function CandidateBox({ noteId, onClose }: { noteId?: string | nu
 
   const accept = async (cs: Cand[]) => {
     if (!cs.length) return
+    planFocus(cs)
     const ed: Record<string, { front: string; back: string }> = {}
     cs.forEach((c) => drafts[c.id] && (ed[c.id] = drafts[c.id]!))
     setEdit(null)
@@ -153,6 +174,7 @@ export default function CandidateBox({ noteId, onClose }: { noteId?: string | nu
   }
   const dismiss = async (cs: Cand[]) => {
     if (!cs.length) return
+    planFocus(cs)
     setEdit(null)
     clearSel(cs.map((c) => c.id))
     await dismissCandidates(cs)
@@ -216,7 +238,7 @@ export default function CandidateBox({ noteId, onClose }: { noteId?: string | nu
   return (
     <section className="cb" ref={box} tabIndex={-1} aria-label="후보함" onKeyDown={onKey}>
       <header className="cb-head">
-        <button type="button" className="ibtn" {...tip('복습으로', { kbd: 'esc' })} onClick={onClose}>
+        <button type="button" className="ibtn" ref={backRef} {...tip('복습으로', { kbd: 'esc' })} onClick={onClose}>
           <IconBack size={18} />
         </button>
         <span className="cb-count inum" {...tip(`후보 ${count}`)}>
@@ -368,6 +390,7 @@ function Row(p: {
       aria-selected={p.selected}
       tabIndex={p.active ? 0 : -1}
       data-row={p.i}
+      data-id={c.id}
       style={dx ? { translate: `${dx}px 0`, transition: 'none' } : undefined}
       onFocus={p.onFocus}
       onPointerDown={down}
@@ -381,7 +404,8 @@ function Row(p: {
       onContextMenu={(e) => e.preventDefault()}
     >
       <span className="cb-lead">
-        <RuleIcon rule={c.rule} />
+ <RuleIcon rule={c.rule} />
+        {c.rules?.map((r) => <RuleIcon key={r} rule={r} />)}
         <i className="sdot" style={{ ['--c' as string]: p.color }} />
       </span>
       {isImg ? (

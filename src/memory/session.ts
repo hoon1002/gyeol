@@ -26,36 +26,49 @@ function feasible(count: Map<string, number>, total: number, subj: string | null
   for (const [s, c] of count) {
     if (!c) continue
     const others = total - c
-    if (c > (s === subj ? k - run : k) + k * others) return false
+    if (c > (s === subj ? Math.max(0, k - run) : k) + k * others) return false
   }
   return true
 }
 
 /** 같은 과목이 maxRun장 넘게 이어지지 않게, 원래 순서(급한 것 먼저)는 되도록 지키며 고른다 */
-export function interleave<T extends { subjectId: string }>(list: T[], maxRun = 3): T[] {
+/** st: 세션 동안 이어지는 한도(한 번 늘면 줄이지 않는다 — 3과 4를 오가면 끝에 긴 연속이 남는다) */
+export function interleave<T extends { subjectId: string }>(list: T[], maxRun = 3, prefix: string[] = [], st?: { k: number }): T[] {
   const rest = [...list]
   const out: T[] = []
   const count = new Map<string, number>()
   rest.forEach((c) => count.set(c.subjectId, (count.get(c.subjectId) ?? 0) + 1))
-  let subj: string | null = null
+  // 이미 본 카드의 끝 과목 · 연속 수에서 이어 간다(↺로 다시 넣을 때)
+  let subj: string | null = prefix.length ? prefix[prefix.length - 1]! : null
   let run = 0
+  for (let k = prefix.length - 1; k >= 0 && prefix[k] === subj; k--) run++
+  // 연속 한도: 가능하면 maxRun(3). ↺로 한 과목이 너무 많아져 3이 불가능할 때만, 가능한 가장 작은 값으로 1씩 늘린다
+  let k = Math.max(maxRun, st?.k ?? 0)
+  while (k <= rest.length && !feasible(count, rest.length, subj, run, k)) k++
+  if (st) st.k = k
   while (rest.length) {
-    let pick = 0
+    // 되는 후보 중 남은 수가 가장 많은 과목(같으면 앞선 것) — 다른 과목 카드를 사이 칸으로 아껴 두어, ↺로 다시 넣어도 연속이 길어지지 않게
+    let pick = -1
+    let loose = -1
+    let best = -1
     const tried = new Set<string>()
     for (let i = 0; i < rest.length; i++) {
       const s = rest[i]!.subjectId
       if (tried.has(s)) continue
       tried.add(s)
       const r = s === subj ? run + 1 : 1
-      if (r > maxRun) continue
-      count.set(s, count.get(s)! - 1)
-      const fine = feasible(count, rest.length - 1, s, r, maxRun)
-      count.set(s, count.get(s)! + 1)
-      if (fine) {
+      if (r > k) continue
+      if (loose < 0) loose = i
+      const n = count.get(s)!
+      count.set(s, n - 1)
+      const fine = feasible(count, rest.length - 1, s, r, k)
+      count.set(s, n)
+      if (fine && n > best) {
         pick = i
-        break
+        best = n
       }
     }
+    if (pick < 0) pick = loose >= 0 ? loose : 0
     const c = rest.splice(pick, 1)[0]!
     count.set(c.subjectId, count.get(c.subjectId)! - 1)
     run = c.subjectId === subj ? run + 1 : 1
@@ -83,6 +96,8 @@ export interface Quota {
   minutes: number
   /** 내일 몫(끝 화면 툴팁) */
   tomorrow: number
+  /** 오늘 본 학습 단계 카드 중 오늘 안에 곧 다시 볼 수(끝 ✓ 툴팁 '곧 n') */
+  soon: number
   /** 오늘 이미 본 카드 수(끝 ✓를 남길지) */
   doneToday: number
   /** 카드가 하나라도 있나(첫 회 그림) */
@@ -101,25 +116,33 @@ async function todayDone(now: number): Promise<{ all: number; fresh: number }> {
   return { all: cards.size, fresh: fresh.size }
 }
 
-async function pools(now: number): Promise<{ due: Card[]; fresh: Card[] }> {
-  const [, b] = studyDayRange(now)
-  const [due, fresh] = await Promise.all([
+/** due = 오늘 몫(오늘 아직 안 본 카드 + 오늘 본 학습 단계 카드 중 지금 때가 된 것) · soon = 오늘 본 학습 단계 카드 중 곧 다시 볼 것 */
+async function pools(now: number): Promise<{ due: Card[]; fresh: Card[]; soon: Card[] }> {
+  const [a, b] = studyDayRange(now)
+  const [all, fresh] = await Promise.all([
     db.cards.where('due').below(b).filter((c) => live(c) && c.state !== 'new').toArray(),
     db.cards.where('state').equals('new').filter(live).toArray(),
   ])
+  const due: Card[] = []
+  const soon: Card[] = []
+  for (const c of all) {
+    const seen = (c.lastReview ?? 0) >= a
+    if (!seen || c.due <= now) due.push(c)
+    else soon.push(c)
+  }
   due.sort((x, y) => x.due - y.due)
   fresh.sort((x, y) => x.createdAt - y.createdAt)
-  return { due, fresh }
+  return { due, fresh, soon }
 }
 
 export async function todayQuota(now = Date.now()): Promise<Quota> {
-  const [{ due, fresh }, done] = await Promise.all([pools(now), todayDone(now)])
+  const [{ due, fresh, soon }, done] = await Promise.all([pools(now), todayDone(now)])
   const left = Math.max(0, maxPerDay() - done.all)
   const d = Math.min(due.length, left)
   const f = Math.min(fresh.length, Math.max(0, newPerDay() - done.fresh), left - d)
   const [, b] = studyDayRange(now)
   const [tmr, any] = await Promise.all([db.cards.where('due').between(b, b + DAY).filter((c) => live(c) && c.state !== 'new').count(), db.cards.count()])
-  return { total: d + f, due: d, fresh: f, minutes: Math.max(1, Math.round((d + f) * 0.5)), tomorrow: Math.min(maxPerDay(), tmr), doneToday: done.all, anyCards: any > 0 }
+  return { total: d + f, due: d, fresh: f, minutes: Math.max(1, Math.round((d + f) * 0.5)), tomorrow: Math.min(maxPerDay(), tmr), soon: soon.length, doneToday: done.all, anyCards: any > 0 }
 }
 
 const byLowR = (now: number) => (x: Card, y: Card) => (retrievability(x, now) ?? 0) - (retrievability(y, now) ?? 0)
