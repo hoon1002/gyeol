@@ -9,6 +9,7 @@ import { useEffect, useRef } from 'react'
 import { useSkySheet } from '@/fx'
 import { SettingsBody } from '@/screens/Settings'
 import { tip } from './Tip'
+import { pushLayer } from './layers'
 import { useUi } from '@/stores/ui'
 import { isTypingTarget, useEffectiveMotion, useMediaQuery } from './hooks'
 import { IconClose } from './icons'
@@ -62,18 +63,15 @@ function Sheet() {
     }
   }, [origin])
 
-  // Esc · Tab 가두기 (⌘K 팔레트가 위에 열려 있으면 팔레트 몫)
+  // Esc = 겹침 층 관리자(맨 위 층만, QA #3). 포커스 복귀는 위 effect가 연 자리로 한다
+  useEffect(() => pushLayer({ id: 'settings', close, el: panelRef.current }), [close])
+
+  // Tab 가두기 (⌘K 팔레트가 위에 열려 있으면 팔레트 몫)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (useUi.getState().paletteOpen) return
       const panel = panelRef.current
       if (!panel) return
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        e.stopPropagation()
-        close()
-        return
-      }
       if (e.key !== 'Tab') return
       const list = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.offsetParent !== null || el === document.activeElement)
       if (!list.length) return

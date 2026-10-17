@@ -6,7 +6,8 @@
  * 비행 중 누름은 엔진 규칙대로(무시/도착 뒤 처리). 포인터가 별 위에 있으면 커서가 바뀐다.
  */
 import { useRouterState } from '@tanstack/react-router'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
+import { pushLayer } from './layers'
 import { useSkyCamera, useSkyEvent, useSkyPick, type CameraTarget } from '@/fx'
 import { db } from '@/db/schema'
 import { graphNodeInfo } from '@/lib/graph'
@@ -174,17 +175,20 @@ export function StarPress() {
       void cam.flyTo({ scene: cam.current.scene, focus: hit.sky, zoom: Math.min(z0 * 3.5, next.zoom(z0)) })
       requestAnimationFrame(() => panelRef.current?.focus({ preventScroll: true }))
     }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && infoRef.current) {
-        e.stopPropagation()
-        close()
-      }
+    // Esc는 겹침 층 관리자(src/shell/layers.ts)가 맨 위 층만 닫는다 — 여기서 window 캡처로 먼저 받지 않는다(QA #2–#4)
+    // 하늘을 끌어도 포커스는 패널에 남긴다(QA #15): 끌기가 포커스를 body·#stage로 빼면 패널로 되돌린다
+    const onUp = () => {
+      if (!infoRef.current) return
+      requestAnimationFrame(() => {
+        const a = document.activeElement
+        if (infoRef.current && (!a || a === document.body || (a as HTMLElement).id === 'stage' || a.tagName === 'CANVAS')) panelRef.current?.focus({ preventScroll: true })
+      })
     }
     window.addEventListener('click', onClick)
-    window.addEventListener('keydown', onKey, true)
+    window.addEventListener('pointerup', onUp, true)
     return () => {
       window.removeEventListener('click', onClick)
-      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('pointerup', onUp, true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pick, isDragClick, cam, sky])
@@ -233,6 +237,8 @@ export function StarPress() {
 
   if (!info) return null
   return (
+    <>
+    <StarLayer close={close} panelRef={panelRef} />
     <div ref={panelRef} className="star-info" data-zone-place={path} role="dialog" aria-label={info.title} tabIndex={-1} key={info.id}>
       <h2 className="focus-lines star-title">{info.title}</h2>
       <p className="star-chips" aria-label={info.meta}>
@@ -260,5 +266,14 @@ export function StarPress() {
         </button>
       </div>
     </div>
+    </>
   )
+}
+
+/** 별 패널이 떠 있는 동안 겹침 층 하나 (Esc = 맨 위 층만) */
+function StarLayer({ close, panelRef }: { close: () => void; panelRef: RefObject<HTMLDivElement | null> }) {
+  const ref = useRef(close)
+  ref.current = close
+  useEffect(() => pushLayer({ id: 'star', close: () => ref.current(), el: panelRef.current }), [panelRef])
+  return null
 }

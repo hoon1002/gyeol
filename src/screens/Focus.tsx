@@ -159,6 +159,8 @@ export function FocusScreen() {
       sky.fadeStar(id, { to: 0, ms: 900 })
     }
     s.reset()
+    // 끝내기 버튼이 사라지니 포커스를 '시작'으로 (QA #14)
+    requestAnimationFrame(() => stageRef.current?.querySelector<HTMLElement>('.gold-btn')?.focus({ preventScroll: true }))
   }
 
   const cycleSubject = () => {

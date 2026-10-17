@@ -12,6 +12,7 @@ import { guessSubject, saveMemo } from './api'
 import { closeMemoSheet, memoTimings, registerMemoSheet } from './open'
 import { fmtSec, useVoice } from './voice'
 import { tip } from '@/shell/Tip'
+import { pushLayer } from '@/shell/layers'
 import { useHintCount } from '@/shell/hints'
 import { IconChecklist, IconMic, IconPen, IconPin, IconPlus, IconStop } from '@/shell/icons'
 import { SubjectPicker } from './SubjectPicker'
@@ -56,6 +57,9 @@ export function MemoSheet() {
   const ph = useHintCount('memo-ph', 3)
   const enterHint = useHintCount('memo-enter', 3)
   const phBump = useRef(ph.bump)
+  const releaseLayer = useRef<(() => void) | null>(null)
+  /** Esc(겹침 층 관리자): 녹음 중이면 취소, 아니면 칸을 닫는다(과목 목록은 자기 층) */
+  const escRef = useRef<() => void | boolean>(() => {})
   phBump.current = ph.bump
   const [picker, setPicker] = useState(false)
   const phone = useIsPhone()
@@ -90,6 +94,8 @@ export function MemoSheet() {
       if (!openRef.current) {
         originRef.current = origin ?? document.activeElement
         phBump.current()
+        releaseLayer.current?.()
+        releaseLayer.current = pushLayer({ id: 'memo', close: () => escRef.current(), el: layer })
       }
       openRef.current = true
       setOpen(true)
@@ -97,6 +103,8 @@ export function MemoSheet() {
     const doClose = () => {
       if (!openRef.current) return
       openRef.current = false
+      releaseLayer.current?.()
+      releaseLayer.current = null
       layer.classList.remove('is-open')
       layer.setAttribute('aria-hidden', 'true')
       taRef.current?.blur()
@@ -264,6 +272,14 @@ export function MemoSheet() {
     }
   }
 
+  escRef.current = () => {
+    if (voice.state === 'rec') {
+      voice.cancel()
+      return false
+    }
+    closeMemoSheet()
+  }
+
   const takeImage = (files: FileList | null | undefined): boolean => {
     const f = files ? Array.from(files).find((x) => x.type.startsWith('image/')) : undefined
     if (!f) return false
@@ -295,7 +311,7 @@ export function MemoSheet() {
         onDragOver={(e) => e.preventDefault()}
         onDrop={onDrop}
         onPointerDown={(e) => {
-          if (e.pointerType === 'touch' && (e.target as HTMLElement).closest('.memo-grip')) swipe.current = { y: e.clientY, id: e.pointerId }
+          if (e.pointerType === 'touch' && (e.target as HTMLElement).closest('.memo-grip, .memo-swipe')) swipe.current = { y: e.clientY, id: e.pointerId }
         }}
         onPointerMove={(e) => {
           if (swipe.current && e.pointerId === swipe.current.id && e.clientY - swipe.current.y > 36) {
@@ -305,6 +321,8 @@ export function MemoSheet() {
         }}
         onPointerUp={() => (swipe.current = null)}
       >
+        {/* 폰: 위쪽 가장자리 띠에서 아래로 쓸면 닫힌다(QA #16 · design-m2 1-2). 띠는 touch-action none이라 스크롤에 뺏기지 않는다 */}
+        {phone && <span className="memo-swipe" aria-hidden="true" />}
         {phone && <span className="memo-grip" aria-hidden="true" />}
         <div className="memo-row">
           {thumb && !audio && (

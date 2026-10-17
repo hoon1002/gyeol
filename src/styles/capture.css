@@ -257,3 +257,4 @@ kbd.memo-hint { font: 400 11px var(--f-mono); color: var(--text-3); border: 1px 
 .memo-pen { flex: none; display: grid; place-items: center; height: 36px; color: var(--text-3); }
 .memo-box:focus { outline: none; }
 .memo-pinned { display: grid; place-items: center; color: var(--accent); }
+.memo-swipe { position: absolute; left: 0; right: 0; top: -8px; height: 32px; z-index: 1; touch-action: none; }

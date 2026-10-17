@@ -22,6 +22,7 @@ import { memoItems, type AssetX, type MemoX } from './api'
 import { fmtSec } from './voice'
 import { SubjectPicker } from './SubjectPicker'
 import { skyPinDust } from './sky'
+import { pushLayer } from '@/shell/layers'
 import '@/styles/capture.css'
 
 type To = 'note' | 'task' | 'archive'
@@ -235,22 +236,30 @@ export function DustBox({ variant }: { variant: 'inline' | 'sheet' }) {
     return [...ids]
   }, [raw])
 
+  // 열면 첫 줄에 포커스(없으면 뒤로) — QA #9. 보관함·별가루를 오갈 때도
   useEffect(() => {
-    const t = setTimeout(() => ref.current?.querySelector<HTMLElement>('.dust-row, .dust-back')?.focus({ preventScroll: true }), 30)
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return
-      if (document.querySelector('.subj-pop')) return
-      e.preventDefault()
-      if (sel) setSel(null)
-      else if (useCapture.getState().archive) setArchive(false)
-      else close()
+    const t = setTimeout(() => (ref.current?.querySelector<HTMLElement>('.dust-row') ?? ref.current?.querySelector<HTMLElement>('.dust-back'))?.focus({ preventScroll: true }), 30)
+    return () => clearTimeout(t)
+  }, [archive])
+
+  // Esc = 겹침 층(맨 위만): 고르기 → 보관함 → 닫기 순으로 한 단계씩. 닫으면 연 자리('별가루 n')로 포커스 — QA #12
+  const escRef = useRef<() => void | boolean>(() => {})
+  escRef.current = () => {
+    if (sel) {
+      setSel(null)
+      return false
     }
-    window.addEventListener('keydown', onKey)
-    return () => {
-      clearTimeout(t)
-      window.removeEventListener('keydown', onKey)
+    if (useCapture.getState().archive) {
+      setArchive(false)
+      return false
     }
-  }, [archive, close, setArchive, sel])
+    close()
+  }
+  useEffect(() => {
+    const origin = useCapture.getState().dustOrigin
+    // 가로 오늘에서는 '별가루 n' 버튼이 다시 그려지므로 닫을 때 새 버튼을 찾는다
+    return pushLayer({ id: 'dust', close: () => escRef.current(), restoreFocusTo: () => (origin?.isConnected ? origin : document.querySelector('.space[data-path="/"] .dust-line')), el: ref.current })
+  }, [])
 
   useEffect(() => setSel(null), [archive])
 

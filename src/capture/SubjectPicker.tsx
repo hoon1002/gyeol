@@ -1,9 +1,13 @@
 /** 작은 과목 팝오버 (메모 칸 · 별가루함 'S') — 과목 없음 + 과목들. ↑↓ · Enter · Esc */
 import { useEffect, useRef } from 'react'
 import type { Subject } from '@/db/schema'
+import { pushLayer } from '@/shell/layers'
 
 export function SubjectPicker({ subjects, value, onPick, onClose, className = '' }: { subjects: Subject[]; value: string | null; onPick: (id: string | null) => void; onClose: () => void; className?: string }) {
   const ref = useRef<HTMLUListElement>(null)
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+  useEffect(() => pushLayer({ id: 'subject-picker', close: () => closeRef.current(), el: ref.current }), [])
   useEffect(() => {
     const el = ref.current
     el?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus({ preventScroll: true })

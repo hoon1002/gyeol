@@ -20,6 +20,8 @@ import { IconDust, IconFocus, IconGridDraw, IconNote, IconPlan, IconReview } fro
 import { tip } from '@/shell/Tip'
 import { Hint } from '@/shell/Hint'
 import { useActive } from '@/app/keepAlive'
+import { useFocusTimer } from '@/stores/focus'
+import { FocusRunBtn } from './FocusRunBtn'
 import { useResolvedColors, useSitAction, type ColorKey } from './actions'
 import { Block, FocusLines, Hero } from './parts'
 import type { SitIcon } from '@/lib/situation'
@@ -48,6 +50,7 @@ export function TodayScreen() {
   const land = useMediaQuery('(min-width: 600px) and (min-aspect-ratio: 1/1)')
   const inline = land && dustOpen
   const active = useActive()
+  const focusLive = useFocusTimer((t) => t.phase === 'running' || t.phase === 'paused')
 
   const sit = useMemo(() => (data ? evaluateSituation(data.model) : null), [data])
   const subjects: Subject[] = data?.model.subjects ?? []
@@ -109,7 +112,9 @@ export function TodayScreen() {
           </Block>
         )}
         <div className="today-acts">
-          {sit.primary && (
+          {focusLive ? (
+            <FocusRunBtn active={active} onGo={(el) => void go('/focus', el)} />
+          ) : sit.primary && (
             <span className="hint-host">
               <button type="button" className="gold-btn" {...tip(sit.primary.label)} onClick={(e) => run(sit.primary!.action, e.currentTarget)}>
                 <PrimaryIcon icon={sit.primary.icon} />

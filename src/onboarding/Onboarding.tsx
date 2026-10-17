@@ -59,10 +59,14 @@ export function Onboarding() {
     return { empty: s === 0 && n === 0 && m === 0, onboarded: o?.value === true }
   }, [])
   const mode: OnboardingMode | null = forced ?? (st && st.empty && !st.onboarded ? 'real' : null)
-  return mode ? <Flow mode={mode} /> : null
+  // 한 번 뜨면 끝(finish)까지 붙잡는다: '샘플로 시작'이 DB를 채워 empty가 거짓이 돼도 연출 중에 내려가지 않게(QA #7)
+  const [latched, setLatched] = useState<OnboardingMode | null>(null)
+  if (mode && !latched) setLatched(mode)
+  const active = latched ?? mode
+  return active ? <Flow mode={active} onDone={() => setLatched(null)} /> : null
 }
 
-function Flow({ mode }: { mode: OnboardingMode }) {
+function Flow({ mode, onDone }: { mode: OnboardingMode; onDone: () => void }) {
   const router = useRouter()
   const { now } = useNow()
   const dbSubjects = useSubjects() ?? []
@@ -77,6 +81,36 @@ function Flow({ mode }: { mode: OnboardingMode }) {
   const [busy, setBusy] = useState(false)
   const end = useCapture((s) => s.endOnboarding)
   const setActive = useCapture((s) => s.setOnbActive)
+
+  // 첫 실행 칸 밖은 inert(보이지 않는 오늘 버튼에 포커스가 가지 않게) + Tab은 칸 안에서만 — QA #6
+  const layerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const host = layerRef.current
+    const app = host?.closest('.app')
+    if (!host || !app) return
+    const others = Array.from(app.children).filter((c) => c !== host && !c.contains(host) && !(c as HTMLElement).inert) as HTMLElement[]
+    others.forEach((c) => (c.inert = true))
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+      const list = Array.from(host.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter((el) => el.offsetParent !== null)
+      if (!list.length) return
+      const first = list[0]!
+      const last = list[list.length - 1]!
+      const inside = host.contains(document.activeElement)
+      if (e.shiftKey && (document.activeElement === first || !inside)) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && (document.activeElement === last || !inside)) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => {
+      others.forEach((c) => (c.inert = false))
+      window.removeEventListener('keydown', onKey, true)
+    }
+  }, [])
 
   // 떠 있는 동안: 오늘로, 크롬 숨김, 오늘 하늘 = onboarding 자세, n 단축키 막기
   useEffect(() => {
@@ -95,6 +129,7 @@ function Flow({ mode }: { mode: OnboardingMode }) {
   const finish = async () => {
     if (mode === 'real') await db.meta.put({ key: 'onboarded', value: true })
     end()
+    onDone()
   }
 
   const sample = async () => {
@@ -124,7 +159,7 @@ function Flow({ mode }: { mode: OnboardingMode }) {
 
   const slots = store.slots
   return (
-    <div className="onb-layer">
+    <div className="onb-layer" ref={layerRef}>
       {step < 3 && (
         <div className="onb-corner">
           {step === 1 && (

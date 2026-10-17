@@ -9,6 +9,7 @@ import { addDays, hm, minutesOfDay, startOfWeek, weekdayShort } from '@/lib/time
 import { useIsPhone } from '@/shell/hooks'
 import { COLORS, nextColor, type TimetableStore } from './slots'
 import { tip } from '@/shell/Tip'
+import { pushLayer } from '@/shell/layers'
 import { IconCheck, IconChevron, IconClose, IconRepeat, IconRoom, IconTrash, IconUndo } from '@/shell/icons'
 import '@/styles/capture.css'
 
@@ -62,6 +63,8 @@ export function Timetable({ store, now, knotRef, className = '' }: { store: Time
   const onDown = (e: RPointerEvent<HTMLDivElement>, weekday: number) => {
     if (e.button !== 0 || e.target !== e.currentTarget) return
     const el = e.currentTarget
+    // 마우스 누름이 #stage로 포커스를 가져가 팝오버 입력 포커스를 빼앗지 않게(QA #8)
+    if (e.pointerType === 'mouse') e.preventDefault()
     const a = minAt(el, e.clientY, 'floor')
     if (phone) {
       // 폰: 끌기는 스크롤과 겹치므로 누르기만 (pointerup에서 만든다)
@@ -245,18 +248,23 @@ function SlotForm({ draft, subjects, side, style, onChange, onSave, onCancel, on
     const q = draft.name.trim().toLowerCase()
     return subjects.filter((s) => !q || s.name.toLowerCase().includes(q) || s.aliases.some((a) => a.toLowerCase().includes(q))).slice(0, 6)
   }, [draft.name, subjects])
+  const cancelRef = useRef(onCancel)
+  cancelRef.current = onCancel
+  // 그리면 과목 칸에 바로 포커스(뒤따르는 click이 빼앗지 않게 다음 프레임에 한 번 더) — QA #8. Esc = 겹침 층
   useEffect(() => {
     nameRef.current?.focus({ preventScroll: true })
+    const r = requestAnimationFrame(() => nameRef.current?.focus({ preventScroll: true }))
+    const release = pushLayer({ id: 'timetable-pop', close: () => cancelRef.current() })
+    return () => {
+      cancelAnimationFrame(r)
+      release()
+    }
   }, [])
   const onKey = (e: KeyboardEvent) => {
     if (e.nativeEvent.isComposing || e.keyCode === 229) return
     if (e.key === 'Enter') {
       e.preventDefault()
       void onSave(draft)
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      e.stopPropagation()
-      onCancel()
     }
   }
   return (

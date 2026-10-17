@@ -48,7 +48,7 @@ export function PlanScreen() {
   const todo = tasks.filter((t) => !t.done && t.dueAt === NO_DUE).length
   const assignments = open.filter((t) => t.kind !== 'exam').length
   const exam = open.find((t) => t.kind === 'exam')
-  const meta = [slots.length ? `수업 ${slots.length}` : null, `과제 ${assignments}`, todo ? `할 일 ${todo}` : null, exam ? `시험 ${fmtDday(ddayOf(now, exam.dueAt))}` : null].filter(Boolean).join(' · ')
+  const meta = [slots.length ? `수업 ${slots.length}` : null, assignments ? `과제 ${assignments}` : null, todo ? `할 일 ${todo}` : null, exam ? `시험 ${fmtDday(ddayOf(now, exam.dueAt))}` : null].filter(Boolean).join(' · ')
 
   return (
     <>
@@ -76,7 +76,7 @@ export function PlanScreen() {
                 </button>
                 {/* 메뉴를 닫아도 미리보기 시트가 살아 있게 늘 마운트(hidden으로만 숨김) */}
                 <div className="plan-menu" role="menu" hidden={!menu}>
-                  <IcsButton store={store} className="plan-menu-item" label="캘린더 파일 가져오기" iconOnly={false} onPicked={() => setMenu(false)} />
+                  <IcsButton store={store} className="plan-menu-item" label="캘린더 파일 가져오기" iconOnly={false} onPicked={() => setMenu(false)} restoreTo={() => menuRef.current?.querySelector('button') ?? null} />
                 </div>
               </div>
             </div>

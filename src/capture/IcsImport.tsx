@@ -2,7 +2,8 @@
  * .ics 미리보기 시트 (design-m2 6-3): "수업 9개" / "매주 반복만" / [넣기]. 줄마다 체크(기본 켬) — 과목 · 요일 · 시각.
  * 매주 반복이 아닌 일정은 lib/ics가 이미 뺐다. 과목은 SUMMARY로 추정하거나 새로 만든다(timetable.importClasses).
  */
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { pushLayer } from '@/shell/layers'
 import { createPortal } from 'react-dom'
 import { parseIcs, type IcsClass } from '@/lib/ics'
 import { weekdayShort } from '@/lib/time'
@@ -12,7 +13,7 @@ import { IconCalendarIn, IconCheck, IconClose, IconPlan } from '@/shell/icons'
 import '@/styles/capture.css'
 
 /** 파일 고르기 버튼 + 미리보기 시트 */
-export function IcsButton({ store, className = 'ibtn', label = '캘린더 파일', iconOnly = true, onDone, onPicked }: { store: TimetableStore; className?: string; label?: string; iconOnly?: boolean; onDone?: (n: number) => void; onPicked?: () => void }) {
+export function IcsButton({ store, className = 'ibtn', label = '캘린더 파일', iconOnly = true, onDone, onPicked, restoreTo }: { store: TimetableStore; className?: string; label?: string; iconOnly?: boolean; onDone?: (n: number) => void; onPicked?: () => void; restoreTo?: () => Element | null }) {
   const input = useRef<HTMLInputElement>(null)
   const [list, setList] = useState<IcsClass[] | null>(null)
   const [error, setError] = useState(false)
@@ -48,12 +49,16 @@ export function IcsButton({ store, className = 'ibtn', label = '캘린더 파일
       />
       {error && <p className="err-line">이 파일은 열 수 없어요.</p>}
       {/* 시트는 body로 띄운다(변형된 조상 안에서 fixed가 갇히지 않게) */}
-      {list && createPortal(<IcsPreview list={list} store={store} onClose={(n) => { setList(null); if (n !== null) onDone?.(n) }} />, document.body)}
+      {list && createPortal(<IcsPreview list={list} store={store} restoreTo={restoreTo?.() ?? input.current?.previousElementSibling ?? null} onClose={(n) => { setList(null); if (n !== null) onDone?.(n) }} />, document.body)}
     </>
   )
 }
 
-export function IcsPreview({ list, store, onClose }: { list: IcsClass[]; store: TimetableStore; onClose: (inserted: number | null) => void }) {
+export function IcsPreview({ list, store, onClose, restoreTo = null }: { list: IcsClass[]; store: TimetableStore; onClose: (inserted: number | null) => void; restoreTo?: Element | null }) {
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+  // Esc = 겹침 층(맨 위만), 닫으면 연 자리(⋯)로 포커스 — QA #13
+  useEffect(() => pushLayer({ id: 'ics', close: () => closeRef.current(null), restoreFocusTo: restoreTo }), [restoreTo])
   const [on, setOn] = useState<Set<string>>(() => new Set(list.map((c) => c.key)))
   const [busy, setBusy] = useState(false)
   const picked = list.filter((c) => on.has(c.key))
@@ -64,7 +69,7 @@ export function IcsPreview({ list, store, onClose }: { list: IcsClass[]; store: 
     onClose(n)
   }
   return (
-    <div className="ics-layer" onKeyDown={(e) => e.key === 'Escape' && onClose(null)}>
+    <div className="ics-layer">
       <div className="ics-catch" onClick={() => onClose(null)} />
       <div className="ics-sheet" role="dialog" aria-label="캘린더 파일 가져오기">
         <span className="sheet-grip" aria-hidden="true" />

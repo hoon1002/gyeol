@@ -1,1 +1,1 @@
-{ "percent": 100, "doing": "M3 1단계 완료: Tip·useHint·Hint·icons · 글 줄이기(B 화면) · 메모 kind/items·고정·고르기·음성·펜 대기 · 백업 $bin(획 왕복 같음). 대기: InkPad·pinDust", "state": "done" }
+{ "percent": 100, "doing": "QA 수정 완료(#2–4·6–12·14–17·19 + hint svg). 겹침 층 API src/shell/layers.ts: pushLayer({ id, close, restoreFocusTo?(요소|함수), el? }) → 해제 · isLayerOpen(id?) · topLayer() · closeTopLayer() · subscribeLayers()", "state": "done" }

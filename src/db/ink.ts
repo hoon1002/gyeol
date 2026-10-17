@@ -16,7 +16,7 @@
  *   PageItem.fontSize  글 상자 글자 크기(pt, 없으면 16)
  */
 import Dexie, { type Table } from 'dexie'
-import { db as appDb, uid, type Asset, type Note, type Page, type PageItem, type PageTemplate, type Stroke } from './schema'
+import { db as appDb, uid, type Asset, type Meta, type Note, type Page, type PageItem, type PageTemplate, type Stroke } from './schema'
 
 export type PenTip = 'ball' | 'fountain'
 
@@ -36,6 +36,7 @@ export type InkDB = Dexie & {
   pageItems: Table<InkItem, string>
   assets: Table<Asset, string>
   notes: Table<Note, string>
+  meta: Table<Meta, string>
 }
 
 /** 앱 DB('gyeol') */
@@ -46,6 +47,7 @@ export function openInkLabDB(name = 'gyeol-inklab'): InkDB {
   const d = new Dexie(name)
   d.version(1).stores({
     notes: 'id, subjectId, kind, updatedAt',
+    meta: 'key',
     assets: 'id, ownerId, createdAt',
     pages: 'id, noteId, [noteId+index], updatedAt',
     strokes: 'id, pageId, [pageId+layer], updatedAt',
@@ -267,5 +269,25 @@ export async function touchNote(d: InkDB, noteId: string, patch: Partial<Pick<No
     await d.notes.update(noteId, { updatedAt: Date.now(), ...patch })
   } catch {
     /* notes가 없거나 노트가 없음 */
+  }
+}
+
+/* ---------- 기억하는 값 (meta, design-ink 부록 C) ---------- */
+
+/** meta 읽기 (없거나 실패하면 fallback) */
+export async function getInkMeta<T>(d: InkDB, key: string, fallback: T): Promise<T> {
+  try {
+    const row = await d.meta.get(key)
+    return row ? (row.value as T) : fallback
+  } catch {
+    return fallback
+  }
+}
+
+export async function setInkMeta(d: InkDB, key: string, value: unknown): Promise<void> {
+  try {
+    await d.meta.put({ key, value })
+  } catch {
+    /* 저장소 없음 */
   }
 }

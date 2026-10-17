@@ -40,8 +40,10 @@ export function skyBloom(subjectId: string, color: string): void {
 
 /** D10: 은하 보이기(2.6초, 끝나면 resolve) */
 export async function skyReveal(): Promise<void> {
+  // 약속이 안 풀려도(하늘 없음 · 개발용 dry · 탭 숨김) 4초 뒤에는 흐름을 잇는다(QA #17)
+  const cap = new Promise<void>((r) => setTimeout(r, 4000))
   try {
-    await current?.revealGalaxy()
+    await Promise.race([current?.revealGalaxy() ?? Promise.resolve(), cap])
   } catch {
     /* 하늘이 없어도 흐름은 계속 */
   }
