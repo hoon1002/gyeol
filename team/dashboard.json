@@ -1,6 +1,6 @@
 {
   "project": "결 GYEOL · M0 3D 품질 관문",
-  "subtitle": "M3 · 손글씨(굿노트 수준)·조용한 화면·디테일 구현 완료 → 최종 검수·재시험",
+  "subtitle": "M3 완료 · 손글씨(굿노트 수준)·조용한 화면(글 0–1줄)·디테일(QA 28건) → 한도 초기화 뒤 재확인 3건 · 다음 M4 기억 엔진",
   "phases": [
     {
       "name": "v4 기획 · 3D · M0 · M1 · M2",
@@ -8,7 +8,7 @@
     },
     {
       "name": "M3 1차: 손글씨 엔진 · 필기 설계 · QA · 글 줄이기 감사",
-      "status": "active",
+      "status": "done",
       "members": [
         "ink",
         "inkd",
@@ -28,7 +28,7 @@
     },
     {
       "name": "M3 검수 · 펜 측정 · 보고",
-      "status": "active",
+      "status": "done",
       "members": [
         "ad",
         "qa"
@@ -98,8 +98,8 @@
       },
       {
         "phase": "M3",
-        "label": "M3 손글씨(굿노트 수준) · 조용한 화면 · 디테일",
-        "estimate": 2600000
+        "label": "M3 손글씨·조용한 화면·디테일 (완료)",
+        "estimate": 2615245
       },
       {
         "phase": "M4",
