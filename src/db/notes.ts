@@ -265,7 +265,8 @@ export async function createNote(opts: CreateNoteOpts = {}): Promise<Note> {
       // 종이 노트: 노트 행 + 첫 쪽(여기서 미리 만들어 두면 펼칠 때 엔진이 쪽을 두 번 만들 일이 없다). 획은 잉크 엔진이 쓴다
       const n: Note = { id, title, subjectId: opts.subjectId ?? null, kind, pages: 1, page: 1, createdAt: now, updatedAt: now, deletedAt: null, classKey: opts.classKey ?? null, template: null }
       await db.notes.add(n)
-      await db.pages.put({ id: uid('pg'), noteId: id, index: 0, template: opts.pageTemplate ?? (kind === 'pdf' ? 'blank' : 'ruled'), w: 595, h: 842, pdf: null, paper: null, createdAt: now, updatedAt: now, deletedAt: null })
+      // PDF 노트는 쪽을 미리 만들지 않는다 — 가져오기가 PDF 쪽을 넣는다(QA #24: 빈 첫 쪽이 하나 더 생기던 것)
+      if (kind === 'ink') await db.pages.put({ id: uid('pg'), noteId: id, index: 0, template: opts.pageTemplate ?? 'ruled', w: 595, h: 842, pdf: null, paper: null, createdAt: now, updatedAt: now, deletedAt: null })
       if (title) await connectDangling(title, id)
       return n
     }

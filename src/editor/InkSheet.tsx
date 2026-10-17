@@ -121,7 +121,16 @@ export default function InkSheet({ note, template, origin, active, onClose }: In
   const onReady = (eng: InkEngine) => {
     engRef.current = eng
     const pdf = takePendingPdf(note.id)
-    if (pdf) void eng.importPdf(pdf).then(() => captureThumb(eng, note.id))
+    if (pdf)
+      void eng.importPdf(pdf).then(async () => {
+        // 가져오기가 끝나면 남은 빈 쪽(PDF 아님 · 획 · 물건 없음)을 지운다(QA #24)
+        for (const pm of [...eng.doc.pages]) {
+          if (pm.page.pdf) continue
+          await eng.doc.load(pm)
+          if (pm.strokes.size === 0 && pm.items.size === 0) eng.deletePage(pm.page.id)
+        }
+        await captureThumb(eng, note.id)
+      })
     // 첫 쪽이 바뀌고 쉬면(엔진이 1초 디바운스해서 'thumb'을 낸다) 목록 썸네일을 새로
     eng.on('thumb', ({ pageId }) => {
       if (pageId === eng.doc.pages[0]?.page.id) void captureThumb(eng, note.id)

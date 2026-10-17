@@ -1,1 +1,1 @@
-{"percent": 100, "doing": "M3 최종 검수 반영 끝: M3-2 미리보기 첫 쪽을 칸에 맞춰 크게(inkThumbnailURL), M3-3 폰 목록 썸네일 흰 테두리 → 옅은 1px+그림자, M3-5 복습 키 숫자 버튼 아래·부채꼴 동안 ✓ 숫자 숨김", "state": "done"}
+{"percent": 100, "doing": "QA #24 끝: PDF 노트는 첫 쪽을 미리 만들지 않고, 가져오기 뒤 남은 빈 쪽을 지움 → 3쪽 PDF = 3쪽", "state": "done"}
