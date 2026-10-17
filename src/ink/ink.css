@@ -1,0 +1,287 @@
+/* 결 손글씨 엔진 — 무대 · 층 · 물건 (엔진이 만드는 DOM만). 도구 칸 UI는 src/ink/ui/ink-ui.css */
+
+.ink-host {
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  isolation: isolate;
+  contain: layout paint;
+  overscroll-behavior: contain;
+  cursor: crosshair;
+}
+.ink-host[data-tool='hand'],
+.ink-host.is-space {
+  cursor: grab;
+}
+.ink-host[data-tool='lasso'],
+.ink-host[data-tool='text'] {
+  cursor: default;
+}
+.ink-host[data-tool='text'] {
+  cursor: text;
+}
+
+.ink-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+/* 앱 base.css의 img, svg, canvas { max-width: 100% }가 0폭 층 안에서 그림을 0으로 줄이지 않게 */
+.ink-stage canvas,
+.ink-stage svg,
+.ink-stage img {
+  max-width: none;
+  max-height: none;
+}
+
+/* 세계 층 · 캔버스 층: 왼쪽 위 기준, transform만 바뀐다 */
+.ink-L {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.ink-L-hlm {
+  mix-blend-mode: multiply;
+  opacity: 0.38;
+}
+.ink-L-hln {
+  mix-blend-mode: screen;
+  opacity: 0.45;
+}
+
+.ink-tpl {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.ink-slot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.ink-page {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+/* 실시간 층 (펜일 때 z 10, 형광일 때 z 7) */
+.ink-live {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ink-live canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* 펜 길게 누르기 고리 예고: 300ms부터 600ms까지 차오른다 (반지름 10 → 16px) */
+.ink-ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 40px;
+  height: 40px;
+  z-index: 11;
+  pointer-events: none;
+  opacity: 0;
+}
+.ink-ring svg {
+  width: 40px;
+  height: 40px;
+  overflow: visible;
+}
+.ink-ring circle {
+  fill: none;
+  stroke: var(--text-3, #8e94a8);
+  stroke-width: 1.5;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  transform-origin: 20px 20px;
+  transform: rotate(-90deg) scale(0.77);
+}
+.ink-ring.is-on {
+  animation: ink-ring-op 600ms linear forwards;
+}
+.ink-ring.is-on circle {
+  animation: ink-ring-fill 600ms linear forwards;
+}
+@keyframes ink-ring-op {
+  0%,
+  50% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0.6;
+  }
+}
+@keyframes ink-ring-fill {
+  0%,
+  50% {
+    stroke-dashoffset: 100;
+    transform: rotate(-90deg) scale(0.77);
+  }
+  100% {
+    stroke-dashoffset: 0;
+    transform: rotate(-90deg) scale(1.23);
+  }
+}
+
+/* ---------- 물건 ---------- */
+
+.ink-items {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ink-items > * {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+
+.ink-img img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  -webkit-user-drag: none;
+}
+
+.ink-text {
+  width: max-content;
+  font-family: var(--f-kr, 'Noto Sans KR', system-ui, sans-serif);
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.ink-text.is-editing {
+  visibility: hidden;
+}
+.ink-text-edit {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 1px dashed var(--text-3, #8e94a8);
+  outline-offset: 2px;
+  background: transparent;
+  resize: none;
+  overflow: hidden;
+  font-family: var(--f-kr, 'Noto Sans KR', system-ui, sans-serif);
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  pointer-events: auto;
+  touch-action: auto;
+  user-select: text;
+  -webkit-user-select: text;
+  caret-color: currentColor;
+}
+
+/* 가리개 테이프 (design-ink 7-2): 면 · 결 · 찢긴 끝 · 그림자, 걷히면 점선만 */
+.ink-tape {
+  --tape: #c9d0dc;
+}
+.ink-tape > svg,
+.ink-tape-face,
+.ink-tape-face > svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+}
+.ink-tape-face {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 1px 1.5px rgba(30, 25, 15, 0.12));
+}
+.ink-tape[data-dark='1'] .ink-tape-face {
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.35));
+}
+.ink-tape-line path {
+  fill: none;
+  stroke: var(--tape);
+  stroke-width: 0.75;
+  stroke-dasharray: 3 3;
+  opacity: 0;
+  vector-effect: non-scaling-stroke;
+  transition: opacity 120ms;
+}
+.ink-tape[data-state='revealed'] .ink-tape-line path {
+  opacity: 0.35;
+}
+.ink-tape[data-state='revealed'][data-dark='1'] .ink-tape-line path {
+  opacity: 0.45;
+}
+.ink-tape[data-state='revealed'] .ink-tape-face {
+  clip-path: inset(0 0 0 100%);
+}
+.ink-tape-flag {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 50%;
+  background: var(--seal, #a8402c);
+  display: none;
+}
+.ink-tape.is-flag .ink-tape-flag {
+  display: block;
+}
+.ink-tape-lift {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 4px;
+  height: 100%;
+  opacity: 0;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.ink-spark {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* 메모 칸 (pad): 종이 없음 */
+.ink-pad {
+  cursor: crosshair;
+}
+.ink-pad .ink-page {
+  box-shadow: none !important;
+}
