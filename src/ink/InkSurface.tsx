@@ -67,6 +67,12 @@ export function InkSurface(props: InkSurfaceProps) {
     let alive = true
     void eng.ready.then(() => {
       if (!alive) return
+      // 열자마자 단축키(G · ⌘Z …)가 듣게: 이 엔진을 지금 엔진으로, 호스트에 포커스(화면이 튀지 않게 preventScroll).
+      // 다른 곳에서 글을 치는 중이면 포커스는 빼앗지 않는다
+      eng.focusEngine()
+      host.tabIndex = -1
+      const ae = document.activeElement as HTMLElement | null
+      if (!ae?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) host.focus({ preventScroll: true })
       setEngine(eng)
       cb.current.onReady?.(eng)
     })

@@ -13,6 +13,9 @@
   overscroll-behavior: contain;
   cursor: crosshair;
 }
+.ink-host:focus {
+  outline: none;
+}
 .ink-host[data-tool='hand'],
 .ink-host.is-space {
   cursor: grab;
