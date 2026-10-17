@@ -245,6 +245,14 @@ const LAYER3D: Record<Layer, { c: [number, number, number]; span: number; group:
   graph: { c: LANDMARKS.graph, span: 3, group: 'nebula' },
   exam: { c: [2.0, 0.3, -1.5], span: 0.4, group: 'exam' },
 }
+/** 나의 가지 k번째 날 자리: 나의 자리에서 바깥으로 로그 나선(피치 18°), 날마다 0.25u */
+function branchPos(k: number): [number, number, number] {
+  const c = LANDMARKS.focus
+  const r0 = Math.hypot(c[0], c[2])
+  const rr = r0 + 0.25 * k * Math.sin((18 * Math.PI) / 180)
+  const th = Math.atan2(c[2], c[0]) - (0.25 * k * Math.cos((18 * Math.PI) / 180)) / r0
+  return [rr * Math.cos(th), c[1] + 0.1, rr * Math.sin(th)]
+}
 const pos3 = (s: { layer: Layer; x: number; y: number }): [number, number, number] => {
   const z = LAYER3D[s.layer]
   return [z.c[0] + (s.x - 0.5) * z.span, z.c[1] + 0.12, z.c[2] + (s.y - 0.5) * z.span]
@@ -505,6 +513,14 @@ export class FieldEngine {
       { passive: true },
     )
     on('pointerleave', () => this.sky?.pointerLeave())
+    // 나의 가지: 숨김에서 돌아오면 날 경계를 다시 본다(보이지 않을 때만 옮긴다)
+    const onVis = () => {
+      if (document.hidden) return
+      this.branchN = -1
+      this.pushStars()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    this.cleanups.push(() => document.removeEventListener('visibilitychange', onVis))
     if (typeof PerformanceObserver !== 'undefined') {
       try {
         const po = new PerformanceObserver((list) => {
@@ -642,11 +658,18 @@ export class FieldEngine {
       this.g3d.setExposure(typeof dim3 === 'number' ? Math.max(0.5, Math.min(1, dim3)) : 1)
       this.g3d.setSheet(preset === 'settings' || this.sheets.size > 0)
       this.g3d.setDrag(this.dragEnabled())
+      this.g3d.setPhase(this.phase === 'auto' ? autoPhase() : this.phase)
       if (changed || instant) {
         this.camStack = []
-        this.goCamera({ scene: preset }, instant)
+        const ms = this.goCamera({ scene: preset }, instant)
         this.fadeLayers(instant)
         if (preset === 'graph' || preset === 'map') this.flushDeferred()
+        // 나의 가지(#43): 날이 바뀐 뒤 처음 오늘·계획에 오면 가지 끝 별 하나 V11
+        if (this.branchGlint && ['today', 'landing', 'plan', 'planner'].includes(preset)) {
+          this.branchGlint = false
+          const tip = branchPos(Math.max(1, this.branchDays()))
+          window.setTimeout(() => this.g3d?.sparkle(tip), ms + 200)
+        }
       }
       return
     }
@@ -904,7 +927,8 @@ export class FieldEngine {
             id: s.id,
             group: LAYER3D[s.layer].group,
             pos: pos3(s),
-            L: (sel ? 3 : 1.6) + Math.min(6, s.L / 40),
+            size: sel ? 3.2 : Math.min(2.6, 1.2 + s.L / 100),
+            L: 1,
             color: sel ? GOLD : s.color,
             from: s.from,
             to: s.to,
@@ -912,7 +936,16 @@ export class FieldEngine {
             dur: s.dur,
           })
         }
+        // 나의 가지 (#43): 지난 날의 별자리 — 나의 자리에서 바깥으로 로그 나선(피치 18°), 날마다 0.25u
+        const nb = Math.min(60, this.branchDays())
+        for (let k = 1; k <= nb; k++) list.push({ id: 'branch:' + k, group: 'branch', pos: branchPos(k), size: 1.4, L: 1, color: GOLD, from: 0.45, to: 0.45, t0: 0, dur: 0 })
         this.g3d.setDataStars(list)
+        // 노트 책등 위 점 (#28): 노트에서는 지도 별이 책등의 높이(해시)에 점으로
+        this.g3d.setSpine(
+          this.preset === 'notes'
+            ? [...this.stars.values()].filter((s) => s.layer === 'graph' && s.to > 0.01).map((s) => ({ id: s.id, s: ((hashStr(s.id) % 1000) / 1000) * 1.8 - 0.9, level: Math.max(0.35, s.to), color: s.color }))
+            : [],
+        )
         this.pushLinks3d()
         return
       }
@@ -1218,6 +1251,7 @@ export class FieldEngine {
   setLens(subjectId: string | null, color?: string): void {
     this.lens = subjectId
     this.sky?.setTint(cssColor(color))
+    this.g3d?.setTint(subjectId ? cssColor(color) : null)
     for (const s of this.stars.values()) this.animTo(s, this.visTarget(s), 0.6)
     this.pushStars()
   }
@@ -1522,6 +1556,25 @@ export class FieldEngine {
   }
 
   flyTo(t: CameraTarget, o?: { duration?: number }): Promise<void> {
+    if (this.g3d && t.focus && t.scene === this.preset) {
+      // design-m1 #31: 데이터 별 쪽으로 짧게 다가감만 (자세·롤 그대로) — 노트 별 1.4u · 오늘·나의 별 1.6u
+      let best: StarRec | null = null
+      let bd = Infinity
+      for (const s of this.stars.values()) {
+        const d = Math.hypot(s.x - t.focus[0], s.y - t.focus[1])
+        if (d < bd) {
+          bd = d
+          best = s
+        }
+      }
+      if (best) {
+        this.camStack.push(this.camCur)
+        if (this.camStack.length > 8) this.camStack.shift()
+        this.camCur = t
+        const ms = this.g3d.approach(pos3(best), best.layer === 'graph' ? 1.4 : 1.6)
+        return new Promise((res) => window.setTimeout(res, ms))
+      }
+    }
     this.camStack.push(this.camCur)
     if (this.camStack.length > 8) this.camStack.shift()
     const ms = this.goCamera(t, false, o?.duration)
@@ -1529,6 +1582,12 @@ export class FieldEngine {
   }
 
   back(o?: { duration?: number }): Promise<void> {
+    if (this.g3d) {
+      const prev = this.camStack.pop()
+      this.camCur = prev ?? { scene: this.preset }
+      const ms = this.g3d.approach(null)
+      return new Promise((res) => window.setTimeout(res, ms))
+    }
     const prev = this.camStack.pop() ?? { scene: this.preset }
     const ms = this.goCamera(prev, false, o?.duration)
     return new Promise((res) => window.setTimeout(res, ms))
@@ -1722,6 +1781,36 @@ export class FieldEngine {
   setClock(c: { startedAt: number; durationMs: number; elapsedMs: number; paused: boolean } | null): void {
     this.g3d?.raw?.setClock(c)
   }
+  /** 나의 가지 (#43): 별자리가 있던 지난 날 수. 새벽 4시가 날의 경계. 앱이 안 보일 때(시작·돌아옴)만 늘린다 — 보이는 이동 0 */
+  private branchN = -1
+  private branchDays(): number {
+    if (this.branchN >= 0) return this.branchN
+    const key = 'gyeol.sky.branch'
+    const day = (d = new Date(Date.now() - 4 * 3600_000)) => d.toISOString().slice(0, 10)
+    let st = { n: 0, last: '', had: false }
+    try {
+      st = { ...st, ...JSON.parse(localStorage.getItem(key) ?? '{}') }
+    } catch {
+      /* 저장소 없음 */
+    }
+    const today = day()
+    if (st.last && st.last !== today && st.had) {
+      st.n += 1
+      st.had = false
+      this.branchGlint = true
+    }
+    st.last = today
+    const hasToday = [...this.stars.values()].some((s) => s.layer === 'today' && s.to > 0.01)
+    st.had = st.had || hasToday
+    try {
+      localStorage.setItem(key, JSON.stringify(st))
+    } catch {
+      /* 무시 */
+    }
+    this.branchN = st.n
+    return st.n
+  }
+  private branchGlint = false
   /** 3D 엔진 (검증·측정용) */
   galaxy3d(): Galaxy3D | null {
     return this.g3d

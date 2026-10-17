@@ -1,6 +1,6 @@
 {
   "project": "결 GYEOL · M0 3D 품질 관문",
-  "subtitle": "M1 · 3D 은하를 앱에 옮기기 (장소 6 + 설정 시트 · 은하 회전 설정 · 사건 51개 3D)",
+  "subtitle": "M1 · 엔진 이식 완료(앱 하늘 = 3D) → 남은 사건 3D · 앱 배치·집중 베젤 · 노트→복습 프레임 조사",
   "phases": [
     {
       "name": "v4 기획 · 3D 시제품",
@@ -12,7 +12,7 @@
     },
     {
       "name": "M1 엔진 이식 · 장소 6 · 설정 시트",
-      "status": "active",
+      "status": "done",
       "members": [
         "fx",
         "app",
@@ -21,7 +21,7 @@
     },
     {
       "name": "M1 사건 51개 3D · UI 배치",
-      "status": "todo",
+      "status": "active",
       "members": [
         "fx",
         "app",

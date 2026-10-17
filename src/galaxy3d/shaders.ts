@@ -247,6 +247,9 @@ uniform float uRest;
 uniform float uPlate; // 낮 테마 '3D 건판' 0 밤 → 1 낮 (design-m1 3-1)
 uniform vec4 uZone[3]; // 글 구역 (uv, 아래가 0) — 안전 마스크
 uniform vec2 uZoneF;   // 페더 (uv)
+uniform vec3 uBg;      // 배경 바탕색 (시간대)
+uniform vec4 uTint;    // 과목 렌즈 반사 성운: rgb, 세기(≤ 0.10)
+uniform vec3 uTintC;   // 그 자리 uv 중심 · 반지름
 out vec4 o;
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
@@ -265,7 +268,7 @@ void main() {
   }
   c = 0.18 * pow(max(c, 0.0) / 0.18, vec3(1.0 + 0.06 * uRest)); // 정지 장면: 대비 +6% (중간 회색 고정 → 밝기 그대로)
   // 바탕: 아주 깊은 남색
-  c += vec3(0.004, 0.006, 0.014);
+  c += uBg; // 시간대 위상(design-m1 #40): 배경 구 색조만 푸른 밤 ↔ 깊은 밤 ↔ 새벽
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
   c = mix(vec3(l), c, 1.3); // 채도: 금빛 중심 · 청백 팔 · 분홍 매듭이 씻기지 않게
   vec3 t = aces(max(c, 0.0));
@@ -273,6 +276,9 @@ void main() {
   vec2 q = (vUv - 0.5) * vec2(uAspect, 1.0) / max(uAspect, 1.0);
   t *= 1.0 - 0.32 * pow(clamp(length(q) * 1.3, 0.0, 1.0), 2.4);
   t = pow(t, vec3(1.0 / 2.2));
+  // 과목 렌즈(V10): 그 장소 자리 둘레 반사 성운에 과목색 ≤ 10%
+  if (uTint.a > 0.0) t = mix(t, t * (0.55 + 0.9 * uTint.rgb), uTint.a * (1.0 - smoothstep(0.0, uTintC.z, length((vUv - uTintC.xy) * vec2(uAspect, 1.0)))))
+  ;
   t = mix(t, min(t, vec3(0.086, 0.110, 0.173)), zone);
   // 낮 '3D 건판' (design-m1 3-1): 장면은 밤과 같고 여기서만 음화 — 종이 위 먹
   if (uPlate > 0.001) {
@@ -402,4 +408,95 @@ in float vA;
 uniform vec3 uLineCol;
 out vec4 o;
 void main() { o = vec4(uLineCol * vA, 1.0); }
+`
+
+/* 사건 층 (design-m1 0-2-1): 은하를 다 그린 뒤 캔버스에 바로 — 데이터 별·반짝·선. 크기는 화면 px 고정,
+   밤은 가산 빛, 낮(건판)은 곱하기 먹. 글 구역 안에서는 ×0.3 */
+const EV_COMMON = /* glsl */ `
+uniform mat4 uVP;
+uniform float uTime;
+uniform vec4 uZone[3];
+uniform vec2 uZoneF;
+const float OMEGA_PE = ${0.006981317};
+vec3 patW(vec3 a) { float th = a.y + OMEGA_PE * uTime; return vec3(a.x * cos(th), a.z, a.x * sin(th)); }
+float zoneAt(vec2 uv) {
+  float z = 0.0;
+  for (int i = 0; i < 3; i++) {
+    vec4 r = uZone[i];
+    if (r.x < -1.0) break;
+    vec2 a = smoothstep(r.xy - uZoneF, r.xy, uv) * (1.0 - smoothstep(r.zw, r.zw + uZoneF, uv));
+    z = max(z, a.x * a.y);
+  }
+  return z;
+}
+`
+export const DOT_VS = /* glsl */ `#version 300 es
+precision highp float;
+${EV_COMMON}
+uniform float uDpr;
+layout(location = 0) in vec4 a0; // r, θ0, y, 밝기
+layout(location = 1) in vec4 a1; // rgb, 크기(CSS px, 핵 지름)
+out vec3 vCol;
+out float vLv;
+out float vS;
+out float vPx;
+void main() {
+  vec4 clip = uVP * vec4(patW(a0.xyz), 1.0);
+  if (clip.w <= 0.0 || a0.w < 0.003) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vCol = vec3(0.0); vLv = 0.0; vS = 1.0; vPx = 1.0; return; }
+  vec2 uv = clip.xy / clip.w * 0.5 + 0.5;
+  vCol = a1.rgb;
+  vLv = a0.w * mix(1.0, 0.3, zoneAt(uv));
+  vS = a1.w * 0.5 * uDpr;           // 핵 σ (장치 px)
+  vPx = ceil(vS * 3.0 * 4.0) + 2.0; // 할로(σ×3)까지
+  gl_Position = clip;
+  gl_PointSize = vPx;
+}
+`
+export const DOT_FS = /* glsl */ `#version 300 es
+precision highp float;
+in vec3 vCol;
+in float vLv;
+in float vS;
+in float vPx;
+uniform float uDay;
+out vec4 o;
+void main() {
+  vec2 d = (gl_PointCoord - 0.5) * vPx;
+  float r2 = dot(d, d);
+  float a = (exp(-r2 / (2.0 * vS * vS)) + 0.22 * exp(-r2 / (18.0 * vS * vS))) * vLv;
+  // 밤: 빛을 더한다 · 낮: 종이에 먹 (dst × (1 − a·(1 − 먹)))
+  o = uDay > 0.5 ? vec4(clamp(a, 0.0, 1.0) * (1.0 - vCol), 1.0) : vec4(vCol * a, 1.0);
+}
+`
+/* 선: 인스턴스 사각형(화면 px 폭) — A·B는 패턴 좌표, 그어짐 진행은 CPU가 B를 옮긴다 */
+export const SEG_VS = /* glsl */ `#version 300 es
+precision highp float;
+${EV_COMMON}
+uniform vec2 uView;   // 캔버스 장치 px
+uniform float uWidth; // 장치 px
+layout(location = 0) in vec4 a0; // A (r, θ0, y), 알파
+layout(location = 1) in vec4 a1; // B (r, θ0, y), -
+out float vA;
+void main() {
+  vec4 ca = uVP * vec4(patW(a0.xyz), 1.0);
+  vec4 cb = uVP * vec4(patW(a1.xyz), 1.0);
+  if (ca.w <= 0.0 || cb.w <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vA = 0.0; return; }
+  vec2 pa = ca.xy / ca.w;
+  vec2 pb = cb.xy / cb.w;
+  vec2 dir = normalize((pb - pa) * uView + 1e-6);
+  vec2 nrm = vec2(-dir.y, dir.x) * uWidth / uView;
+  float end = float(gl_VertexID & 1);
+  float side = float((gl_VertexID >> 1) & 1) * 2.0 - 1.0;
+  vec2 p = mix(pa, pb, end) + nrm * side;
+  vA = a0.w * mix(1.0, 0.3, zoneAt(p * 0.5 + 0.5));
+  gl_Position = vec4(p, 0.0, 1.0);
+}
+`
+export const SEG_FS = /* glsl */ `#version 300 es
+precision highp float;
+in float vA;
+uniform vec3 uLineCol;
+uniform float uDay;
+out vec4 o;
+void main() { o = uDay > 0.5 ? vec4(vA * (1.0 - uLineCol), 1.0) : vec4(uLineCol * vA, 1.0); }
 `

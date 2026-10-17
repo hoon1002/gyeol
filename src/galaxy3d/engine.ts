@@ -202,6 +202,8 @@ export interface DataStar {
   to: number
   t0: number
   dur: number
+  /** 핵 지름(CSS px) — 세트 별 2.4 (design-m1 0-2-9) */
+  size?: number
 }
 export interface LinkSpec {
   a: [number, number, number]
@@ -296,7 +298,8 @@ const P = {
   blit: prog(SH.FULL_VS, SH.BLIT_FS),
   fg: prog(SH.FG_VS, SH.FG_FS),
   down4: prog(SH.FULL_VS, SH.DOWN4_FS),
-  line: prog(SH.LINE_VS, SH.LINE_FS),
+  dot: prog(SH.DOT_VS, SH.DOT_FS),
+  seg: prog(SH.SEG_VS, SH.SEG_FS),
 }
 
 /* ---------- 4층 전경 별 (design-v4 §7-2) ---------- */
@@ -600,14 +603,19 @@ function computeFit(aspect: number) {
   ;[SEAT[0], SEAT[1]] = keep
 }
 const pdist = (pl: Place) => fitD[pl.id] ?? pl.dist
-const camNow = (): CamS => ({ t: placeTarget(place, simT), dist: pdist(place), q: worldQ(place, simT, orient), expo: place.expo, seat: seatOf(place), fx: 0, dim: 0 })
+const lookW = (p: V3): V3 => {
+  const r = Math.hypot(p[0], p[2])
+  const th = Math.atan2(p[2], p[0]) + OMEGA_P * simT
+  return [r * Math.cos(th), p[1], r * Math.sin(th)]
+}
+const camNow = (): CamS => ({ t: look ? lookW(look.pos) : placeTarget(place, simT), dist: look ? look.dist : pdist(place), q: worldQ(place, simT, orient), expo: place.expo, seat: seatOf(place), fx: 0, dim: 0 })
 function curCam(now: number): { c: CamS; flying: boolean } {
   if (!flight) return { c: camNow(), flying: false }
   if (holdOn) flight.t0 = now // 노출 → 커밋 → 비행: 커밋 전에는 출발하지 않는다
   const p = Math.min(1, (now - flight.t0) / flight.dur)
   const e = easeS(p) // 이동·회전 같은 이징
   const a = flight.from
-  const b: CamS = { t: placeTarget(flight.to, simT), dist: pdist(flight.to), q: worldQ(flight.to, simT, flight.o), expo: flight.to.expo, seat: seatOf(flight.to), fx: 0, dim: 0 }
+  const b: CamS = { t: look ? lookW(look.pos) : placeTarget(flight.to, simT), dist: look ? look.dist : pdist(flight.to), q: worldQ(flight.to, simT, flight.o), expo: flight.to.expo, seat: seatOf(flight.to), fx: 0, dim: 0 }
   const far = Math.abs(Math.log(b.dist / a.dist)) + Math.hypot(b.t[0] - a.t[0], b.t[2] - a.t[2]) / 6
   const arc = Math.sin(Math.PI * p)
   if (p >= 1) {
@@ -664,6 +672,7 @@ function startFlight(pl: Place, o: Q, home: boolean) {
   updateButtons()
 }
 function flyTo(id: string) {
+  look = null
   const pl = PLACES.find((p) => p.id === id)
   if (!pl || pl === place) return
   // 목적지 자세: 장소의 기본 구도를 은하 축 둘레로 돌린 것 가운데 지금 자세와 가장 가까운 것 → 비행 회전 최소
@@ -775,6 +784,12 @@ let extExpo = 1
 let lightOn = false
 let lightK = 0
 let anchorDirty = true
+/** 시간대 위상: 1 푸른 밤(낮 시간) · 0 깊은 밤 · −1 새벽 */
+let phaseTo = 0
+let phaseK = 0
+let tint: [number, number, number, number] = [1, 1, 1, 0]
+/** 별 고르기 다가감 (design-m1 #31): 바라보는 점을 데이터 별로, 거리 d — 자세(롤·방위)는 그대로 */
+let look: { pos: V3; dist: number } | null = null
 let eventUntil = 0
 let calm = false
 let calmK = 0
@@ -1155,8 +1170,6 @@ function draw(now: number, opt: DrawOpt = {}) {
   }
   // 1c) 데이터 별 (오늘의 별자리·복습 카드·노트 별): 별 프로그램 그대로, 패턴과 함께 돈다
   syncZones()
-  drawDataStars()
-  drawLines(vp.m)
   if (anchorDirty && !st.flying && !opt.capture) emitAnchors(vp.m, target)
   lastVP = vp.m
   // 2) 구름 (장면의 반 해상도): 먼지 투과율 T (곱하기) · 성운·팔 빛 E (더하기)
@@ -1264,10 +1277,16 @@ function draw(now: number, opt: DrawOpt = {}) {
   gl.uniform1f(P.comp.u.uAspect!, W / H)
   gl.uniform1f(P.comp.u.uRest!, smooth01(restK))
   gl.uniform1f(P.comp.u.uPlate!, lightK)
+  phaseK += (phaseTo - phaseK) * Math.min(1, dt / 60000) // 시간대 위상: 60초에 걸쳐
+  gl.uniform3f(P.comp.u.uBg!, 0.004 + 0.002 * Math.max(0, phaseK) + 0.003 * Math.max(0, -phaseK), 0.006 + 0.003 * Math.max(0, phaseK) + 0.001 * Math.max(0, -phaseK), 0.014 + 0.006 * Math.max(0, phaseK) - 0.002 * Math.max(0, -phaseK))
+  gl.uniform4f(P.comp.u.uTint!, tint[0], tint[1], tint[2], tint[3] * (1 - lightK))
+  gl.uniform3f(P.comp.u.uTintC!, SEAT[0], 1 - SEAT[1], 0.38)
   gl.uniform4fv(P.comp.u['uZone[0]']!, zoneUv)
   gl.uniform2f(P.comp.u.uZoneF!, (cssW < 600 ? 64 : 120) / cssW, (cssW < 600 ? 64 : 120) / cssH)
   gl.drawArrays(gl.TRIANGLES, 0, 3)
   gl.activeTexture(gl.TEXTURE0)
+  // 사건 층: 데이터 별 · 반짝 · 선 (캔버스에 바로, 화면 px 고정)
+  drawEvents(vp.m, now)
   gl.bindVertexArray(null)
   if (q && tq) {
     gl.endQuery(tq.TIME_ELAPSED_EXT)
@@ -1657,7 +1676,6 @@ function wakeTotal() {
 
 /* ---------- 데이터 별 (사건 API → 3D 자리): 별 프로그램을 그대로 쓰고 kind 5(패턴과 함께, 가까워도 솎지 않음) ---------- */
 let dataStars: DataStar[] = []
-let dataArr = new Float32Array(0)
 let lastVP: Float32Array | null = null
 const dataBuf = gl.createBuffer()!
 const dataVao = (() => {
@@ -1676,14 +1694,18 @@ function levelOf(d: DataStar, t: number) {
   const k = d.dur > 0 ? Math.min(1, Math.max(0, (t - d.t0) / d.dur)) : 1
   return d.from + (d.to - d.from) * k * k * (3 - 2 * k)
 }
-function drawDataStars() {
-  const t = nowS()
+/** 데이터 별 → 사건 층 배열 (가림 ×0.5 · 자리 부풂 · 반짝 · 책등 점) */
+let dotArr = new Float32Array(0)
+const DAY_INK: Record<string, [number, number, number]> = { seat: [0.478, 0.341, 0.078], branch: [0.478, 0.341, 0.078], exam: [0.659, 0.251, 0.173] }
+function buildDots(t: number): number {
   if (sparkles.length) sparkles = sparkles.filter((x) => t < x.t0 + 0.6)
-  const all = sparkles.length ? dataStars.concat(sparkles) : dataStars
-  if (!all.length) return
-  if (dataArr.length < all.length * 8) dataArr = new Float32Array(all.length * 8)
+  const spine = place.id === 'notes' ? spineDots() : []
+  const all = dataStars.concat(sparkles, spine)
+  if (!all.length) return 0
+  if (dotArr.length < all.length * 8) dotArr = new Float32Array(all.length * 8)
   let n = 0
   let animating = false
+  const day = lightK > 0.5
   for (const d of all) {
     let lv = d.id.startsWith('spark:') ? (t - d.t0 < 0.3 ? 1.4 * Math.sin((Math.PI * (t - d.t0)) / 0.3) : 0) : levelOf(d, t)
     if (d.dur > 0 && t < d.t0 + d.dur) animating = true
@@ -1692,23 +1714,101 @@ function drawDataStars() {
     if (lastEye[1] < 0 && place.id !== 'review') lv *= 0.5
     if (d.group && d.group === swellAt) lv *= 1 + 0.25 * swellK(performance.now()) // V13s 자리 부풂
     const o = n * 8
-    dataArr[o] = Math.hypot(d.pos[0], d.pos[2])
-    dataArr[o + 1] = Math.atan2(d.pos[2], d.pos[0])
-    dataArr[o + 2] = d.pos[1]
-    dataArr[o + 3] = d.L * lv
-    dataArr[o + 4] = d.color[0]
-    dataArr[o + 5] = d.color[1]
-    dataArr[o + 6] = d.color[2]
-    dataArr[o + 7] = 5
+    dotArr[o] = Math.hypot(d.pos[0], d.pos[2])
+    dotArr[o + 1] = Math.atan2(d.pos[2], d.pos[0])
+    dotArr[o + 2] = d.pos[1]
+    dotArr[o + 3] = Math.min(1.6, lv)
+    const c = day ? (DAY_INK[d.group ?? ''] ?? [0.102, 0.125, 0.188]) : d.color
+    dotArr[o + 4] = c[0]
+    dotArr[o + 5] = c[1]
+    dotArr[o + 6] = c[2]
+    dotArr[o + 7] = d.size ?? 2.4
     n++
   }
   if (animating) eventUntil = Math.max(eventUntil, performance.now() + 2000) // 사건 중 활동, 끝나고 2초 뒤 평소
-  if (!n) return
-  gl.useProgram(P.star.p)
-  gl.bindBuffer(gl.ARRAY_BUFFER, dataBuf)
-  gl.bufferData(gl.ARRAY_BUFFER, dataArr.subarray(0, n * 8), gl.DYNAMIC_DRAW)
-  gl.bindVertexArray(dataVao)
-  gl.drawArrays(gl.POINTS, 0, n)
+  return n
+}
+let segArr = new Float32Array(0)
+function buildSegs(t: number): number {
+  if (!links.length) return 0
+  if (segArr.length < links.length * 8) segArr = new Float32Array(links.length * 8)
+  let n = 0
+  for (const l of links) {
+    const k = l.dur > 0 ? Math.min(1, Math.max(0, (t - l.t0) / l.dur)) : 1
+    if (k <= 0 || l.alpha <= 0.001) continue
+    if (l.dur > 0 && k < 1) eventUntil = Math.max(eventUntil, performance.now() + 2000)
+    const e = k * k * (3 - 2 * k)
+    const b: V3 = [l.a[0] + (l.b[0] - l.a[0]) * e, l.a[1] + (l.b[1] - l.a[1]) * e, l.a[2] + (l.b[2] - l.a[2]) * e]
+    const o = n * 8
+    segArr[o] = Math.hypot(l.a[0], l.a[2])
+    segArr[o + 1] = Math.atan2(l.a[2], l.a[0])
+    segArr[o + 2] = l.a[1]
+    segArr[o + 3] = l.alpha * (lastEye[1] < 0 && place.id !== 'review' ? 0.5 : 1)
+    segArr[o + 4] = Math.hypot(b[0], b[2])
+    segArr[o + 5] = Math.atan2(b[2], b[0])
+    segArr[o + 6] = b[1]
+    segArr[o + 7] = 0
+    n++
+  }
+  return n
+}
+function drawEvents(m: Float32Array, now: number) {
+  void now
+  const t = nowS()
+  const nd = buildDots(t)
+  const ns = buildSegs(t)
+  if (!nd && !ns) return
+  const day = lightK > 0.5 ? 1 : 0
+  gl.enable(gl.BLEND)
+  if (day) gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_COLOR)
+  else gl.blendFunc(gl.ONE, gl.ONE)
+  const feather: [number, number] = [(cssW < 600 ? 64 : 120) / cssW, (cssW < 600 ? 64 : 120) / cssH]
+  if (ns) {
+    const L = P.seg
+    gl.useProgram(L.p)
+    gl.uniformMatrix4fv(L.u.uVP!, false, m)
+    gl.uniform1f(L.u.uTime!, simT)
+    gl.uniform4fv(L.u['uZone[0]']!, zoneUv)
+    gl.uniform2f(L.u.uZoneF!, feather[0], feather[1])
+    gl.uniform2f(L.u.uView!, W, H)
+    gl.uniform1f(L.u.uWidth!, 0.6 * dpr)
+    gl.uniform3f(L.u.uLineCol!, day ? 0.271 : 0.95, day ? 0.294 : 0.86, day ? 0.345 : 0.68)
+    gl.uniform1f(L.u.uDay!, day)
+    gl.bindBuffer(gl.ARRAY_BUFFER, segBuf)
+    gl.bufferData(gl.ARRAY_BUFFER, segArr.subarray(0, ns * 8), gl.DYNAMIC_DRAW)
+    gl.bindVertexArray(segVao)
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, ns)
+  }
+  if (nd) {
+    const D = P.dot
+    gl.useProgram(D.p)
+    gl.uniformMatrix4fv(D.u.uVP!, false, m)
+    gl.uniform1f(D.u.uTime!, simT)
+    gl.uniform4fv(D.u['uZone[0]']!, zoneUv)
+    gl.uniform2f(D.u.uZoneF!, feather[0], feather[1])
+    gl.uniform1f(D.u.uDpr!, dpr)
+    gl.uniform1f(D.u.uDay!, day)
+    gl.bindBuffer(gl.ARRAY_BUFFER, dataBuf)
+    gl.bufferData(gl.ARRAY_BUFFER, dotArr.subarray(0, nd * 8), gl.DYNAMIC_DRAW)
+    gl.bindVertexArray(dataVao)
+    gl.drawArrays(gl.POINTS, 0, nd)
+  }
+  gl.disable(gl.BLEND)
+}
+/* 노트 책등 위 점 (design-m1 #28): 옆모습 원반의 긴 축을 따라, 노트 별의 높이(s ∈ −1..1)에 점 하나 */
+let spine: Array<{ id: string; s: number; level: number; color: [number, number, number] }> = []
+function spineDots(): DataStar[] {
+  const B = lastBasis
+  if (!B || !spine.length) return []
+  // 원반 평면 안에서 시선에 수직인 방향 = 화면 속 책등 방향
+  const ax = norm([B.f[2], 0, -B.f[0]])
+  const ang = -OMEGA_P * simT
+  return spine.map((p) => {
+    const w: V3 = [ax[0] * p.s * 11, 0.15, ax[2] * p.s * 11]
+    const r = Math.hypot(w[0], w[2])
+    const th = Math.atan2(w[2], w[0]) + ang
+    return { id: 'spine:' + p.id, group: 'nebula', pos: [r * Math.cos(th), w[1], r * Math.sin(th)], L: 1, color: p.color, from: p.level, to: p.level, t0: 0, dur: 0, size: 2 }
+  })
 }
 function dataWorld(d: DataStar): V3 {
   const r = Math.hypot(d.pos[0], d.pos[2])
@@ -1792,49 +1892,21 @@ function swellK(now: number) {
 }
 let sparkles: DataStar[] = []
 let links: LinkSpec[] = []
-let lineArr = new Float32Array(0)
 const lineBuf = gl.createBuffer()!
-const lineVao = (() => {
+const segBuf = lineBuf
+const segVao = (() => {
   const vao = gl.createVertexArray()!
   gl.bindVertexArray(vao)
-  gl.bindBuffer(gl.ARRAY_BUFFER, lineBuf)
+  gl.bindBuffer(gl.ARRAY_BUFFER, segBuf)
   gl.enableVertexAttribArray(0)
-  gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 16, 0)
+  gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 32, 0)
+  gl.vertexAttribDivisor(0, 1)
+  gl.enableVertexAttribArray(1)
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 16)
+  gl.vertexAttribDivisor(1, 1)
   gl.bindVertexArray(null)
   return vao
 })()
-function drawLines(m: Float32Array) {
-  if (!links.length) return
-  const t = nowS()
-  if (lineArr.length < links.length * 8) lineArr = new Float32Array(links.length * 8)
-  let n = 0
-  for (const l of links) {
-    const k = l.dur > 0 ? Math.min(1, Math.max(0, (t - l.t0) / l.dur)) : 1
-    if (k <= 0 || l.alpha <= 0.001) continue
-    if (l.dur > 0 && k < 1) eventUntil = Math.max(eventUntil, performance.now() + 2000)
-    const e = k * k * (3 - 2 * k)
-    const b: V3 = [l.a[0] + (l.b[0] - l.a[0]) * e, l.a[1] + (l.b[1] - l.a[1]) * e, l.a[2] + (l.b[2] - l.a[2]) * e]
-    const o = n * 8
-    lineArr[o] = Math.hypot(l.a[0], l.a[2])
-    lineArr[o + 1] = Math.atan2(l.a[2], l.a[0])
-    lineArr[o + 2] = l.a[1]
-    lineArr[o + 3] = l.alpha
-    lineArr[o + 4] = Math.hypot(b[0], b[2])
-    lineArr[o + 5] = Math.atan2(b[2], b[0])
-    lineArr[o + 6] = b[1]
-    lineArr[o + 7] = l.alpha
-    n++
-  }
-  if (!n) return
-  gl.useProgram(P.line.p)
-  gl.uniformMatrix4fv(P.line.u.uVP!, false, m)
-  gl.uniform1f(P.line.u.uTime!, simT)
-  gl.uniform3f(P.line.u.uLineCol!, 0.95, 0.86, 0.68)
-  gl.bindBuffer(gl.ARRAY_BUFFER, lineBuf)
-  gl.bufferData(gl.ARRAY_BUFFER, lineArr.subarray(0, n * 8), gl.DYNAMIC_DRAW)
-  gl.bindVertexArray(lineVao)
-  gl.drawArrays(gl.LINES, 0, n * 2)
-}
 function screenToDisk(x: number, y: number): [number, number, number] | null {
   const B = lastBasis
   if (!B) return null
@@ -1864,6 +1936,7 @@ function syncZones() {
 
 /* ---------- 바깥에서 부르는 것 ---------- */
 function setPlace(id: PlaceId, o: { instant?: boolean } = {}): number {
+  look = null
   const pl = PLACES.find((p) => p.id === id)
   if (!pl) return 0
   if (o.instant || !readyAt) {
@@ -1974,6 +2047,28 @@ return {
   screenToDisk,
   /** 계획에서 마감까지 d일 → 시간 띠 위 점 (design-m1 0-1 band) */
   bandPoint: (days: number) => screenToDisk((0.1 + (0.8 * Math.min(Math.max(days, 0), 14)) / 14) * cssW, SEAT[1] * cssH),
+  /** 별 고르기 다가감: pos(패턴 좌표)로 거리 d까지 짧게 — 자세 그대로(롤·방위 변화 0). null이면 장소 자리로 물러남. 길이(ms) */
+  approach: (pos: [number, number, number] | null, d = 1.6): number => {
+    const same = !!look === !!pos && (!pos || !look || (look.pos[0] === pos[0] && look.pos[2] === pos[2]))
+    if (same) return 0
+    look = pos ? { pos, dist: d } : null
+    startFlight(place, orient, true)
+    return flight ? flight.dur : 0
+  },
+  /** 시간대 위상 (design-m1 #40) */
+  setPhase: (p: 'blue' | 'night' | 'dawn') => {
+    phaseTo = p === 'blue' ? 1 : p === 'dawn' ? -1 : 0
+  },
+  /** 과목 렌즈(V10): 그 장소 자리 둘레 반사 성운에 과목색 ≤ 10% (null이면 끔) */
+  setTint: (c: [number, number, number] | null) => {
+    tint = c ? [c[0], c[1], c[2], 0.1] : [1, 1, 1, 0]
+    touch()
+  },
+  /** 노트 책등 위 점 (#28): s = −1..1 (책등 아래 → 위) */
+  setSpine: (list: Array<{ id: string; s: number; level: number; color: [number, number, number] }>) => {
+    spine = list
+    if (!stopped) kick()
+  },
   /** 편집 중(useFieldPause): 자전·공전 ×0.3, 전경 별 0 (300ms) */
   setCalm: (on: boolean) => {
     calm = on
@@ -2117,6 +2212,18 @@ export class Galaxy3D {
   }
   setCalm(on: boolean): void {
     this.api?.setCalm(on)
+  }
+  approach(pos: [number, number, number] | null, d?: number): number {
+    return this.api?.approach(pos, d) ?? 0
+  }
+  setPhase(p: 'blue' | 'night' | 'dawn'): void {
+    this.api?.setPhase(p)
+  }
+  setTint(c: [number, number, number] | null): void {
+    this.api?.setTint(c)
+  }
+  setSpine(list: Array<{ id: string; s: number; level: number; color: [number, number, number] }>): void {
+    this.api?.setSpine(list)
   }
   anchors(name: AnchorName, cb: (a: Anchor) => void): () => void {
     return this.api?.onAnchor(name, cb) ?? (() => {})

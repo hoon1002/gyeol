@@ -229,7 +229,8 @@ function Palette() {
     list.push({
       id: 'go-settings', group: '이동', label: '설정', sub: '지금 장소 위에 시트로 · ⌘,', keywords: ['settings', '설정', '테마', '모션', '환경', '회전'],
       icon: <IconMore size={17} />, preview: { kind: 'settings' },
-      run: () => after(() => ui().openSettings(origin)),
+      // 팔레트가 다 물러난 뒤(닫힘 연출 260ms + 포커스 복귀) 연다 — 시트가 포커스를 받게
+      run: () => { close(); setTimeout(() => ui().openSettings(origin), motionLevel === 'off' ? 0 : 320) },
     })
 
     // ---- 명령 ----

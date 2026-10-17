@@ -43,8 +43,7 @@
   display: none; align-items: center; justify-content: space-between; gap: 18px;
   height: 40px; min-width: 248px; padding: 0 8px 0 16px; border-radius: var(--r-pill);
   border: 1px solid var(--border); background: var(--glass);
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  color: var(--text-3); font-size: 13.5px; transition: color var(--dur-fast), border-color var(--dur-fast);
+   color: var(--text-3); font-size: 13.5px; transition: color var(--dur-fast), border-color var(--dur-fast);
   position: relative;
 }
 .cmdk-wide::after { content: ""; position: absolute; inset: -2px 0; }
@@ -75,8 +74,7 @@
   position: relative; display: inline-flex; align-items: center; gap: 8px;
   height: 36px; padding: 0 10px 0 14px; border-radius: var(--r-pill);
   border: 1px solid var(--border); background: var(--glass);
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  font-size: 13.5px; color: var(--text-2); white-space: nowrap;
+   font-size: 13.5px; color: var(--text-2); white-space: nowrap;
   transition: color var(--dur-fast), border-color var(--dur-fast);
 }
 .lens-pill::after { content: ""; position: absolute; inset: -4px -2px; }
@@ -89,8 +87,7 @@
 .lens-list {
   display: flex; gap: 2px; padding: 6px; border-radius: var(--r-pill); white-space: nowrap;
   background: var(--glass); border: 1px solid var(--border);
-  -webkit-backdrop-filter: blur(18px) saturate(150%); backdrop-filter: blur(18px) saturate(150%);
-  box-shadow: var(--shadow-3);
+   box-shadow: var(--shadow-3);
 }
 .lens-opt {
   display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: var(--r-pill);
@@ -101,7 +98,7 @@
 .lens-opt.is-on { background: var(--text-1); color: var(--bg-0); font-weight: 600; }
 
 .lens-sheet-wrap { position: fixed; inset: 0; z-index: 80; }
-.sheet-scrim { position: absolute; inset: 0; background: var(--scrim); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.sheet-scrim { position: absolute; inset: 0; background: var(--scrim);  }
 .lens-sheet {
   position: absolute; left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom));
   padding: 10px 12px 14px; border-radius: var(--r-xl);
@@ -111,7 +108,7 @@
 .sheet-title { font-size: 12px; font-weight: 600; color: var(--text-3); padding: 0 8px 6px; }
 .lens-sheet .lens-list {
   display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 0; white-space: normal;
-  background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: 0;
+  background: none; border: 0; box-shadow: none;  border-radius: 0;
 }
 .lens-sheet .lens-opt { width: 100%; min-height: 48px; border-radius: var(--r-md); font-size: 15px; }
 
@@ -120,8 +117,7 @@
   position: fixed; left: 50%; bottom: max(16px, calc(env(safe-area-inset-bottom) + 6px)); z-index: 45;
   display: flex; align-items: center; gap: 2px; padding: 6px;
   border-radius: var(--r-pill); background: var(--glass); border: 1px solid var(--border);
-  -webkit-backdrop-filter: blur(18px) saturate(150%); backdrop-filter: blur(18px) saturate(150%);
-  box-shadow: var(--shadow-3), var(--hairline);
+   box-shadow: var(--shadow-3), var(--hairline);
   translate: -50% 0;
   transition: transform .42s var(--ease-spring);
   view-transition-name: dock;
@@ -172,7 +168,7 @@
   display: grid; justify-items: center; align-items: start;
   padding: 14svh 16px 16px;
 }
-.palette-scrim { position: absolute; inset: 0; background: var(--scrim); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.palette-scrim { position: absolute; inset: 0; background: var(--scrim);  }
 .palette-panel {
   position: relative; width: min(760px, 100%);
   display: flex; flex-direction: column;
@@ -277,12 +273,11 @@
 :root.theme-vt .topbar, :root.theme-vt .dock { view-transition-name: none; }
 
 /* v3 셸: 유리 = rgba(10,14,26,.55) + blur 20 + saturate 1.2, 활성 점 = 별빛 금 */
-.dock, .lens-pill, .lens-list, .cmdk-wide { -webkit-backdrop-filter: blur(20px) saturate(1.2); backdrop-filter: blur(20px) saturate(1.2); }
 .dock-item[aria-current="page"] { background: color-mix(in srgb, var(--text-1) 8%, transparent); box-shadow: none; }
 .dock-item[aria-current="page"]::after { box-shadow: 0 0 8px var(--accent); }
 .avatar { background: color-mix(in srgb, var(--text-1) 10%, transparent); color: var(--text-1); border: 1px solid var(--border-strong); }
 :root[data-theme="light"] .avatar { color: var(--text-1); }
-.palette-panel { background: color-mix(in srgb, var(--surface) 92%, transparent); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
+.palette-panel { background: color-mix(in srgb, var(--surface) 92%, transparent);  }
 
 /* 별 누르기 (design-v3-camera §3) */
 :root.star-hover .stage, :root.star-hover .hero { cursor: pointer; }

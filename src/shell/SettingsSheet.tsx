@@ -8,6 +8,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef } from 'react'
 import { useSkySheet } from '@/fx'
 import { ROTATION_NAME, SettingsBody, THEME_NAME } from '@/screens/Settings'
+import { useFocusTimer } from '@/stores/focus'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import { isTypingTarget, useEffectiveMotion, useEffectiveRotation, useMediaQuery } from './hooks'
@@ -45,11 +46,12 @@ function Sheet() {
   const origin = useUi((s) => s.settingsOrigin)
   const level = useEffectiveMotion()
   const off = level === 'off'
-  const side = useMediaQuery('(min-width: 600px) and (min-aspect-ratio: 1001/1000)')
+  const side = useMediaQuery('(min-width: 600px) and (min-aspect-ratio: 1/1)')
   const panelRef = useRef<HTMLDivElement>(null)
   const theme = useSettings((s) => s.theme)
   const rotation = useEffectiveRotation()
-  const summary = `${THEME_NAME[theme]} · 회전 ${ROTATION_NAME[rotation]}`
+  const minutes = useFocusTimer((s) => Math.round(s.plannedMs / 60_000))
+  const summary = `${THEME_NAME[theme]} · ${minutes}분 · 회전 ${ROTATION_NAME[rotation]}`
 
   // 열 때: 뒤 스크롤 잠금 + 시트로 포커스 / 닫을 때: 연 자리로 포커스
   useEffect(() => {

@@ -103,7 +103,8 @@
   --text-1: #F2EFE8; --text-2: #B9BDCB; --text-3: #8E94A8;
   --accent: #F3D29A; --accent-hover: #F8E0B4; --accent-soft: rgba(243, 210, 154, .14); --on-accent: #0A0D16;
   --seal: #FF8F78;
-  --glass: rgba(10, 14, 26, .55);
+  /* M1: 하늘 위 유리는 블러 없이 반투명 단색(글 구역은 렌더러가 하늘을 #161C2C 이하로 누른다 → 움직이는 캔버스 위 블러 재계산 0) */
+  --glass: rgba(10, 14, 26, .78);
   --hairline: inset 0 1px 0 rgba(255, 255, 255, .07);
   --line-star: rgba(220, 228, 255, .28);
   --top-scrim: rgba(7, 10, 20, .55);
@@ -117,7 +118,7 @@
   --text-1: #141720; --text-2: #454B58; --text-3: #5A6070;
   --accent: #1B2340; --accent-hover: #26305A; --accent-soft: rgba(27, 35, 64, .10); --on-accent: #F3D29A;
   --seal: #A8402C;
-  --glass: rgba(243, 241, 236, .72);
+  --glass: rgba(243, 241, 236, .84);
   --top-scrim: rgba(243, 241, 236, .7);
   --sky-text-shadow: none;
 }

@@ -5,8 +5,8 @@
  * 세트 끝 = 별 탄생(birthStar) + 직전 별과 선(drawLink) · 끝내기(포기) = 별이 사그라짐(fadeStar).
  * 남은 시간은 시각 차로 계산(새로고침·백그라운드에도 정확). React는 1초마다만, 이 공간이 보일 때만 다시 그린다.
  */
-import { useEffect, useRef, useState } from 'react'
-import { useSkyEvent } from '@/fx'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSkyClock, useSkyEvent } from '@/fx'
 import { ActiveMood as FieldMood, useActive } from '@/app/keepAlive'
 import { useFocusToday, useNow, useSubjects } from '@/db/hooks'
 import { db } from '@/db/schema'
@@ -48,6 +48,17 @@ export function FocusScreen() {
   const subject = subjects.find((s) => s.id === timer.subjectId) ?? null
   const running = timer.phase === 'running'
   const live = running || timer.phase === 'paused'
+
+  // 은하 시계(useSkyClock): 타이머 한 번에 은하가 한 바퀴. 시작·멈춤·이어서·끝·초기화 때만 값이 바뀐다(매초 넘기지 않음).
+  // 엔진은 elapsedMs + (지금 − startedAt)로 진행을 센다 → 달리는 동안은 '멈춘 시간을 뺀 가상 시작 시각' + 0을 넘긴다(두 번 더하지 않게).
+  const clock = useMemo(() => {
+    const { phase, startedAt, pausedAt, pausedTotalMs, plannedMs } = timer
+    if (phase === 'running') return { startedAt: startedAt + pausedTotalMs, durationMs: plannedMs, elapsedMs: 0, paused: false }
+    if (phase === 'paused') return { startedAt: pausedAt, durationMs: plannedMs, elapsedMs: Math.max(0, pausedAt - startedAt - pausedTotalMs), paused: true }
+    if (phase === 'done') return { startedAt, durationMs: plannedMs, elapsedMs: plannedMs, paused: true }
+    return null
+  }, [timer.phase, timer.startedAt, timer.pausedAt, timer.pausedTotalMs, timer.plannedMs]) // eslint-disable-line react-hooks/exhaustive-deps
+  useSkyClock(clock)
 
   const active = useActive()
   const activeRef = useRef(active)
