@@ -160,6 +160,13 @@ export interface TriggerOptions {
   onKey: (e: KeyboardEvent) => boolean
 }
 
+/** 밖에서 제안 상자 닫기(겹침 층 관리자의 Esc): 그 자리의 `[[`·`/`는 남기고 다시 열지 않는다.
+ *  편집기 DOM에 이 이벤트를 보내면 지금 살아 있는 편집기의 플러그인이 받는다(StrictMode로 편집기가 두 번 만들어져도 안전). */
+export const TRIGGER_DISMISS = 'gyeol-trigger-dismiss'
+export function dismissTrigger(dom: Element | null | undefined): void {
+  dom?.dispatchEvent(new Event(TRIGGER_DISMISS))
+}
+
 const OBJ = '￼'
 
 export function detectTrigger(state: EditorState): TriggerState | null {
@@ -199,6 +206,7 @@ export const Trigger = Extension.create<TriggerOptions>({
       current = s
       opts.onChange(s)
     }
+
     const evaluate = (view: EditorView) => {
       if (view.composing || view.isDestroyed) return
       const next = view.hasFocus() ? detectTrigger(view.state) : null
@@ -225,6 +233,13 @@ export const Trigger = Extension.create<TriggerOptions>({
             return opts.onKey(e)
           },
           handleDOMEvents: {
+            [TRIGGER_DISMISS]: () => {
+              if (current) {
+                dismissed = current.from
+                set(null)
+              }
+              return true
+            },
             compositionend: (view) => {
               setTimeout(() => evaluate(view), 0)
               return false

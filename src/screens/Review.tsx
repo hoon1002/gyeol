@@ -19,8 +19,10 @@ import { IconCheck, IconClose, IconPlay, IconReview, IconUndo } from '@/shell/ic
 import { tip } from '@/shell/Tip'
 import { Hint } from '@/shell/Hint'
 import { useHintCount } from '@/shell/hints'
+import { pushLayer } from '@/shell/layers'
 import { spaceOf } from '@/shell/spaces'
 import { Hero, GENTLE } from './parts'
+import { screenKey } from './keyScope'
 import '@/styles/review.css'
 
 /** 저장 값 4종(M4 FSRS: again · hard · good · easy) */
@@ -34,6 +36,14 @@ type Rating = (typeof RATINGS)[number]
 const R = (k: 1 | 2 | 3 | 4): Rating => RATINGS[k - 1]!
 
 const DIM = 0.3
+
+/** 카드가 하나도 없을 때의 첫 회 그림: 빈 카드(점선) → 별 하나 */
+const EMPTY_ART = (
+  <svg width="80" height="80" viewBox="0 0 80 80" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="20" y="24" width="40" height="30" rx="5" strokeDasharray="4 3" />
+    <path className="ha-fade-in" d="M40 33l1.6 3.6 3.6 1.6-3.6 1.6-1.6 3.6-1.6-3.6-3.6-1.6 3.6-1.6z" fill="currentColor" stroke="none" />
+  </svg>
+)
 const SKY = spaceOf('/review')
 
 export function ReviewScreen() {
@@ -107,10 +117,23 @@ export function ReviewScreen() {
       <FieldMood preset={SKY.mood} drag={SKY.drag} knotRef={knotRef} data={skyData} stars={skyStars} />
       <Hero knotRef={knotRef} label="복습" className="review-hero rv-quiet">
         <h1 className="sr-only">복습</h1>
-        {data && due === 0 ? (
-          <p className="sr-only" role="status">
-            오늘 복습 끝{data.tomorrow ? ` · 내일 ${data.tomorrow}장` : ''}
-          </p>
+        {data && data.total === 0 ? (
+          // 카드가 아직 없음(M4에서 노트로부터 생긴다): 첫 회 그림만. 끝 상태와 다르다(QA #19)
+          <>
+            <p className="sr-only" role="status">
+              카드 없음
+            </p>
+            <span className="rv-empty-anchor" aria-hidden="true">
+              <Hint id="review-empty" side="right" art={EMPTY_ART} />
+            </span>
+          </>
+        ) : data && due === 0 ? (
+          // 오늘 몫을 끝냄: ✓ 하나(툴팁 = 내일 장 수). 하늘은 끝날 때 이미 부풀었다
+          <div className="rv-head enter enter-1">
+            <span className="inum rv-done" tabIndex={0} {...tip(data.tomorrow ? `오늘 끝 · 내일 ${data.tomorrow}` : '오늘 끝')}>
+              <IconCheck size={18} />
+            </span>
+          </div>
         ) : (
           <div className="rv-head enter enter-1">
             <span className="inum rv-count" tabIndex={0} {...tip(`${due}장 · ${minutes}분`)}>
@@ -179,8 +202,8 @@ function ReviewSession({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!active || e.isComposing || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      if (e.metaKey || e.ctrlKey || e.altKey) return
+      // 글을 쓰는 중(메모 칸 등)이거나 포커스가 복습 밖 · 떠 있는 층이면 복습 키가 아니다(QA #1)
+      if (!active || e.metaKey || e.ctrlKey || e.altKey || !screenKey(e, '/review')) return
       if (e.key === 'Escape') {
         if (fan) setFan(false)
         else onExit()
@@ -258,14 +281,18 @@ function CheckRate({ open, setOpen, words, hasKeyboard, onRate }: { open: boolea
   const box = useRef<HTMLDivElement>(null)
   const fanKs = [2, 3, 4] as const
 
-  // 바깥을 누르면 닫는다
+  // 바깥을 누르면 닫고, 겹침 층으로 올려 Esc가 부채꼴만 닫게 한다(포커스는 ✓로)
   useEffect(() => {
     if (!open) return
     const off = (e: PointerEvent) => {
       if (!box.current?.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('pointerdown', off)
-    return () => document.removeEventListener('pointerdown', off)
+    const release = pushLayer({ id: 'review-fan', close: () => setOpen(false), restoreFocusTo: box.current?.querySelector('.rv-check') ?? null, el: box.current })
+    return () => {
+      document.removeEventListener('pointerdown', off)
+      release()
+    }
   }, [open, setOpen])
 
   const optionAt = (x: number, y: number): number | null => {

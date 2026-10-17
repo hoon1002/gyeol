@@ -20,7 +20,8 @@ import { useGo, useIsPhone } from '@/shell/hooks'
 import { IconBack, IconDoc, IconLink, IconMap, IconMore, IconPlus, IconTrash } from '@/shell/icons'
 import { tip } from '@/shell/Tip'
 import { Hint } from '@/shell/Hint'
-import { Asset, LinkDecor, NoteLink, Trigger, refreshLinkDecor, type LinkAttrs, type LinkResolver, type TriggerState } from './extensions'
+import { pushLayer } from '@/shell/layers'
+import { Asset, LinkDecor, NoteLink, Trigger, dismissTrigger, refreshLinkDecor, type LinkAttrs, type LinkResolver, type TriggerState } from './extensions'
 import { Backlinks } from './Backlinks'
 import { templateDoc, type PMNode, type TemplateName } from './templates'
 import '@/styles/editor.css'
@@ -138,8 +139,9 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
     void openOrCreateNote({ title: a.title, subjectId: note.subjectId }).then((r) => props.onOpenNote(r.note.id))
   }
 
-  // ----- 제안 상자 키 -----
+  // ----- 제안 상자 키 · 밖에서 닫기(겹침 층 Esc) -----
   const keyRef = useRef<(e: KeyboardEvent) => boolean>(() => false)
+  const dismissRef = useRef<() => void>(() => dismissTrigger(editorRef.current?.view.dom))
 
   // ----- 자동 저장 -----
   // 문서를 그 자리에서(동기) 찍어 저장 줄에 세운다. 노트를 바꾸거나(언마운트) 화면을 떠나도 찍어 둔 것이 저장된다.
@@ -394,6 +396,7 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
           subjects={subjects}
           currentId={note.id}
           keyRef={keyRef}
+          dismiss={() => dismissRef.current()}
           onTemplate={applyTemplate}
           onCreateTitle={async (title) => {
             const r = await openOrCreateNote({ title, subjectId: note.subjectId })
@@ -501,16 +504,12 @@ function NoteMenu({ note, subjects, onDeleted }: { note: Note; subjects: Subject
       return
     }
     const off = (e: PointerEvent) => !box.current?.contains(e.target as Node) && setOpen(null)
-    const esc = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      e.preventDefault() // 메뉴만 닫는다(노트 목록으로 돌아가지 않게)
-      setOpen(null)
-    }
     document.addEventListener('pointerdown', off)
-    document.addEventListener('keydown', esc)
+    // 겹침 층: Esc는 이 메뉴만 닫고(노트 목록으로 돌아가지 않음) 포커스는 ⋯ 버튼으로
+    const release = pushLayer({ id: 'note-menu', close: () => setOpen(null), restoreFocusTo: box.current?.querySelector('.np-more') ?? null, el: box.current })
     return () => {
       document.removeEventListener('pointerdown', off)
-      document.removeEventListener('keydown', esc)
+      release()
     }
   }, [open])
   return (
@@ -616,6 +615,7 @@ function TriggerMenu(props: {
   subjects: Subject[]
   currentId: string
   keyRef: RefObject<(e: KeyboardEvent) => boolean>
+  dismiss: () => void
   onTemplate: (t: TemplateName) => void
   onCreateTitle: (title: string) => Promise<string>
 }) {
@@ -721,6 +721,11 @@ function TriggerMenu(props: {
 
   // 자리: 커서 아래 6px. 화면(키보드 위 보이는 영역) 아래로 잘리면 커서 위로 뒤집는다. 폰은 키보드 바로 위, 종이 폭 − 16px
   const boxRef = useRef<HTMLDivElement>(null)
+  // 겹침 층: 열려 있는 동안 Esc는 이 상자만 닫는다(그 자리의 `[[`·`/` 글자는 남음). 포커스는 편집기에 그대로
+  const dismissFn = useRef(props.dismiss)
+  dismissFn.current = props.dismiss
+  const shown = items.length > 0
+  useEffect(() => (shown ? pushLayer({ id: 'editor-suggest', close: () => dismissFn.current(), el: boxRef.current }) : undefined), [shown])
   useLayoutEffect(() => {
     const place = () => {
       if (props.phone) return setPos(null)

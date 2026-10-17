@@ -49,3 +49,7 @@
 @keyframes rv-fan-in { from { opacity: 0; scale: .6; margin-left: -48px; } }
 :root[data-motion="off"] .rv-fan-item { animation: none; }
 .rv-quiet .flash { position: relative; }
+/* 빈 상태 · 끝 상태 (QA #19) */
+.rv-quiet .rv-empty-anchor { position: relative; display: block; width: 24px; height: 24px; }
+.rv-quiet .rv-done { color: var(--text-2); }
+.rv-quiet .rv-done svg { color: var(--accent); }

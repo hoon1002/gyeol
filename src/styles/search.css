@@ -124,3 +124,6 @@
 .map-hero .map-h3 { position: relative; display: block; width: 96px; height: 24px; }
 /* 폰 '노트 | 지도' 토글: 아이콘만 */
 .seg.seg-i { padding: 0 13px; }
+
+/* 첫 회 그림: 공용 reset(svg max-width: 100%)이 줄어드는 절대 위치 상자 안에서 그림을 0px로 만든다 — A의 자리(H3 · H6 · 복습 빈 상태)에서만 풀어 둔다 */
+.np-h6 .hint svg, .map-h3 .hint svg, .rv-empty-anchor .hint svg, .rv-quiet .hint svg { max-width: none; }

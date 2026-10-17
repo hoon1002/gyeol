@@ -16,13 +16,14 @@ import { matchText } from '@/lib/hangul'
 import { fmtAgo, fmtMD, hm, studyDayStart } from '@/lib/time'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
-import { useMediaQuery, isTypingTarget } from '@/shell/hooks'
+import { useMediaQuery } from '@/shell/hooks'
 import { spaceOf } from '@/shell/spaces'
 import { tip } from '@/shell/Tip'
 import { IconBack, IconDeck, IconDoc, IconPdf, IconPen, IconPlus, IconSearch } from '@/shell/icons'
 import { Backlinks } from '@/editor/Backlinks'
 import { NotesMapToggle } from './Map'
 import { Hero } from './parts'
+import { isTyping, screenKey } from './keyScope'
 
 const NotePaper = lazy(() => import('@/editor/NotePaper'))
 
@@ -117,10 +118,11 @@ export function NotesScreen() {
   useEffect(() => {
     if (!active) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.isComposing || e.keyCode === 229) return
       const mod = e.metaKey || e.ctrlKey
-      if ((mod && !e.altKey && !e.shiftKey && (e.key === 'f' || e.key === 'F')) || (e.key === '/' && !mod && !e.altKey && !isTypingTarget(e.target))) {
-        if (useUi.getState().paletteOpen || useUi.getState().settingsOpen) return
+      // ⌘F는 노트 화면 안이면 글을 쓰는 중에도, '/'는 글을 쓰지 않을 때만. 떠 있는 층 · 화면 밖 포커스면 무시(QA #1)
+      const cmdF = mod && !e.altKey && !e.shiftKey && (e.key === 'f' || e.key === 'F') && screenKey(e, '/notes', { typing: true })
+      const slash = e.key === '/' && !mod && !e.altKey && screenKey(e, '/notes')
+      if (cmdF || slash) {
         e.preventDefault()
         searchRef.current?.focus()
         searchRef.current?.select()
@@ -134,11 +136,9 @@ export function NotesScreen() {
   useEffect(() => {
     if (!active || land || !focusId) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229) return
-      const ui = useUi.getState()
-      if (ui.paletteOpen || ui.settingsOpen) return
+      if (e.key !== 'Escape' || !screenKey(e, '/notes', { typing: true })) return
       // 편집기 안: ProseMirror가 Esc를 늘 막으므로 defaultPrevented 대신 '제안 상자를 닫았나'만 본다
-      if (isTypingTarget(e.target)) {
+      if (isTyping(e.target)) {
         if (!(e as KeyboardEvent & { gyeolHandled?: boolean }).gyeolHandled) (e.target as HTMLElement).blur()
         return
       }

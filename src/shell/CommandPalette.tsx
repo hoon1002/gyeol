@@ -30,6 +30,7 @@ import { useEffectiveMotion, useGo, useIsPhone } from './hooks'
 import { IconDeck, IconDoc, IconDust, IconFlag, IconFocus, IconMore, IconMotion, IconPdf, IconPen, IconPlan, IconReview, IconSearch, IconTheme } from './icons'
 import { tip } from './Tip'
 import { useHintCount } from './hints'
+import { pushLayer } from './layers'
 import '@/styles/search.css'
 import { SPACES } from './spaces'
 
@@ -126,6 +127,9 @@ function Palette() {
   const panelRef = useRef<HTMLDivElement>(null)
   const sky = useSkyEvent()
   const indexVer = useSearchVersion()
+
+  // 겹침 층: Esc는 전역 관리자가 맨 위 층만 닫는다(별 패널 위에 ⌘K를 열어도 ⌘K만 닫힘)
+  useEffect(() => pushLayer({ id: 'palette', close: () => close(), el: panelRef.current }), [close])
 
   // 열려 있는 동안 뒤 페이지 스크롤 잠금 · 닫히면 포커스 복귀
   useEffect(() => {
