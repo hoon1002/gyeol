@@ -363,7 +363,7 @@ export class InkEngine {
     const v = this.view
     const b = v.boxes.find((x) => x.id === s.pageId)
     if (!b) return
-    v.s = Math.max(v.minS, Math.min(v.maxS, v.fit * (s.zoom || 1)))
+    v.s = Math.max(v.fit, Math.min(v.maxS, v.fit * (s.zoom || 1)))
     v.vx = -v.W / (2 * v.s)
     v.vy = b.y + s.y
     v.clampView()
@@ -1850,7 +1850,7 @@ export class InkEngine {
   zoomBy(f: number): void {
     const v = this.view
     const [wx, wy] = v.toWorld(v.W / 2, v.H / 2)
-    const s = Math.max(v.minS, Math.min(v.maxS, v.s * f))
+    const s = Math.max(v.fit, Math.min(v.maxS, v.s * f))
     v.animateTo(s, wx - v.W / (2 * s), wy - v.H / (2 * s), 200)
     this.requestFrame()
   }

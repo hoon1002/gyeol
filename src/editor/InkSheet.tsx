@@ -126,6 +126,8 @@ export default function InkSheet({ note, template, origin, active, onClose }: In
     eng.on('thumb', ({ pageId }) => {
       if (pageId === eng.doc.pages[0]?.page.id) void captureThumb(eng, note.id)
     })
+    // 맞춤 배율에서 두 손가락을 더 오므렸다 떼면 종이를 닫는다(엔진: 맞춤의 85% 아래)
+    eng.on('pinchclose', () => void close())
   }
 
   const style = origin ? { transformOrigin: `${origin.x}px ${origin.y}px` } : undefined

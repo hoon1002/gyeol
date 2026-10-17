@@ -152,6 +152,8 @@ export interface InkEvents {
   hover: { x: number; y: number; type: string } | null
   /** 왼쪽 가장자리 밀기 (손가락) */
   edgeswipe: { y: number }
+  /** 맞춤에서 두 손가락을 더 오므려 85% 아래에서 뗌 → 앱이 종이를 닫는다 */
+  pinchclose: { zoom: number }
   /** 쪽 그림이 새로 만들어짐 */
   thumb: { pageId: string }
   progress: { kind: 'pdf' | 'export'; done: number; total: number }

@@ -87,7 +87,7 @@ export class InputRouter {
       const ge = e as Event & { scale: number; clientX: number; clientY: number }
       const r = this.host.getBoundingClientRect()
       const v = this.eng.view
-      v.zoomAt(v.s * (ge.scale / gs), ge.clientX - r.left, ge.clientY - r.top)
+      v.zoomAt(Math.max(v.fit, v.s * (ge.scale / gs)), ge.clientX - r.left, ge.clientY - r.top)
       gs = ge.scale
       this.eng.viewChanged(true)
     }
@@ -289,7 +289,7 @@ export class InputRouter {
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? v.H : 1
     if (e.ctrlKey || e.metaKey) {
       const f = Math.exp(Math.max(-0.25, Math.min(0.25, -e.deltaY * unit * 0.01)))
-      v.zoomAt(v.s * f, e.clientX - r.left, e.clientY - r.top)
+      v.zoomAt(Math.max(v.fit, v.s * f), e.clientX - r.left, e.clientY - r.top)
       this.eng.viewChanged(true)
       this.eng.settleSoon()
     } else {

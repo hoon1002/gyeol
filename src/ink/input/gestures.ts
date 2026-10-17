@@ -39,6 +39,8 @@ export class Gestures {
   /** 길게 누르기 뒤 이 손가락이 맡은 세션 (둥근 메뉴 · 고른 것 끌기) */
   private session: Session | null = null
   private sessionId = -1
+  /** 핀치의 손가락 그대로 배율 (고무줄 전) */
+  private raw = 1
 
   constructor(private eng: InkEngine) {}
 
@@ -167,12 +169,18 @@ export class Gestures {
         clearTimeout(this.holdTimer)
         this.c = c
         this.d = d
+        this.raw = this.eng.view.s
         this.eng.viewChanged(true)
       }
       return
     }
     const v = this.eng.view
-    if (this.d > 0 && d > 0) v.zoomAt(v.s * (d / this.d), c[0], c[1])
+    if (this.d > 0 && d > 0) {
+      // 맞춤 아래는 고무줄: 손가락만큼 다 줄지 않는다
+      this.raw *= d / this.d
+      const disp = this.raw >= v.fit || v.fixed ? this.raw : v.fit * (1 - (1 - this.raw / v.fit) * T.pinchRubber)
+      v.zoomAt(disp, c[0], c[1])
+    }
     v.scrollBy(this.c[0] - c[0], this.c[1] - c[1])
     this.c = c
     this.d = d
@@ -215,6 +223,17 @@ export class Gestures {
       if (mode === 'pan' || mode === 'pinch') this.eng.viewChanged(false)
       return
     }
+    // 핀치로 시작한 제스처는 마지막 손가락이 떨어질 때 배율을 정리한다 (한 손가락 이동으로 끝나도)
+    if (mode === 'pinch' || (mode === 'pan' && g?.pinched)) {
+      const v = this.eng.view
+      if (v.zoom < 1 && !v.fixed) {
+        if (v.zoom < T.pinchCloseBelow && this.eng.mode === 'note') this.eng.emit('pinchclose', { zoom: v.zoom })
+        const [wx, wy] = v.toWorld(v.W / 2, v.H / 2)
+        v.animateTo(v.fit, wx - v.W / (2 * v.fit), wy - v.H / (2 * v.fit), T.zoomSnapMs)
+      } else v.snapZoom(this.c[0], this.c[1])
+      this.eng.viewChanged(false)
+      return
+    }
     if (mode === 'pan') {
       const s = this.samples
       if (s.length >= 2) {
@@ -222,11 +241,6 @@ export class Gestures {
         const dt = b[2] - a[2]
         if (dt > 0 && p.ts - b[2] < 60) this.eng.view.fling(-(b[0] - a[0]) / dt, -(b[1] - a[1]) / dt)
       }
-      this.eng.viewChanged(false)
-      return
-    }
-    if (mode === 'pinch') {
-      this.eng.view.snapZoom(this.c[0], this.c[1])
       this.eng.viewChanged(false)
       return
     }

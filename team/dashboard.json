@@ -1,6 +1,6 @@
 {
   "project": "결 GYEOL · M0 3D 품질 관문",
-  "subtitle": "M3 · 손글씨(굿노트 수준) · 조용한 화면(글 0–1줄) · 디테일 0버그",
+  "subtitle": "M3 · 손글씨(굿노트 수준)·조용한 화면·디테일 구현 완료 → 최종 검수·재시험",
   "phases": [
     {
       "name": "v4 기획 · 3D · M0 · M1 · M2",
@@ -18,7 +18,7 @@
     },
     {
       "name": "M3 2차: 노트에 잉크 연결 · 메모 강화 · 버그 수정 · 하늘 디테일",
-      "status": "active",
+      "status": "done",
       "members": [
         "app",
         "app2",
@@ -28,7 +28,7 @@
     },
     {
       "name": "M3 검수 · 펜 측정 · 보고",
-      "status": "todo",
+      "status": "active",
       "members": [
         "ad",
         "qa"

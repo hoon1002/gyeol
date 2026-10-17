@@ -29,8 +29,11 @@ export const INK_THRESHOLDS = {
   panMove: 10,
   /** 한 손가락 이동(펜만 쓰기) 시작 */
   scrollSlop: 6,
-  /** 확대 범위 (맞춤 100% 기준), 뗐을 때 94–106%면 100%로 붙는다(200ms) */
-  zoomMin: 0.5,
+  /** 확대 범위 (맞춤 100% 기준), 뗐을 때 94–106%면 100%로 붙는다(200ms). 쉬는 배율의 바닥은 맞춤(100%) */
+  zoomMin: 0.6,
+  /** 맞춤보다 더 오므리면 고무줄(저항 0.45), 85% 아래에서 떼면 'pinchclose' (종이 닫기) */
+  pinchRubber: 0.45,
+  pinchCloseBelow: 0.85,
   zoomMax: 4,
   zoomSnapLo: 0.94,
   zoomSnapHi: 1.06,
