@@ -1,6 +1,6 @@
 {
   "project": "결 GYEOL · M0 3D 품질 관문",
-  "subtitle": "M2 · 검수 13건 고치는 중 (상 2: .ics 시트 · 지도 노트 별)",
+  "subtitle": "M2 완료 · 1초 메모·별가루함·노트 편집기·링크·검색 4ms·시간표·백업·첫 실행 → 다음 M3(기억 엔진)",
   "phases": [
     {
       "name": "v4 기획 · 3D 시제품 · M0 · M1",
@@ -24,7 +24,7 @@
     },
     {
       "name": "M2 검수 · 측정 · 보고",
-      "status": "active",
+      "status": "done",
       "members": [
         "ad"
       ]
@@ -73,7 +73,7 @@
       },
       {
         "phase": "M1-M4",
-        "label": "M1–M4 첫 공개판 (M1 완료 · M2 진행 중)",
+        "label": "M1–M4 첫 공개판 (M1·M2 완료 → M3 기억 엔진)",
         "estimate": 4300000
       },
       {
