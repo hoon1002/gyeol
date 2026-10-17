@@ -1,0 +1,21 @@
+// M4 테이프 카드: 필기 노트 펜 쓰기 → 테이프 → 닫기 → 후보함 테이프 후보 → 받기 → 복습에서 걷힘
+const R = (k, v) => print(k, typeof v === 'string' ? v : JSON.stringify(v))
+const DB = (code) => ev(`new Promise((ok) => { const q = indexedDB.open('gyeol'); q.onsuccess = () => { const db = q.result; (${code})(db, (v) => { ok(v); db.close() }) } })`)
+const cands = () => DB(`(db, done) => { const r = db.transaction('cardCandidates').objectStore('cardCandidates').getAll(); r.onsuccess = () => done(r.result.map(c => (c.kind || c.rule || c.source) + ':' + c.status)) }`)
+const tapeCards = () => DB(`(db, done) => { const r = db.transaction('cards').objectStore('cards').getAll(); r.onsuccess = () => done(r.result.filter(c => c.kind === 'tape' || c.tapeId || c.itemId).map(c => c.id.slice(-6) + ':' + Math.round((c.due - Date.now()) / 60000) + 'm')) }`)
+await size(1180, 820, { touch: true }); await nav('/notes', 2500)
+setMode('pen'); await tapSel('#stage button', '새 노트'); await sleep(1800)
+await drag(300, 300, 700, 330, { steps: 10, stepMs: 12 }); await sleep(300); await drag(300, 360, 650, 380, { steps: 10, stepMs: 12 }); await sleep(500)
+const tb = await find('[aria-label="테이프"]'); if (!tb.length) { const b = await find('.ink-bead'); if (b[0]) { setMode('mouse'); await tap(b[0].x, b[0].y); await sleep(300) } }
+setMode('mouse'); await tapSel('[aria-label="테이프"]'); await sleep(200)
+setMode('pen'); await drag(290, 290, 720, 340, { steps: 8, stepMs: 14 }); await sleep(800)
+const c0 = await cands(); setMode('mouse'); await tapSel('[aria-label="노트 목록"]'); await sleep(2500)
+const c1 = await cands(); R('cands after close', c1.slice(c0.length))
+await key('k', 4); await sleep(300); await insert('후보'); await sleep(400); await key('Enter'); await sleep(1300)
+await shot('../m4-app/candidates-tape_1440x900', { q: 80 })
+R('cand rows', await ev(`[...document.querySelectorAll('.cb-row')].map(r => (r.querySelector('img, canvas') ? '[그림]' : '') + r.innerText.replace(/\\n+/g, '/').slice(0, 20)).join(' | ')`))
+const tapeRow = await ev(`(() => { const rows = [...document.querySelectorAll('.cb-row')]; const i = rows.findIndex(r => r.querySelector('img, canvas')); return i })()`)
+R('tape row idx', tapeRow)
+if (tapeRow >= 0) { for (let i = 0; i <= tapeRow; i++) { await key('ArrowDown'); await sleep(120) } await key('a'); await sleep(1200) }
+R('tape cards', await tapeCards())
+print(logs().filter((l) => !/Failed to load resource|\[vite\]/.test(l.text)).slice(0, 5))

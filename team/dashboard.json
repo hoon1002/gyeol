@@ -1,6 +1,6 @@
 {
   "project": "결 GYEOL · M0 3D 품질 관문",
-  "subtitle": "M4 · 기억 엔진 (FSRS · 카드 자동 추출 · 테이프 카드 · 떠올리기 · 시험 역산 · 기억 밝기)",
+  "subtitle": "M4 기억 엔진 구현 완료 → 흐름 시험·캡처",
   "phases": [
     {
       "name": "v4 · 3D · M0–M3",
@@ -15,7 +15,7 @@
     },
     {
       "name": "M4 구현: FSRS·복습·떠올리기 / 추출·시험 계획 / 테이프 카드 / 하늘",
-      "status": "active",
+      "status": "done",
       "members": [
         "app",
         "app2",
@@ -25,7 +25,7 @@
     },
     {
       "name": "M4 검수 · 보고",
-      "status": "todo",
+      "status": "active",
       "members": [
         "ad",
         "qa"

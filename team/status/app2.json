@@ -1,1 +1,1 @@
-{ "percent": 100, "doing": "M4 마무리 완료. syncCandidates(noteId)는 규칙 8개(RULES: qa·cloze·term·bold·table·list·qline·ask) 후보만 정리 — 떠올리기·테이프·메모 후보는 그대로. 앱 A는 syncNoteCandidates 대신 src/memory/extract.ts syncCandidates로 바꿔도 됨. StarPress requestReview·흐린 별 ▶·H14, gyeol:exam-new, planDay recallDone(recall.log)", "state": "done" }
+{"percent": 100, "doing": "M4 완료", "state": "done"}
