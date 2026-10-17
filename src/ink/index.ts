@@ -9,6 +9,8 @@
  */
 export { InkSurface, default } from './InkSurface'
 export type { InkSurfaceProps } from './InkSurface'
+export { InkPad } from './InkPad'
+export type { InkPadProps } from './InkPad'
 export { InkEngine, createInkEngine, getActiveInkEngine } from './engine'
 export type { Selection } from './engine'
 export { INK_COMMANDS, INK_COMMAND_MAP, matchKey } from './commands'

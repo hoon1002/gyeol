@@ -1,0 +1,38 @@
+/* =========================================================
+   종이 펼치기 (design-ink 1장) — 앱 A. 잉크 청크와 함께 지연 로드된다.
+   종이 화면에 떠 있는 것에는 backdrop-filter를 쓰지 않는다(design-ink 0-5).
+   ========================================================= */
+.ink-sheet {
+  position: fixed; inset: 0; z-index: 55;
+  transition: opacity 320ms var(--ease-out), transform 420ms var(--ease-out);
+}
+.ink-sheet.is-in { opacity: 0; transform: scale(.96); }
+.ink-sheet.is-open { opacity: 1; transform: none; }
+.ink-sheet.is-out { opacity: 0; transform: scale(.98); pointer-events: none; transition-duration: 200ms, 200ms; transition-timing-function: var(--ease-in-out), var(--ease-in-out); }
+/* 전환 중 펜이 닿으면 바로 최종 상태(첫 점을 잃지 않게) */
+.ink-sheet.is-snap { transition: none !important; opacity: 1 !important; transform: none !important; }
+:root[data-motion="off"] .ink-sheet { transform: none !important; transition: opacity 200ms linear; }
+.ink-sheet-wait { position: absolute; inset: 0; }
+
+/* 뒤로 ‹ (design-ink 1-2: 폰 (8, 6) · 태블릿 (12, 10) · 데스크톱 (16, 12), 터치 44 · 마우스 36) */
+.ink-sheet .ink-sheet-back {
+  position: absolute; left: 16px; top: 12px; z-index: 6; width: 36px; height: 36px; border-radius: 50%;
+  background: color-mix(in srgb, var(--surface-2) 92%, transparent); color: var(--text-1); box-shadow: var(--shadow-2);
+}
+@media (max-width: 1199px) { .ink-sheet .ink-sheet-back { left: 12px; top: 10px; } }
+@media (max-width: 599px) { .ink-sheet .ink-sheet-back { left: 8px; top: calc(6px + env(safe-area-inset-top)); } }
+@media (pointer: coarse) { .ink-sheet .ink-sheet-back { width: 44px; height: 44px; } }
+
+/* 비켜나는 것 (design-ink 1-3): 레일 · 위 크롬 · 노트 목록 · 글 종이. 다 비켜나면 손이 닿지 않게 숨긴다 */
+:root[data-paper] .dock,
+:root[data-paper] .topbar,
+:root[data-paper] .space[data-path="/notes"] .notes-hero,
+:root[data-paper] .space[data-path="/notes"] .note-stage {
+  opacity: 0; transform: translateX(-16px); pointer-events: none; visibility: hidden;
+  transition: opacity 180ms var(--ease-in), transform 180ms var(--ease-in), visibility 0s linear 180ms;
+}
+:root[data-paper] .topbar { transform: none; transition: opacity 140ms var(--ease-in), visibility 0s linear 140ms; }
+@media (max-width: 599px) { :root[data-paper] .dock { transform: translateY(12px); } }
+:root[data-paper][data-motion="off"] .dock,
+:root[data-paper][data-motion="off"] .topbar,
+:root[data-paper][data-motion="off"] .space[data-path="/notes"] .notes-hero { transform: none; }

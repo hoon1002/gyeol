@@ -1,0 +1,506 @@
+/* 손글씨 화면 UI — 떠 있는 것은 blur 없이 --surface-2 96%, transform · opacity · clip-path로만 (design-ink 0-5) */
+.ink-surface {
+  --ink-face: color-mix(in srgb, var(--surface-2) 96%, transparent);
+  --ink-bh: 44px;
+  --ink-bv: 40px;
+}
+@media (pointer: fine) {
+  .ink-surface {
+    --ink-bh: 36px;
+    --ink-bv: 32px;
+  }
+}
+.ink-pill,
+.ink-pop,
+.ink-sel,
+.ink-pie,
+.ink-pageno,
+.ink-undo,
+.ink-tapechip,
+.ink-drawer {
+  position: absolute;
+  z-index: 20;
+  background: var(--ink-face);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-2);
+  color: var(--text-2);
+  font-family: var(--f-kr);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.ink-pill {
+  display: flex;
+  align-items: center;
+  height: calc(var(--ink-bh) + 4px);
+  padding: 0 2px;
+  border-radius: 999px;
+  transition:
+    clip-path 180ms var(--ease-out),
+    opacity 160ms;
+  clip-path: inset(0 round 999px);
+}
+.ink-pill.is-vert {
+  flex-direction: column;
+  height: auto;
+  width: calc(var(--ink-bh) + 4px);
+  padding: 2px 0;
+}
+.ink-pill.is-drag {
+  box-shadow: var(--shadow-3);
+  transition: none;
+}
+.ink-pill.is-bead {
+  width: calc(var(--ink-bh) + 4px);
+  justify-content: center;
+}
+.ink-tools,
+.ink-mid {
+  display: flex;
+  align-items: center;
+}
+.is-vert .ink-tools,
+.is-vert .ink-mid {
+  flex-direction: column;
+}
+.ink-sep {
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+  background: var(--border);
+  flex: none;
+}
+.is-vert .ink-sep {
+  width: 20px;
+  height: 1px;
+  margin: 6px 0;
+}
+.ink-btn,
+.ink-bead {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--ink-bh);
+  height: var(--ink-bh);
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+.ink-btn:active,
+.ink-bead:active {
+  transform: scale(0.92);
+  transition-duration: 80ms;
+}
+.ink-btn.is-on,
+.ink-bead {
+  color: var(--text-1);
+}
+.ink-btn.is-toggled::after {
+  content: '';
+  position: absolute;
+  bottom: 5px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-1);
+}
+.ink-btn:disabled {
+  opacity: 0.3;
+}
+.ink-dot {
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--dot, transparent);
+}
+.ink-bead {
+  border: 1px solid color-mix(in srgb, var(--dot) 40%, transparent);
+}
+.ink-tri {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  width: 0;
+  height: 0;
+  border: 3px solid transparent;
+  border-bottom: 5px solid var(--text-1);
+}
+.ink-wdot {
+  display: block;
+  border-radius: 50%;
+}
+.ink-wdot.is-ring {
+  border: 1.5px solid currentColor;
+  box-sizing: border-box;
+}
+.ink-sw {
+  width: calc(var(--ink-bh) - 4px);
+}
+
+/* 팝오버: 칸에서 8px */
+.ink-pop {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 14px;
+  max-width: 260px;
+  animation: ink-in 140ms var(--ease-out);
+}
+.ink-pill .ink-pop.at-top {
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+.ink-pill .ink-pop.at-bottom {
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+.ink-pill .ink-pop.at-left {
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+.ink-pill .ink-pop.at-right {
+  right: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+.ink-pop-name {
+  width: 100%;
+  padding: 0 4px 6px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.ink-seg {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.ink-colors.is-12 {
+  max-width: calc(6 * 40px + 16px);
+}
+.ink-more {
+  max-width: none;
+  flex-wrap: nowrap;
+}
+.ink-custom {
+  border: 2px solid transparent;
+  background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red) border-box;
+  -webkit-mask:
+    linear-gradient(#000 0 0) padding-box,
+    linear-gradient(#000 0 0);
+  overflow: hidden;
+}
+.ink-custom input {
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+}
+.ink-range {
+  width: 160px;
+  margin: 6px 4px 0;
+  accent-color: var(--accent);
+}
+
+/* 둥근 메뉴 */
+.ink-pie-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+}
+.ink-pie {
+  border-radius: 50%;
+  box-shadow: var(--shadow-3);
+  animation: ink-pie-in 160ms var(--ease-out);
+}
+.ink-pie-btn {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  display: grid;
+  place-items: center;
+}
+.ink-pie-btn.is-hot,
+.ink-pie-btn:hover {
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--text-1) 10%, transparent);
+}
+.ink-pie-mid {
+  position: absolute;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+.ink-pie-mid i {
+  display: block;
+  width: 4px;
+  height: 4px;
+  margin: auto;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.ink-tpl-row {
+  position: absolute;
+  z-index: 31;
+  flex-wrap: nowrap;
+  max-width: none;
+}
+.ink-tpl {
+  padding: 2px;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+}
+.ink-tpl.is-on {
+  border-color: var(--accent);
+}
+.ink-tpl.is-small svg {
+  width: 20px;
+  height: 28px;
+}
+
+/* 선택 칸 */
+.ink-sel {
+  display: flex;
+  align-items: center;
+  height: calc(var(--ink-bh) + 0px);
+  padding: 0 2px;
+  border-radius: 999px;
+  transition: opacity 140ms;
+}
+.ink-sel.is-drag {
+  opacity: 0;
+  transition-duration: 80ms;
+}
+.ink-sel .ink-pop {
+  bottom: calc(100% + 8px);
+  left: 0;
+}
+
+/* 쪽 번호 · 되돌리기 칩 · 테이프 칩 */
+.ink-pageno {
+  top: 12px;
+  right: 12px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 14px;
+  font: 12px/28px var(--f-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 240ms;
+}
+.ink-pageno.is-on {
+  opacity: 1;
+  pointer-events: auto;
+  transition-duration: 120ms;
+}
+.ink-pageno.is-phone {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+.ink-undo {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 14px;
+  color: var(--text-1);
+  left: 50%;
+  transform: translateX(-50%);
+  animation: ink-chip 800ms var(--ease-out) forwards;
+  font: 11px var(--f-mono, monospace);
+}
+.ink-undo.at-top {
+  top: 72px;
+}
+.ink-undo.at-bottom {
+  bottom: 72px;
+}
+.ink-undo.at-left,
+.ink-undo.at-right {
+  top: 12px;
+}
+.ink-undo.is-wall {
+  animation:
+    ink-shake 160ms linear 2,
+    ink-chip 800ms var(--ease-out) forwards;
+}
+.ink-tapechip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 14px;
+  font: 11px var(--f-mono, monospace);
+  color: var(--text-2);
+  z-index: 15;
+}
+.ink-tapechip.is-done span {
+  color: var(--accent);
+  transition: color 240ms;
+}
+
+/* 쪽 서랍 */
+.ink-drawer {
+  left: 8px;
+  top: 8px;
+  bottom: 8px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 98%, transparent);
+  box-shadow: var(--shadow-3);
+  display: flex;
+  flex-direction: column;
+  animation: ink-drawer 260ms var(--ease-out);
+  z-index: 25;
+}
+.ink-drawer.is-phone {
+  left: 0;
+  right: 0;
+  top: auto;
+  bottom: 0;
+  height: 220px;
+  border-radius: 16px 16px 0 0;
+}
+.ink-drawer-head {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px;
+  height: 48px;
+  align-items: center;
+}
+.ink-drawer-list {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+  touch-action: pan-y;
+}
+.ink-drawer.is-phone .ink-drawer-list {
+  flex-direction: row;
+  touch-action: pan-x;
+  overflow-x: auto;
+}
+.ink-thumb {
+  position: relative;
+  width: 120px;
+  flex: none;
+  text-align: center;
+  font: 11px var(--f-mono, monospace);
+  color: var(--text-3);
+  transition: transform 180ms var(--ease-out);
+}
+.ink-drawer.is-phone .ink-thumb {
+  width: 72px;
+}
+.ink-thumb.is-lift {
+  transform: scale(1.05);
+  z-index: 2;
+}
+.ink-thumb-img {
+  position: relative;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface-3);
+  margin-bottom: 6px;
+  outline-offset: 3px;
+}
+.ink-thumb.is-cur .ink-thumb-img {
+  outline: 2px solid var(--accent);
+}
+.ink-thumb.is-lift .ink-thumb-img {
+  box-shadow: var(--shadow-3);
+}
+.ink-thumb-img img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.ink-thumb-tape {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 4px;
+}
+.ink-thumb-menu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  z-index: 3;
+  flex-wrap: wrap;
+  width: 200px;
+}
+.ink-thumb-add {
+  width: 120px;
+  height: 56px;
+  flex: none;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  display: grid;
+  place-items: center;
+}
+
+@keyframes ink-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes ink-pie-in {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+}
+@keyframes ink-drawer {
+  from {
+    transform: translateX(calc(-100% - 8px));
+  }
+}
+@keyframes ink-chip {
+  0%,
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes ink-shake {
+  25% {
+    margin-left: -3px;
+  }
+  75% {
+    margin-left: 3px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ink-pop,
+  .ink-pie,
+  .ink-drawer {
+    animation: none;
+  }
+}

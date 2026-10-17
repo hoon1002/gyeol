@@ -411,7 +411,7 @@ function Lab() {
         <div className="msg">{msg}</div>
       </div>
       <div className="lab-paper">
-        <InkSurface noteId={NOTE} db={db} ui={false} onReady={setEng} />
+        <InkSurface noteId={NOTE} db={db} ui={new URLSearchParams(location.search).has('ui')} onReady={setEng} />
       </div>
     </div>
   )

@@ -303,3 +303,111 @@ export const Asset = Node.create({
     }
   },
 })
+
+/* ---------- 소리 칩 (음성 메모 → 노트로, 리더 결정 6) ---------- */
+
+const fmtDur = (ms: number) => {
+  const s = Math.max(0, Math.round(ms / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+/** 소리 칩 블록: ▶/❚❚ + 길이(모노). 소리는 assets의 Blob(누를 때 처음 읽는다) */
+export const Voice = Node.create({
+  name: 'voice',
+  group: 'block',
+  atom: true,
+  selectable: true,
+  draggable: false,
+  addAttributes() {
+    return { assetId: { default: null }, durationMs: { default: 0 } }
+  },
+  parseHTML() {
+    return [{ tag: 'div[data-voice]', getAttrs: (el) => ({ assetId: (el as HTMLElement).getAttribute('data-voice'), durationMs: Number((el as HTMLElement).getAttribute('data-ms') ?? 0) }) }]
+  },
+  renderHTML({ node }) {
+    return ['div', { 'data-voice': String(node.attrs.assetId ?? ''), 'data-ms': String(node.attrs.durationMs ?? 0), class: 'nb-voice' }]
+  },
+  renderText() {
+    return ''
+  },
+  addNodeView() {
+    return ({ node }) => {
+      const dom = document.createElement('div')
+      dom.className = 'nb-voice'
+      dom.contentEditable = 'false'
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'nb-voice-play'
+      btn.setAttribute('aria-label', '재생')
+      btn.setAttribute('data-tip', '')
+      const icon = (playing: boolean) =>
+        (btn.innerHTML = playing
+          ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="6" width="3.2" height="12" rx="1"/><rect x="13.8" y="6" width="3.2" height="12" rx="1"/></svg>'
+          : '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>')
+      icon(false)
+      const bar = document.createElement('span')
+      bar.className = 'nb-voice-bar'
+      const fill = document.createElement('i')
+      bar.appendChild(fill)
+      const time = document.createElement('span')
+      time.className = 'nb-voice-t'
+      const total = Number(node.attrs.durationMs ?? 0)
+      time.textContent = fmtDur(total)
+      dom.append(btn, bar, time)
+      let audio: HTMLAudioElement | null = null
+      let url = ''
+      let dead = false
+      let raf = 0
+      const tick = () => {
+        if (!audio || dead) return
+        const d = (Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration * 1000 : total) || 1
+        fill.style.transform = `scaleX(${Math.min(1, (audio.currentTime * 1000) / d)})`
+        time.textContent = fmtDur(audio.paused ? d : audio.currentTime * 1000)
+        if (!audio.paused) raf = requestAnimationFrame(tick)
+      }
+      const stop = () => {
+        icon(false)
+        btn.setAttribute('aria-label', '재생')
+        cancelAnimationFrame(raf)
+        tick()
+      }
+      btn.addEventListener('mousedown', (e) => e.preventDefault()) // 편집기 선택을 바꾸지 않는다
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        if (!audio) {
+          const id = node.attrs.assetId as string | null
+          const a = id ? await db.assets.get(id) : undefined
+          if (!a || dead) {
+            dom.classList.add('is-missing')
+            return
+          }
+          url = URL.createObjectURL(a.blob)
+          audio = new Audio(url)
+          audio.addEventListener('ended', () => {
+            if (audio) audio.currentTime = 0
+            stop()
+          })
+          audio.addEventListener('pause', stop)
+        }
+        if (audio.paused) {
+          await audio.play().catch(() => dom.classList.add('is-missing'))
+          icon(true)
+          btn.setAttribute('aria-label', '멈춤')
+          raf = requestAnimationFrame(tick)
+        } else audio.pause()
+      })
+      return {
+        dom,
+        stopEvent: (e: Event) => !!(e.target as HTMLElement | null)?.closest?.('.nb-voice-play'),
+        ignoreMutation: () => true,
+        destroy: () => {
+          dead = true
+          cancelAnimationFrame(raf)
+          audio?.pause()
+          if (url) URL.revokeObjectURL(url)
+        },
+      }
+    }
+  },
+})

@@ -21,7 +21,7 @@ import { IconBack, IconDoc, IconLink, IconMap, IconMore, IconPlus, IconTrash } f
 import { tip } from '@/shell/Tip'
 import { Hint } from '@/shell/Hint'
 import { pushLayer } from '@/shell/layers'
-import { Asset, LinkDecor, NoteLink, Trigger, dismissTrigger, refreshLinkDecor, type LinkAttrs, type LinkResolver, type TriggerState } from './extensions'
+import { Asset, LinkDecor, NoteLink, Trigger, Voice, dismissTrigger, refreshLinkDecor, type LinkAttrs, type LinkResolver, type TriggerState } from './extensions'
 import { Backlinks } from './Backlinks'
 import { templateDoc, type PMNode, type TemplateName } from './templates'
 import '@/styles/editor.css'
@@ -45,7 +45,7 @@ type SaveState = 'saved' | 'dirty' | 'error'
 const EMPTY_DOC: PMNode = { type: 'doc', content: [{ type: 'paragraph' }] }
 
 /** 이 편집기가 아는 노드만 남긴다(모르는 블록이 있어도 열리게) */
-const KNOWN = new Set(['doc', 'paragraph', 'text', 'heading', 'bulletList', 'orderedList', 'listItem', 'taskList', 'taskItem', 'blockquote', 'codeBlock', 'horizontalRule', 'hardBreak', 'noteLink', 'asset'])
+const KNOWN = new Set(['doc', 'paragraph', 'text', 'heading', 'bulletList', 'orderedList', 'listItem', 'taskList', 'taskItem', 'blockquote', 'codeBlock', 'horizontalRule', 'hardBreak', 'noteLink', 'asset', 'voice'])
 function sanitize(n: PMNode): PMNode | null {
   if (!KNOWN.has(n.type)) return n.text ? { type: 'text', text: n.text } : null
   if (n.type === 'text' && !n.text) return null
@@ -211,6 +211,7 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
         LinkDecor.configure({ resolve: () => resolveRef.current }),
         Trigger.configure({ onChange: (s) => setTrigger(s), onKey: (e) => keyRef.current(e) }),
         Asset,
+        Voice,
       ],
       content: initial.doc,
       editorProps: {

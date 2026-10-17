@@ -224,6 +224,8 @@ export interface Stroke {
   points: ArrayBuffer
   /** [x0, y0, x1, y1] 쪽 좌표 */
   bbox: [number, number, number, number]
+  /** 펜 느낌 (볼펜 · 만년필). 연필·형광은 tool로 구분 */
+  pen?: 'ball' | 'fountain' | null
   /** 도형으로 바뀐 획이면 그 모양 (다시 고치기용) */
   shape?: { kind: 'line' | 'arrow' | 'rect' | 'ellipse' | 'triangle' | 'polyline'; params: number[] } | null
   createdAt: number
@@ -244,6 +246,9 @@ export interface PageItem {
   assetId?: string | null
   /** 글 상자 내용 (평문) */
   text?: string | null
+  /** 글 상자 글자 색('#RRGGBB', 흰 종이 기준) · 크기(pt) */
+  color?: string | null
+  fontSize?: number | null
   /** 테이프: 가려진 상태인지 */
   hidden?: boolean
   /** 테이프: '헷갈림' 표시 (M4에서 복습 카드 후보로) */

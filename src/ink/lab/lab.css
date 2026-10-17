@@ -100,14 +100,19 @@ body {
 }
 .stats {
   margin: 0;
+  height: 48px;
+  overflow: hidden;
   font: 11px/1.45 'JetBrains Mono', ui-monospace, monospace;
   color: var(--text-2);
   white-space: pre-wrap;
 }
 .msg {
   font-size: 12px;
+  line-height: 18px;
+  height: 18px;
+  overflow: hidden;
+  white-space: nowrap;
   color: var(--accent);
-  min-height: 16px;
 }
 .lab-paper {
   flex: 1;

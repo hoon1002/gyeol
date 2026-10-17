@@ -97,6 +97,8 @@ export function docToMarkdown(doc: unknown, title?: string): string {
         return (n.content ?? []).map((c) => block(c)).join('\n\n').split('\n').map((l) => '> ' + l).join('\n')
       case 'asset':
         return `![사진](assets/${String(n.attrs?.assetId ?? '')})`
+      case 'voice':
+        return `[음성 ${Math.round(Number(n.attrs?.durationMs ?? 0) / 1000)}초](assets/${String(n.attrs?.assetId ?? '')})`
       case 'bulletList':
       case 'orderedList':
       case 'taskList': {
@@ -120,13 +122,20 @@ export function docToMarkdown(doc: unknown, title?: string): string {
   return blocks.join('\n\n').trim() + '\n'
 }
 
-/** 글(줄 = 문단) + 사진 → 블록들 */
-function bodyBlocks(body?: string | null, assetId?: string | null): PMNode[] {
+/** 소리 칩 블록(음성 메모 → 노트로, 리더 결정 6) */
+export interface VoiceRef {
+  assetId: string
+  durationMs: number
+}
+
+/** 글(줄 = 문단) + 사진 + 소리 칩 → 블록들 */
+function bodyBlocks(body?: string | null, assetId?: string | null, voice?: VoiceRef | null): PMNode[] {
   const out: PMNode[] = (body ?? '')
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean)
     .map((l) => ({ type: 'paragraph', content: [{ type: 'text', text: l }] }))
+  if (voice) out.unshift({ type: 'voice', attrs: { assetId: voice.assetId, durationMs: voice.durationMs } })
   if (assetId) out.push({ type: 'asset', attrs: { assetId } })
   return out
 }
@@ -226,6 +235,10 @@ export interface CreateNoteOpts {
   body?: string | null
   /** 사진 assets id → 그림 블록 */
   assetId?: string | null
+  /** 음성 메모 소리 → 소리 칩 블록 */
+  voice?: VoiceRef | null
+  /** 'ink' · 'pdf' = 종이 노트(본문 문서 없음, 쪽은 잉크 엔진이 만든다). 기본 'doc' */
+  kind?: 'doc' | 'ink' | 'pdf'
   /** true면 onNoteCreated(하늘 birthStar)를 부르지 않는다 — 별가루 '노트로'는 fileDust가 도착 연출(D3 → D6)을 맡는다 */
   quiet?: boolean
 }
@@ -242,11 +255,20 @@ export async function createNote(opts: CreateNoteOpts = {}): Promise<Note> {
     const now = Date.now()
     const id = uid('note-')
     const template = opts.template ?? null
+    const kind = opts.kind ?? 'doc'
     let title = (opts.title ?? '').trim()
-    if (!title && template === 'class') title = await classTitle(opts.subjectId, opts.classKey)
-    const doc: PMNode = opts.doc ? { ...opts.doc } : template ? templateDoc(template) : { type: 'doc', content: bodyBlocks(opts.body, opts.assetId) }
+    if (!title && (template === 'class' || (kind === 'ink' && opts.classKey))) title = await classTitle(opts.subjectId, opts.classKey)
+    if (!title && kind === 'ink') title = `${fmtMD(now)} 필기`
+    if (kind !== 'doc') {
+      // 종이 노트: 노트 행만. 쪽 · 획은 펼칠 때 잉크 엔진이 만든다(첫 쪽 틀은 펼치는 쪽이 정함)
+      const n: Note = { id, title, subjectId: opts.subjectId ?? null, kind, pages: 1, page: 1, createdAt: now, updatedAt: now, deletedAt: null, classKey: opts.classKey ?? null, template: null }
+      await db.notes.add(n)
+      if (title) await connectDangling(title, id)
+      return n
+    }
+    const doc: PMNode = opts.doc ? { ...opts.doc } : template ? templateDoc(template) : { type: 'doc', content: bodyBlocks(opts.body, opts.assetId, opts.voice) }
     if (opts.doc || template) {
-      const extra = bodyBlocks(opts.body, opts.assetId)
+      const extra = bodyBlocks(opts.body, opts.assetId, opts.voice)
       if (extra.length) doc.content = [...(doc.content ?? []), ...extra]
     }
     const text = docToText(doc)
@@ -265,6 +287,7 @@ export async function createNote(opts: CreateNoteOpts = {}): Promise<Note> {
     await db.notes.add(n)
     await db.noteBodies.put({ noteId: id, doc, text, version: 1, updatedAt: now })
     if (opts.assetId) await db.assets.update(opts.assetId, { ownerId: id })
+    if (opts.voice) await db.assets.update(opts.voice.assetId, { ownerId: id })
     if (title) await connectDangling(title, id)
     if (extractLinks(doc).length) await recomputeLinks(id, doc)
     return n
@@ -290,12 +313,12 @@ export async function saveBody(noteId: string, doc: unknown): Promise<{ version:
   })
 }
 
-/** 노트 끝에 글(줄 = 문단)·사진을 붙인다 */
-export async function appendToNote(noteId: string, add: { text?: string | null; assetId?: string | null }): Promise<number> {
+/** 노트 끝에 글(줄 = 문단)·사진·소리 칩을 붙인다 */
+export async function appendToNote(noteId: string, add: { text?: string | null; assetId?: string | null; voice?: VoiceRef | null }): Promise<number> {
   return db.transaction('rw', TABLES, async () => {
     const body = await db.noteBodies.get(noteId)
     const doc = (body?.doc as PMNode | undefined) ?? { type: 'doc', content: [] }
-    const blocks = bodyBlocks(add.text, add.assetId)
+    const blocks = bodyBlocks(add.text, add.assetId, add.voice)
     if (!blocks.length) return body?.version ?? 0
     // 끝의 빈 문단 하나는 덮는다(틀의 빈 칸 뒤에 줄줄이 빈 줄이 남지 않게)
     const content = [...(doc.content ?? [])]
@@ -303,6 +326,7 @@ export async function appendToNote(noteId: string, add: { text?: string | null; 
     if (last && last.type === 'paragraph' && !(last.content ?? []).length) content.pop()
     const next: PMNode = { ...doc, content: [...content, ...blocks] }
     if (add.assetId) await db.assets.update(add.assetId, { ownerId: noteId })
+    if (add.voice) await db.assets.update(add.voice.assetId, { ownerId: noteId })
     return (await saveBody(noteId, next)).version
   })
 }
@@ -322,21 +346,28 @@ export async function openOrCreateNote(opts: CreateNoteOpts = {}): Promise<{ not
   })
 }
 
-/** 별가루 '노트로' (design-m2 2-2). 메모 상태(filed)는 부른 쪽이 바꾼다 */
-export async function fileMemoToNote(memo: Pick<Memo, 'text' | 'subjectId' | 'assetId'>, at: Date | number = Date.now()): Promise<{ id: string; created: boolean }> {
+/**
+ * 별가루 '노트로' (design-m2 2-2). 메모 상태(filed)는 부른 쪽이 바꾼다.
+ * 음성 메모(kind 'voice')는 사진 대신 소리 칩 블록으로 붙는다(리더 결정 6). 오늘 수업 노트가 필기 노트면 거기 붙이지 않고 새 글 노트를 만든다.
+ */
+export async function fileMemoToNote(memo: Pick<Memo, 'text' | 'subjectId' | 'assetId'> & Partial<Pick<Memo, 'kind' | 'durationMs'>>, at: Date | number = Date.now()): Promise<{ id: string; created: boolean }> {
   return db.transaction('rw', TABLES, async () => {
     const sid = memo.subjectId ?? null
+    const isVoice = memo.kind === 'voice' && !!memo.assetId
+    const voice: VoiceRef | null = isVoice ? { assetId: memo.assetId!, durationMs: memo.durationMs ?? 0 } : null
+    const photo = isVoice ? null : memo.assetId
     const cls = sid ? await findNoteByClassKey(classKeyFor(sid, at)) : undefined
-    if (cls) {
-      await appendToNote(cls.id, { text: memo.text, assetId: memo.assetId })
+    if (cls && cls.kind === 'doc') {
+      await appendToNote(cls.id, { text: memo.text, assetId: photo, voice })
       return { id: cls.id, created: false }
     }
     const lines = memo.text.split('\n')
     const i = lines.findIndex((l) => l.trim())
     const head = i >= 0 ? lines[i]!.trim() : ''
-    const title = head.slice(0, 40) || '사진 메모'
+    // 제목이 없으면 목록이 날짜를 보인다(design-quiet: '제목 없음' → 10.17)
+    const title = head.slice(0, 40)
     const rest = [head.length > 40 ? head.slice(40) : '', ...(i >= 0 ? lines.slice(i + 1) : [])].join('\n')
-    const n = await createNote({ title, subjectId: sid, body: rest, assetId: memo.assetId, quiet: true })
+    const n = await createNote({ title, subjectId: sid, body: rest, assetId: photo, voice, quiet: true })
     return { id: n.id, created: true }
   })
 }

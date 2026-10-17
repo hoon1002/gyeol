@@ -130,3 +130,16 @@
 .np-sg-row.is-sel .np-sg-lead, .np-sg-row.is-sel .np-sg-key { color: var(--text-2); }
 .np-sg-row.is-new .np-sg-t, .np-sg-row.is-new .np-sg-lead { color: var(--accent); }
 
+
+/* 소리 칩 (음성 메모 → 노트로) */
+.np-prose .nb-voice {
+  display: inline-flex; align-items: center; gap: 10px; margin: .6em 0; padding: 4px 12px 4px 4px; border-radius: 999px;
+  background: color-mix(in srgb, var(--text-1) 6%, transparent); border: 1px solid var(--border); user-select: none;
+}
+.np-prose .nb-voice-play { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--on-accent); transition: transform 160ms var(--ease-out); }
+.np-prose .nb-voice-play:active { transform: scale(.94); transition-duration: 90ms; }
+.np-prose .nb-voice-bar { position: relative; width: 96px; height: 2px; border-radius: 1px; background: var(--border-strong); overflow: hidden; }
+.np-prose .nb-voice-bar i { position: absolute; inset: 0; background: var(--accent); transform-origin: left; transform: scaleX(0); }
+.np-prose .nb-voice-t { font: 400 12px var(--f-mono); color: var(--text-3); font-variant-numeric: tabular-nums; min-width: 34px; }
+.np-prose .nb-voice.is-missing { opacity: .45; }
+.np-prose .ProseMirror-selectednode.nb-voice { outline: 2px solid var(--accent); outline-offset: 2px; }
