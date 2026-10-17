@@ -82,7 +82,6 @@ export function MapScreen() {
             })}
           </div>
         </Block>
-        <p className="sr-only">별을 누르면 다가가요</p>
       </Hero>
     </>
   )

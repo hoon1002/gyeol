@@ -10,6 +10,7 @@
  * 루트에 늘 마운트되므로 검색 색인 만들기(유휴 시간)와 새 노트 birthStar도 여기서 건다.
  */
 import { Command } from 'cmdk'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useFieldPause, useSkyEvent } from '@/fx'
@@ -407,6 +408,11 @@ function Palette() {
   }, [query, parsed, subjects, notes, now, themePref, motionLevel, indexVer, sky])
 
   const selected = items.find((it) => it.id === value) ?? items[0]
+  // 노트 미리보기 = 본문 앞 2줄. 본문이 없으면 미리보기 칸을 숨긴다
+  const selNoteId = selected?.preview.kind === 'note' ? selected.preview.note.id : null
+  const pvText = useLiveQuery(async () => (selNoteId ? ((await db.noteBodies.get(selNoteId))?.text ?? '') : null), [selNoteId])
+  const pvLines = pvText ? pvText.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 2) : []
+  const showPv = !phone && !!selected && (!selNoteId || pvLines.length > 0)
 
   const chips: Array<{ k: string; v: string; c?: string }> = []
   if (query.trim()) {
@@ -492,7 +498,7 @@ function Palette() {
               ))}
             </div>
           )}
-          <div className="pal-body">
+          <div className={`pal-body${showPv ? '' : ' no-pv'}`}>
             <Command.List className="pal-list" label="결과">
               {items.length === 0 && (
                 <div className="pal-empty" role="status">
@@ -518,7 +524,7 @@ function Palette() {
                 </Command.Item>
               ))}
             </Command.List>
-            {!phone && selected && <PreviewPane key={selected.id} p={selected.preview} />}
+            {showPv && selected && <PreviewPane key={selected.id} p={selected.preview} lines={pvLines} />}
           </div>
           {!phone && (
             <div className="pal-foot" aria-hidden="true">
@@ -534,7 +540,7 @@ function Palette() {
   )
 }
 
-function PreviewPane({ p }: { p: Preview }) {
+function PreviewPane({ p, lines = [] }: { p: Preview; lines?: string[] }) {
   let body: ReactNode = null
   if (p.kind === 'go') {
     const s = SPACES.find((x) => x.path === p.path)!
@@ -631,7 +637,9 @@ function PreviewPane({ p }: { p: Preview }) {
         <p className="pv-k">미리보기 · 노트</p>
         <p className="pv-title">{p.note.title}</p>
         <p className="pv-tag"><i className="pal-dot" style={{ background: p.subject ? `var(--s-${p.subject.color})` : 'var(--text-3)' }} /> {p.subject?.name ?? '과목 없음'}</p>
-        <div className="pv-skel"><i /><i /><i /></div>
+        {lines.map((l, i) => (
+          <p key={i} className="pv-body">{l}</p>
+        ))}
       </>
     )
   } else if (p.kind === 'new') {
@@ -639,7 +647,6 @@ function PreviewPane({ p }: { p: Preview }) {
       <>
         <p className="pv-k">미리보기 · 새 노트</p>
         <p className="pv-title">새 노트{p.subject ? ` · ${p.subject.name}` : ''}</p>
-        <div className="pv-skel"><i /><i /></div>
         <p className="pv-tag">/ 블록 · [[ 링크</p>
       </>
     )

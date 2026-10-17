@@ -114,17 +114,6 @@
 @keyframes nl-in { from { text-decoration-color: transparent; } }
 :root[data-motion="off"] .np-prose a.nl { animation: none; }
 
-/* 백링크 (3-5) */
-.np-back-links { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); }
-.np-bl-meta { margin: 0 0 8px; font: 400 11px/1.4 var(--f-mono), var(--f-kr); color: var(--text-3); }
-.np-back-links ul { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.np-back-links li button { display: grid; gap: 2px; width: 100%; padding: 8px 0; text-align: left; }
-.np-bl-t { font-size: 15px; color: var(--text-1); }
-.np-back-links li button:hover .np-bl-t { text-decoration: underline 1px var(--text-3); text-underline-offset: 3px; }
-.np-bl-c { font-size: 13px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.np-bl-c u { color: var(--text-2); text-decoration: underline 1px color-mix(in srgb, var(--c) 60%, transparent); text-underline-offset: 3px; }
-.np-bl-all { margin-top: 6px; font: 400 12px var(--f-mono), var(--f-kr); color: var(--text-2); min-height: 32px; }
-
 /* `[[` 제안 · `/` 메뉴 (4-1) */
 .np-suggest {
   position: fixed; z-index: 60; width: 320px; max-height: min(296px, 60svh); overflow-y: auto; padding: 4px; box-sizing: border-box;

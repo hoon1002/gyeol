@@ -26,6 +26,8 @@ uniform float uDof;    // 흐림 세기
 uniform float uDpr;
 uniform vec2 uArm;    // 늙은 별 팔 밝기: 바탕 · 팔 (팔:팔 사이 ≈ 2–3 : 1)
 uniform float uRest;   // 쉼 크로스페이드 0→1: 희미한 별 +20%
+uniform vec4 uStage[8]; // 노트 무대 조명(지도): xyz 세계 중심 · w 반지름(u), w = 0이면 끝
+uniform float uStageK;  // 0..1 — 둘레 은하 별 ×(1 − 0.4·K) = ×0.6
 uniform highp sampler2D uArmTex; // 늙은 별 팔 밝기·얼룩 조회(패턴 좌표 φ × r) — 정점당 4팔 계산 대신 1회 조회
 layout(location = 0) in vec4 a0;
 layout(location = 1) in vec4 a1;
@@ -53,6 +55,15 @@ void main() {
   float d = max(length(p - uCam), 0.02);
   bool sky = kind > 2.5 && kind < 3.5;
   bool data = kind > 4.5;
+  if (uStageK > 0.001 && !sky && !data) {
+    float dim = 0.0;
+    for (int i = 0; i < 8; i++) {
+      vec4 st = uStage[i];
+      if (st.w <= 0.0) break;
+      dim = max(dim, 1.0 - smoothstep(st.w - 0.4, st.w + 0.4, length(p - st.xyz)));
+    }
+    gain *= 1.0 - 0.4 * uStageK * dim;
+  }
   float L = (sky ? a0.w * 24.0 : a0.w) * gain;
   float dd = sky ? 30.0 : data ? 25.0 : d; // 데이터 별: 화면 px 크기·밝기 고정(가까워져도 커지지 않는다, design-m1 0-2)
   // 원반 안에 들어갔을 때 가까운 별이 같은 크기 점으로 화면을 덮지 않게: 3u 안은 밀도를 줄이고(정점마다 고정 난수) 밝기를 부드럽게 묶는다
@@ -457,12 +468,14 @@ precision highp float;
 ${EV_COMMON}
 uniform float uDpr;
 uniform float uDotK; // 층 전체 배수
+uniform vec2 uHalo;  // 노트 별 고정 할로: (반지름 CSS px, 세기) — 세기 0이면 기본 할로
 layout(location = 0) in vec4 a0; // r, θ0, y, 밝기
 layout(location = 1) in vec4 a1; // rgb, 크기(CSS px, 핵 지름)
 out vec3 vCol;
 out float vLv;
 out float vS;
 out float vPx;
+out float vH;
 void main() {
   vec4 clip = uVP * vec4(posW(a0.xyz), 1.0);
   if (clip.w <= 0.0 || a0.w < 0.003) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vCol = vec3(0.0); vLv = 0.0; vS = 1.0; vPx = 1.0; return; }
@@ -471,6 +484,8 @@ void main() {
   vLv = a0.w * uDotK * mix(1.0, 0.3, zoneAt(uv));
   vS = a1.w * 0.5 * uDpr;           // 핵 σ (장치 px)
   vPx = ceil(vS * 3.0 * 4.0) + 2.0; // 할로(σ×3)까지
+  vH = uHalo.x * uDpr;              // 할로 반지름(장치 px)
+  if (uHalo.y > 0.0) vPx = max(vPx, ceil(vH * 2.0) + 2.0);
   gl_Position = clip;
   gl_PointSize = vPx;
 }
@@ -481,12 +496,16 @@ in vec3 vCol;
 in float vLv;
 in float vS;
 in float vPx;
+in float vH;
 uniform float uDay;
+uniform vec2 uHalo;
 out vec4 o;
 void main() {
   vec2 d = (gl_PointCoord - 0.5) * vPx;
   float r2 = dot(d, d);
-  float a = (exp(-r2 / (2.0 * vS * vS)) + 0.22 * exp(-r2 / (18.0 * vS * vS))) * vLv;
+  float hs = max(0.5, vH * 0.5); // 반지름 = 2σ
+  float halo = uHalo.y > 0.0 ? uHalo.y * exp(-r2 / (2.0 * hs * hs)) : 0.22 * exp(-r2 / (18.0 * vS * vS));
+  float a = (exp(-r2 / (2.0 * vS * vS)) + halo) * vLv;
   // 밤: 빛을 더한다 · 낮: 종이에 먹 (dst × (1 − a·(1 − 먹)))
   o = uDay > 0.5 ? vec4(clamp(a, 0.0, 1.0) * (1.0 - vCol), 1.0) : vec4(vCol * a, 1.0);
 }

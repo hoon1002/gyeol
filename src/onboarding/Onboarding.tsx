@@ -122,7 +122,7 @@ function Flow({ mode }: { mode: OnboardingMode }) {
   const slots = store.slots
   return (
     <div className="onb-layer">
-      <button type="button" className="onb-skip mono" onClick={() => void finish()}>건너뛰기</button>
+      {step < 3 && <button type="button" className="onb-skip mono" onClick={() => void finish()}>건너뛰기</button>}
       <div className={`onb${grid && step === 2 ? ' is-wide' : ''}`} data-zone-place="/" role="dialog" aria-label="처음 시작">
         {step === 0 && (
           <div className="onb-step" key="s0">

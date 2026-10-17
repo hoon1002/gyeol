@@ -20,6 +20,8 @@
 :root[data-theme="light"] .pal-dust { background: #454B58; box-shadow: none; }
 .pal-m2 .pal-k-save .pal-label { color: var(--text-1); }
 .pal-m2 .pal-k-save .pal-ic { color: var(--accent); }
+.pal-m2 .pal-body.no-pv { grid-template-columns: minmax(0, 1fr); }
+.pal-m2 .pv-body { margin: 6px 0 0; font-size: 13px; line-height: 1.6; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pv-memo { font-size: 16px; line-height: 1.6; font-family: var(--f-kr); font-weight: 400; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* ---------- 노트 화면 (design-m2 3-2 · 5 · 6-3) ---------- */
@@ -90,5 +92,18 @@
 .np-o-t { margin: 22px 0 0; font: 600 26px/1.3 var(--f-kr-d), var(--f-kr); letter-spacing: -.03em; color: var(--text-1); }
 .np-o-m { margin: 10px 0 24px; font: 400 12px var(--f-mono), var(--f-kr); color: var(--text-3); }
 .np-o-x { margin: 0 0 10px; font-size: 15px; line-height: 1.7; color: var(--text-2); }
-.np-o-x:last-child { font: 400 12px var(--f-mono), var(--f-kr); color: var(--text-3); }
+.np-o-x:last-of-type { font: 400 12px var(--f-mono), var(--f-kr); color: var(--text-3); }
+.np-other { overflow-y: auto; overscroll-behavior: contain; }
 .np-other .np-back { font: 400 13px/1 var(--f-mono), var(--f-kr); color: var(--text-2); padding: 8px 0; min-height: 36px; }
+
+/* ---------- 백링크 (3-5): 편집기와 필기·PDF 미리보기가 함께 쓴다 ---------- */
+.np-back-links { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); }
+.np-bl-meta { margin: 0 0 8px; font: 400 11px/1.4 var(--f-mono), var(--f-kr); color: var(--text-3); }
+.np-back-links ul { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.np-back-links li button { display: grid; gap: 2px; width: 100%; padding: 8px 0; text-align: left; }
+.np-bl-t { font-size: 15px; color: var(--text-1); }
+.np-back-links li button:hover .np-bl-t { text-decoration: underline 1px var(--text-3); text-underline-offset: 3px; }
+.np-bl-c { font-size: 13px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np-bl-c u { color: var(--text-2); text-decoration: underline 1px color-mix(in srgb, var(--c) 60%, transparent); text-underline-offset: 3px; }
+.np-bl-all { margin-top: 6px; font: 400 12px var(--f-mono), var(--f-kr); color: var(--text-2); min-height: 32px; }
+

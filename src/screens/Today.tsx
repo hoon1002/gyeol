@@ -16,7 +16,7 @@ import { useGo, useMediaQuery } from '@/shell/hooks'
 import { DustBox } from '@/capture/DustBox'
 import { useCapture } from '@/capture/store'
 import { spaceOf } from '@/shell/spaces'
-import { IconArrow, IconMic } from '@/shell/icons'
+import { IconArrow } from '@/shell/icons'
 import { useResolvedColors, useSitAction, type ColorKey } from './actions'
 import { Actions, Block, FocusLines, Hero, PrimaryButton, QuietButton } from './parts'
 
@@ -94,17 +94,11 @@ export function TodayScreen() {
             <ProgressLine value={sit.progress.value} label={sit.progress.label} tone="quiet" width="min(420px, 100%)" />
           </Block>
         )}
-        {(sit.primary || sit.quiet) && (
+        {(sit.primary || (sit.quiet && sit.quiet.label !== '녹음')) && (
           <Actions swapKey={sit.key}>
             {sit.primary && <PrimaryButton onClick={(el) => run(sit.primary!.action, el)}>{sit.primary.label}</PrimaryButton>}
-            {sit.quiet &&
-              (sit.quiet.label === '녹음' ? (
-                <button type="button" className="icon-btn ghost" aria-label="녹음하며 쓰기" onClick={(e) => run(sit.quiet!.action, e.currentTarget)}>
-                  <IconMic size={20} />
-                </button>
-              ) : (
-                <QuietButton onClick={(el) => run(sit.quiet!.action, el)}>{sit.quiet.label}</QuietButton>
-              ))}
+            {/* 음성 메모는 M2 범위 밖: '녹음' 보조 버튼은 숨긴다 */}
+            {sit.quiet && sit.quiet.label !== '녹음' && <QuietButton onClick={(el) => run(sit.quiet!.action, el)}>{sit.quiet.label}</QuietButton>}
           </Actions>
         )}
         {dust > 0 && (

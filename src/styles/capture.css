@@ -162,9 +162,9 @@
 .tt-chip i { width: 6px; height: 6px; border-radius: 50%; }
 .tt-chip button { margin-left: 2px; color: var(--text-3); font-size: 15px; line-height: 1; }
 .tt-colors { display: flex; gap: 8px; flex-wrap: wrap; }
-.tt-swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; }
+.tt-swatch { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border-strong); }
 .tt-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--text-1); }
-.tt-swatch:disabled { opacity: .25; }
+.tt-swatch:disabled { opacity: .6; box-shadow: inset 0 0 0 5px color-mix(in srgb, var(--bg-0) 70%, transparent); }
 .tt-weekly { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); }
 .tt-acts { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .tt-acts .btn-ghost.small { min-height: 40px; }
@@ -173,6 +173,7 @@
 .tt-sheet-catch { position: absolute; inset: 0; background: rgba(4, 6, 12, .3); }
 .tt-pop.is-sheet { position: absolute; left: 0; right: 0; bottom: 0; width: auto; border-radius: 20px 20px 0 0; padding: 16px 16px max(16px, env(safe-area-inset-bottom)); }
 .plan-more { position: relative; }
+.plan-menu[hidden] { display: none; }
 .plan-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 220px; padding: 4px; border-radius: 12px; background: color-mix(in srgb, var(--surface-2) 96%, transparent); border: 1px solid var(--border); box-shadow: var(--shadow-2); }
 .plan-menu-item { display: flex; width: 100%; min-height: 40px; align-items: center; padding: 0 12px; border-radius: 8px; font-size: 14px; color: var(--text-1); text-align: left; }
 .plan-menu-item:hover { background: color-mix(in srgb, var(--text-1) 8%, transparent); }
@@ -181,10 +182,15 @@
 .ics-layer { position: fixed; inset: 0; z-index: 88; }
 .ics-catch { position: absolute; inset: 0; background: rgba(4, 6, 12, .35); }
 .ics-sheet {
-  position: absolute; left: 50%; bottom: 0; translate: -50% 0; width: min(520px, 100vw); max-height: 72svh; box-sizing: border-box;
+  position: absolute; left: 0; right: 0; bottom: 0; max-height: 72svh; box-sizing: border-box;
   display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; gap: 6px; padding: 10px 20px max(16px, env(safe-area-inset-bottom));
-  border-radius: 20px 20px 0 0; background: var(--glass); border: 1px solid var(--border); box-shadow: var(--shadow-3);
-  -webkit-backdrop-filter: blur(20px) saturate(1.2); backdrop-filter: blur(20px) saturate(1.2);
+  border-radius: 20px 20px 0 0; background: color-mix(in srgb, var(--surface-2) 97%, transparent); border: 1px solid var(--border-strong); box-shadow: var(--shadow-3);
+  text-shadow: none;
+}
+/* 가로: 가운데 패널 440px */
+@media (min-width: 600px) and (min-aspect-ratio: 1/1) {
+  .ics-sheet { left: 50%; right: auto; top: 50%; bottom: auto; translate: -50% -50%; width: 440px; max-height: 80svh; border-radius: 16px; padding: 20px 24px; }
+  .ics-sheet .sheet-grip { display: none; }
 }
 .ics-h { margin: 0; font: 600 22px/1.3 var(--f-kr-d); }
 .ics-list { list-style: none; margin: 8px 0 0; padding: 0; overflow-y: auto; }

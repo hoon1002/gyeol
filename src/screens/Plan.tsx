@@ -64,11 +64,10 @@ export function PlanScreen() {
                 <button type="button" className="icon-btn ghost" aria-label="더 보기" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((v) => !v)}>
                   <IconMore size={20} />
                 </button>
-                {menu && (
-                  <div className="plan-menu" role="menu">
-                    <IcsButton store={store} className="plan-menu-item" label="캘린더 파일 가져오기" onDone={() => setMenu(false)} />
-                  </div>
-                )}
+                {/* 메뉴를 닫아도 미리보기 시트가 살아 있게 늘 마운트(hidden으로만 숨김) */}
+                <div className="plan-menu" role="menu" hidden={!menu}>
+                  <IcsButton store={store} className="plan-menu-item" label="캘린더 파일 가져오기" onPicked={() => setMenu(false)} />
+                </div>
               </div>
             </Actions>
           </div>

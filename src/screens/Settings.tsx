@@ -142,6 +142,34 @@ export function SettingsBody() {
     <>
       <div className="settings">
 
+        <section className="set-sec" aria-labelledby="sec-data">
+          <h2 id="sec-data">데이터</h2>
+          <BackupCard />
+          <Row title="이 기기" hint={storage.counts || undefined}>
+            <span className="set-val">{fmtBytes(storage.usage)}</span>
+          </Row>
+          <Row title="영구 저장">
+            <span className="set-val">{storage.persisted === null ? '알 수 없음' : storage.persisted ? '허용됨' : '요청함'}</span>
+          </Row>
+          {samples && (
+            <Row title="샘플">
+              <button type="button" className="btn-ghost small" onClick={() => void removeSamples()}>샘플 지우기</button>
+            </Row>
+          )}
+          <Row title="처음 화면">
+            <button
+              type="button"
+              className="btn-ghost small"
+              onClick={() => {
+                useUi.getState().closeSettings()
+                useCapture.getState().startOnboarding('real')
+              }}
+            >
+              다시 보기
+            </button>
+          </Row>
+        </section>
+
         <section className="set-sec" aria-labelledby="sec-look">
           <h2 id="sec-look">모양</h2>
           <Row title="하늘">
@@ -189,33 +217,6 @@ export function SettingsBody() {
           </Row>
         </section>
 
-        <section className="set-sec" aria-labelledby="sec-data">
-          <h2 id="sec-data">데이터</h2>
-          <BackupCard />
-          <Row title="이 기기" hint={storage.counts || undefined}>
-            <span className="set-val">{fmtBytes(storage.usage)}</span>
-          </Row>
-          <Row title="영구 저장">
-            <span className="set-val">{storage.persisted === null ? '알 수 없음' : storage.persisted ? '허용됨' : '요청함'}</span>
-          </Row>
-          {samples && (
-            <Row title="샘플">
-              <button type="button" className="btn-ghost small" onClick={() => void removeSamples()}>샘플 지우기</button>
-            </Row>
-          )}
-          <Row title="처음 화면">
-            <button
-              type="button"
-              className="btn-ghost small"
-              onClick={() => {
-                useUi.getState().closeSettings()
-                useCapture.getState().startOnboarding('real')
-              }}
-            >
-              다시 보기
-            </button>
-          </Row>
-        </section>
 
         {dev && (
           <section className="set-sec set-dev" aria-labelledby="sec-dev">

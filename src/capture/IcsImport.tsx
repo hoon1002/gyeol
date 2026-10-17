@@ -3,13 +3,14 @@
  * 매주 반복이 아닌 일정은 lib/ics가 이미 뺐다. 과목은 SUMMARY로 추정하거나 새로 만든다(timetable.importClasses).
  */
 import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { parseIcs, type IcsClass } from '@/lib/ics'
 import { weekdayShort } from '@/lib/time'
 import { importClasses, type TimetableStore } from './slots'
 import '@/styles/capture.css'
 
 /** 파일 고르기 버튼 + 미리보기 시트 */
-export function IcsButton({ store, className = 'btn-ghost small', label = '캘린더 파일', onDone }: { store: TimetableStore; className?: string; label?: string; onDone?: (n: number) => void }) {
+export function IcsButton({ store, className = 'btn-ghost small', label = '캘린더 파일', onDone, onPicked }: { store: TimetableStore; className?: string; label?: string; onDone?: (n: number) => void; onPicked?: () => void }) {
   const input = useRef<HTMLInputElement>(null)
   const [list, setList] = useState<IcsClass[] | null>(null)
   const [error, setError] = useState(false)
@@ -25,6 +26,7 @@ export function IcsButton({ store, className = 'btn-ghost small', label = '캘�
           const f = e.target.files?.[0]
           e.target.value = ''
           if (!f) return
+          onPicked?.()
           try {
             setList(parseIcs(await f.text()))
             setError(false)
@@ -34,7 +36,8 @@ export function IcsButton({ store, className = 'btn-ghost small', label = '캘�
         }}
       />
       {error && <p className="err-line">이 파일은 열 수 없어요.</p>}
-      {list && <IcsPreview list={list} store={store} onClose={(n) => { setList(null); if (n !== null) onDone?.(n) }} />}
+      {/* 시트는 body로 띄운다(변형된 조상 안에서 fixed가 갇히지 않게) */}
+      {list && createPortal(<IcsPreview list={list} store={store} onClose={(n) => { setList(null); if (n !== null) onDone?.(n) }} />, document.body)}
     </>
   )
 }

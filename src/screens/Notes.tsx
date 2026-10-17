@@ -17,6 +17,7 @@ import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import { useMediaQuery, isTypingTarget } from '@/shell/hooks'
 import { spaceOf } from '@/shell/spaces'
+import { Backlinks } from '@/editor/Backlinks'
 import { NotesMapToggle } from './Map'
 import { Actions, Block, EmptyState, FocusLines, Hero, PrimaryButton } from './parts'
 
@@ -319,6 +320,7 @@ function PaperSlot(props: {
           </p>
           {note.excerpt && <p className="np-o-x">{note.excerpt}</p>}
           <p className="np-o-x">필기 · PDF 편집은 M5</p>
+          <Backlinks noteId={note.id} title={note.title} onOpen={props.onOpenNote} />
         </div>
       </div>
     )

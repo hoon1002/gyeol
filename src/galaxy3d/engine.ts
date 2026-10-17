@@ -1158,6 +1158,29 @@ function draw(now: number, opt: DrawOpt = {}) {
   gl.uniform1f(S.u.uDpr!, sdpr)
   gl.uniform2f(S.u.uArm!, ARM[0], ARM[1])
   gl.uniform1f(S.u.uRest!, smooth01(restK))
+  {
+    // 노트 무대 조명(지도): 노트 성운 둘레 은하 별 ×0.6 — 장소가 바뀌면 0.5초 시정수로 서서히
+    const tS = performance.now()
+    const dS = Math.min(0.1, Math.max(0, (tS - (stageAt || tS)) / 1000))
+    stageAt = tS
+    stageK = reduced() ? stageT : stageK + (stageT - stageK) * Math.min(1, dS / 0.5)
+    if (stageK < 0.002 && stageT === 0) stageK = 0
+    gl.uniform1f(S.u.uStageK!, stageK)
+    if (stageK > 0) {
+      const c = Math.cos(OMEGA_P * simT)
+      const sn = Math.sin(OMEGA_P * simT)
+      stageW.fill(0)
+      for (let i = 0; i < stageN; i++) {
+        const x = stageSrc[i * 4]!
+        const z = stageSrc[i * 4 + 2]!
+        stageW[i * 4] = x * c - z * sn
+        stageW[i * 4 + 1] = stageSrc[i * 4 + 1]!
+        stageW[i * 4 + 2] = x * sn + z * c
+        stageW[i * 4 + 3] = stageSrc[i * 4 + 3]!
+      }
+      gl.uniform4fv(S.u['uStage[0]']!, stageW)
+    }
+  }
   gl.activeTexture(gl.TEXTURE2)
   gl.bindTexture(gl.TEXTURE_2D, armTex)
   gl.uniform1i(S.u.uArmTex!, 2)
@@ -1845,7 +1868,7 @@ function drawEvents(m: Float32Array, now: number) {
       gl.uniform4fv(L.u['uZone[0]']!, zoneUv)
       gl.uniform3f(L.u.uZoneP!, cssW, cssH, featherPx)
       gl.uniform2f(L.u.uView!, lw, lh)
-      gl.uniform1f(L.u.uWidth!, Math.max(0.5, 0.1875 * dpr)) // 0.75px (반 해상도)
+      gl.uniform1f(L.u.uWidth!, nlinkN <= 100 ? Math.max(0.5, 0.5 * dpr) : Math.max(0.5, 0.1875 * dpr)) // 링크 100개 이하 1px, 그 위 0.75px (반 해상도)
       gl.uniform1f(L.u.uDay!, day)
       gl.uniform1f(L.u.uSegK!, noteViewK.lines)
       gl.uniform1f(L.u.uCart!, 1)
@@ -1863,6 +1886,7 @@ function drawEvents(m: Float32Array, now: number) {
       gl.uniform1f(D.u.uDay!, day)
       gl.uniform1f(D.u.uDotK!, noteViewK.stars)
       gl.uniform1f(D.u.uCart!, 1)
+      gl.uniform2f(D.u.uHalo!, 4, 0.15) // 노트 별: 고정 할로 4px · 15% (반짝임 없음, review-m2)
       if (place.id === 'notes' && spineSrc) {
         // 노트 장소: 같은 별을 책등 위 점으로 (원반 긴 축, 높이 = id 해시) — 시선이 바뀔 때만 다시 계산
         const B = lastBasis
@@ -1906,6 +1930,7 @@ function drawEvents(m: Float32Array, now: number) {
   if (nd) {
     const D = P.dot
     gl.useProgram(D.p)
+    gl.uniform2f(D.u.uHalo!, 0, 0)
     gl.uniformMatrix4fv(D.u.uVP!, false, m)
     gl.uniform1f(D.u.uTime!, simT)
     gl.uniform4fv(D.u['uZone[0]']!, zoneUv)
@@ -2068,6 +2093,13 @@ let nlinkCap = 0
 /** 노트 층 배수: 별(지도 1 · 노트 장소 책등 = 따로) · 빛줄기(지도만) · 검색 중 나머지 ×0.5 */
 let noteView = { stars: 0, lines: 0 }
 let noteViewK = { stars: 0, lines: 0 }
+// 노트 무대 조명: (x, y, z 패턴 직교 좌표, 반지름) × 최대 8
+const stageSrc = new Float32Array(32)
+const stageW = new Float32Array(32)
+let stageN = 0
+let stageT = 0
+let stageK = 0
+let stageAt = 0
 let spineArr: Float32Array | null = null
 let spineSrc: Float32Array | null = null
 let spineKey = ''
@@ -2268,6 +2300,16 @@ return {
     if (!stopped) kick()
   },
   /** 노트 층 보이기 (지도: 별·선 · 노트: 별만(책등) · 나머지 0). 검색 중엔 lines ×0.5 */
+  /** 노트 무대 조명(지도): 과목 노트 성운마다 (x, y, z 패턴 직교, 반지름 u). null이면 서서히 끈다 */
+  setStage: (list: Float32Array | null) => {
+    if (list && list.length >= 4) {
+      stageN = Math.min(8, Math.floor(list.length / 4))
+      stageSrc.fill(0)
+      stageSrc.set(list.subarray(0, stageN * 4))
+      stageT = 1
+    } else stageT = 0
+    touch()
+  },
   setNoteView: (stars: number, lines: number) => {
     noteView = { stars, lines }
     if (reduced()) noteViewK = { stars, lines }
@@ -2445,6 +2487,9 @@ export class Galaxy3D {
   }
   setTint(c: [number, number, number] | null): void {
     this.api?.setTint(c)
+  }
+  setStage(list: Float32Array | null): void {
+    this.api?.setStage(list)
   }
   setSpine(list: Array<{ id: string; s: number; level: number; color: [number, number, number] }>): void {
     this.api?.setSpine(list)
