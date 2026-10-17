@@ -86,7 +86,7 @@ const api = {
   },
   async nav(url, wait = 1800) {
     const loaded = new Promise((res) => { const off = on('Page.loadEventFired', () => (off(), res())) })
-    await send('Page.navigate', { url: url.startsWith('http') ? url : 'http://localhost:5173' + url })
+    await send('Page.navigate', { url: url.startsWith('http') ? url : (process.env.QA_BASE || 'http://localhost:5173') + url })
     await Promise.race([loaded, sleep(15000)])
     await send('Page.bringToFront').catch(() => {})
     await sleep(wait)
