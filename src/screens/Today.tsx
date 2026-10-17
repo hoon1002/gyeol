@@ -1,5 +1,6 @@
 /**
- * 오늘 v3: 명사구 1 + 메타 1 + 동작 1(+보조) + 지평선 줄. 아래 장은 '최근' 하나만.
+ * 오늘 v4: 글 구역(design-m1 2-1) 안에 명사구 1 + 메타 1 + 동작 1(+보조) — 3줄. 아래 장은 '최근' 하나만.
+ * 폰: 맨 아래 한 줄 '계획 · 시험 D-5 ›'을 누르면 계획으로(폰 독에는 계획이 없다).
  * 하늘이 말한다(D5): 오늘 집중 = 오늘의 별(별자리), 시험 임박 = 붉은 별, 남은 수업 = 진행선, 복습량 = 복습 별.
  */
 import { useMemo, useRef } from 'react'
@@ -8,13 +9,16 @@ import { ActiveMood as FieldMood } from '@/app/keepAlive'
 import { useNow, useToday } from '@/db/hooks'
 import type { Subject } from '@/db/schema'
 import { evaluateSituation } from '@/lib/situation'
-import { fmtAgo, fmtDur } from '@/lib/time'
+import { ddayOf, fmtAgo, fmtDday, fmtDur } from '@/lib/time'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import { useGo } from '@/shell/hooks'
+import { spaceOf } from '@/shell/spaces'
 import { IconArrow, IconMic } from '@/shell/icons'
 import { useResolvedColors, useSitAction, type ColorKey } from './actions'
-import { Actions, Block, Chapter, FocusLines, Hero, Periphery, PrimaryButton, QuietButton } from './parts'
+import { Actions, Block, Chapter, FocusLines, Hero, PrimaryButton, QuietButton } from './parts'
+
+const SKY = spaceOf('/')
 
 export function TodayScreen() {
   const { now, forceEmpty } = useNow()
@@ -42,7 +46,7 @@ export function TodayScreen() {
   if (!data || !sit) {
     return (
       <>
-        <FieldMood preset="today" knotRef={knotRef} />
+        <FieldMood preset={SKY.mood} drag={SKY.drag} knotRef={knotRef} />
         <Hero knotRef={knotRef} label="오늘">
           <div className="hero-placeholder" aria-hidden="true" />
         </Hero>
@@ -51,11 +55,17 @@ export function TodayScreen() {
   }
 
   const fm = data.model.focusToday
+  // 계획 줄: 가장 가까운 시험, 없으면 가장 가까운 마감
+  const nowMs = data.model.now.getTime()
+  const upcoming = data.model.tasks.filter((t) => !t.done && t.dueAt >= nowMs).sort((x, y) => x.dueAt - y.dueAt)
+  const nextExam = upcoming.find((t) => t.kind === 'exam')
+  const nextTask = nextExam ?? upcoming[0]
+  const planNext = nextTask ? `${nextExam ? '시험' : '마감'} ${fmtDday(ddayOf(data.model.now, nextTask.dueAt))}` : null
   const skyLabel = fm.sets ? `오늘의 별 ${fm.sets}개, 집중 ${fmtDur(fm.minutes)}` : '오늘의 별 없음'
 
   return (
     <>
-      <FieldMood preset="today" knotRef={knotRef} override={{ speed: sit.mood.speed, knotStrength: sit.mood.knotStrength }} data={skyData} stars={skyStars} />
+      <FieldMood preset={SKY.mood} drag={SKY.drag} knotRef={knotRef} override={{ speed: sit.mood.speed, knotStrength: sit.mood.knotStrength }} data={skyData} stars={skyStars} />
 
       <Hero knotRef={knotRef} label="지금">
         {/* 하늘의 오늘의 별은 StarPress가 누르기를 받는다(다가가 한 줄로 보기) */}
@@ -84,8 +94,22 @@ export function TodayScreen() {
               ))}
           </Actions>
         )}
-        <Periphery items={sit.peri} swapKey={sit.key} />
       </Hero>
+
+      {/* 폰: 맨 아래 계획 줄 (글 구역 둘째 사각형) */}
+      <a
+        className="plan-line zone-b phone-only-flex"
+        href="/plan"
+        onClick={(e) => {
+          if (e.metaKey || e.ctrlKey) return
+          e.preventDefault()
+          void go('/plan', e.currentTarget)
+        }}
+      >
+        <span>계획</span>
+        {planNext && <span className="plan-line-v">· {planNext}</span>}
+        <IconArrow size={14} />
+      </a>
 
       {sit.key !== 'empty' && data.recent.length > 0 && (
         <Chapter eyebrow="최근" title={[]} className="chapter-last chapter-recent">

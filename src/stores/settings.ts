@@ -19,8 +19,6 @@ export interface SettingsState {
   travel: TravelPref
   /** 은하 회전: 켬 · 느리게 · 끔 (기본 켬). OS 동작 줄이기면 끔으로 고정 */
   rotation: RotationPref
-  /** 유성: 켬 · 끔 (끄면 자동 유성 없음, 신호 유성은 띠가 잠깐 밝아지는 것으로 대체) */
-  meteors: boolean
   /** 과목 렌즈: null = 전체 */
   lens: string | null
   /** 개발용 */
@@ -31,7 +29,6 @@ export interface SettingsState {
   setMotion: (m: MotionLevel) => void
   setTravel: (t: TravelPref) => void
   setRotation: (r: RotationPref) => void
-  setMeteors: (v: boolean) => void
   setLens: (id: string | null) => void
   setClock: (c: ClockPreset) => void
   setTier: (t: 'auto' | Tier) => void
@@ -71,7 +68,6 @@ export const useSettings = create<SettingsState>()(
       motion: 'rich',
       travel: 'fly',
       rotation: 'on',
-      meteors: true,
       lens: null,
       clock: 'live',
       tier: 'auto',
@@ -80,7 +76,6 @@ export const useSettings = create<SettingsState>()(
       setMotion: (motion) => set({ motion }),
       setTravel: (travel) => set({ travel }),
       setRotation: (rotation) => set({ rotation }),
-      setMeteors: (meteors) => set({ meteors }),
       setLens: (lens) => set({ lens }),
       setClock: (clock) => set({ clock }),
       setTier: (tier) => set({ tier }),
@@ -90,7 +85,7 @@ export const useSettings = create<SettingsState>()(
       name: SETTINGS_KEY,
       version: 1,
       storage: createJSONStorage(() => safeStorage),
-      partialize: (s) => ({ theme: s.theme, motion: s.motion, travel: s.travel, rotation: s.rotation, meteors: s.meteors, lens: s.lens, clock: s.clock, tier: s.tier, fps: s.fps }),
+      partialize: (s) => ({ theme: s.theme, motion: s.motion, travel: s.travel, rotation: s.rotation, lens: s.lens, clock: s.clock, tier: s.tier, fps: s.fps }),
     },
   ),
 )

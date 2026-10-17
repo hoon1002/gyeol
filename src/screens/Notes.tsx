@@ -1,7 +1,7 @@
 /**
- * 노트 첫 화면 (design-v2 4-2): "이어서 쓰기 — 엔트로피와 열역학 제2법칙" + 큰 종이 미리보기 1장.
- * 주변부: 과목 책등 6개 · 최근 3 · 새 노트. 필드: 거의 정지, 세로 결(괘선 느낌), 옹이 없음.
- * 실제 편집기·필기는 M1.
+ * 노트 v4 (design-m1 2-1): 노트 / 38개 · 물리 12 / [새 노트] + 노트 목록, 고른 노트의 종이 미리보기 1장.
+ * 하늘은 오른쪽에 선 세로 띠(책등) — 글은 왼쪽·가운데에만. 과목 거르기는 상단 렌즈.
+ * 폰: 위에 '노트 | 지도' 토글. 실제 편집기·필기는 M2.
  */
 import { ActiveMood as FieldMood } from '@/app/keepAlive'
 import { useNotes, useSubjects } from '@/db/hooks'
@@ -9,11 +9,13 @@ import type { Note, Subject } from '@/db/schema'
 import { fmtAgo } from '@/lib/time'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
-import { useGo } from '@/shell/hooks'
-import { IconGraph, IconNote } from '@/shell/icons'
-import { Actions, Block, EmptyState, FocusLines, Hero, PrimaryButton, QuietButton, Reveal } from './parts'
+import { spaceOf } from '@/shell/spaces'
+import { NotesMapToggle } from './Map'
+import { Actions, Block, EmptyState, FocusLines, Hero, PrimaryButton, Reveal } from './parts'
 
 const KIND_NAME = { ink: '필기', doc: '문서', pdf: 'PDF', deck: '카드 덱' } as const
+
+const SKY = spaceOf('/notes')
 
 export function NotesScreen() {
   const notes = useNotes()
@@ -22,7 +24,6 @@ export function NotesScreen() {
   const setLens = useSettings((s) => s.setLens)
   const focusId = useUi((s) => s.noteFocusId)
   const showToast = useUi((s) => s.showToast)
-  const go = useGo()
 
   // 다른 화면으로 나가면 '이 노트로' 초점은 풀린다
   const clearFocus = () => useUi.getState().setNoteFocusId(null)
@@ -31,33 +32,28 @@ export function NotesScreen() {
   const focus: Note | undefined = (focusId ? (notes ?? []).find((n) => n.id === focusId) : undefined) ?? list[0]
   const subj = (id: string | null | undefined): Subject | undefined => subjects.find((s) => s.id === id)
   const fs = subj(focus?.subjectId)
-  const recent = list.filter((n) => n.id !== focus?.id).slice(0, 3)
   const lensSubject = subj(lens)
 
-  const graphToggle = (
-    <a
-      className="phone-only seg-link"
-      href="/graph"
-      onClick={(e) => {
-        e.preventDefault()
-        void go('/graph', e.currentTarget)
-      }}
-    >
-      <span className="seg is-on"><IconNote size={16} /> 노트</span>
-      <span className="seg"><IconGraph size={16} /> 그래프</span>
-    </a>
-  )
+  // 머리 메타: 38개 · 물리 12 (렌즈가 켜져 있으면 그 과목 수만)
+  const topSubject = (() => {
+    const m = new Map<string, number>()
+    list.forEach((n) => n.subjectId && m.set(n.subjectId, (m.get(n.subjectId) ?? 0) + 1))
+    const best = [...m.entries()].sort((a, b) => b[1] - a[1])[0]
+    return best ? { s: subj(best[0]), n: best[1] } : null
+  })()
+  const meta = lensSubject ? `${lensSubject.name} ${list.length}` : `${list.length}개${topSubject?.s ? ` · ${topSubject.s.short} ${topSubject.n}` : ''}`
+  const shown = list.slice(0, 8)
 
   if (notes && !focus) {
     return (
       <>
-        <FieldMood preset="notes" onLeave={clearFocus} />
-        <Hero label="노트" variant="low">
-          {graphToggle}
+        <FieldMood preset={SKY.mood} drag={SKY.drag} onLeave={clearFocus} />
+        <Hero label="노트" className="notes-hero">
+          <NotesMapToggle on="notes" />
           <EmptyState
             lines={lensSubject ? [lensSubject.name, '노트 없음'] : ['노트', '비어 있음']}
             action="새 노트"
-            onAction={() => showToast('M1에서 열림')}
+            onAction={() => showToast('M2에서 열림')}
           />
           {lensSubject && (
             <div className="peri">
@@ -73,70 +69,27 @@ export function NotesScreen() {
 
   return (
     <>
-      <FieldMood preset="notes" onLeave={clearFocus} />
+      <FieldMood preset={SKY.mood} drag={SKY.drag} onLeave={clearFocus} />
+      {/* 글 구역: 가로 = 목록 열(왼쪽) + 종이(가운데), 세로·폰 = 한 단. 오른쪽 세로 띠(책등)는 비운다 */}
       <Hero label="노트" className="notes-hero">
-        {graphToggle}
+        <NotesMapToggle on="notes" />
         <Block>
-          <span className="sr-only">이어 쓰기</span>
+          <FocusLines lines={['노트']} />
         </Block>
         <Block>
-          <FocusLines lines={[focus?.title ?? ' ']} swapKey={focus?.id} className="focus-lines-title" />
+          <p className="meta enter enter-1">{meta}</p>
         </Block>
-        <Block>
-          <p className="focus-meta enter enter-1" key={focus?.id}>
-            {fs && <i style={{ background: `var(--s-${fs.color})` }} aria-hidden="true" />}
-            {fs?.name ?? '과목 없음'} · {focus ? fmtAgo(Date.now(), focus.updatedAt) : ''}
-          </p>
-        </Block>
-        <Actions swapKey={focus?.id}>
-          <PrimaryButton onClick={() => showToast('M1에서 열림', fs ? `var(--s-${fs.color})` : undefined)}>이어 쓰기</PrimaryButton>
-          <QuietButton onClick={() => showToast('M1에서 열림')}>새 노트</QuietButton>
+        <Actions>
+          <PrimaryButton onClick={() => showToast('M2에서 열림')}>새 노트</PrimaryButton>
         </Actions>
-
-        {/* 주변부 1: 과목 책등 */}
-        <Block className="spines-wrap enter enter-2">
-          <ul className="spines" aria-label="과목 책등">
-            {subjects.map((s) => {
-              const count = (notes ?? []).filter((n) => n.subjectId === s.id).length
-              const on = lens === s.id
-              return (
-                <li key={s.id}>
-                  <button
-                    type="button"
-                    className={`spine${on ? ' is-on' : ''}`}
-                    style={{ ['--c' as string]: `var(--s-${s.color})` }}
-                    aria-pressed={on}
-                    aria-label={`${s.name} 노트 ${count}개${on ? ' · 렌즈 켜짐' : ''}`}
-                    onClick={() => setLens(on ? null : s.id)}
-                  >
-                    <span className="spine-name" aria-hidden="true">{s.short}</span>
-                    <span className="spine-n mono" aria-hidden="true">{count}</span>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        </Block>
-
-      </Hero>
-
-      {/* 초점의 짝: 큰 종이 미리보기 1장 (화면의 유일한 '면') */}
-      {focus && (
-        <div className="paper-stage" aria-hidden="true">
-          <Reveal className="paper-reveal">
-            <Paper note={focus} color={fs ? `var(--s-${fs.color})` : 'var(--text-3)'} />
-          </Reveal>
-        </div>
-      )}
-        {/* 주변부 2: 최근 3 */}
-      {recent.length > 0 && (
-        <section className="chapter chapter-recent notes-recent" aria-label="최근">
-          <ul className="recent" aria-label="최근 노트">
-            {recent.map((n) => {
+        <Block className="enter enter-2">
+          <ul className="recent notes-list" aria-label="노트 목록">
+            {shown.map((n) => {
               const s = subj(n.subjectId)
+              const on = n.id === focus?.id
               return (
                 <li key={n.id}>
-                  <button type="button" onClick={() => useUi.getState().setNoteFocusId(n.id)}>
+                  <button type="button" aria-current={on || undefined} className={on ? 'is-on' : undefined} onClick={() => useUi.getState().setNoteFocusId(n.id)}>
                     <span>{n.title}</span>
                     <small>
                       {s && <i style={{ background: `var(--s-${s.color})` }} aria-hidden="true" />}
@@ -147,7 +100,16 @@ export function NotesScreen() {
               )
             })}
           </ul>
-        </section>
+        </Block>
+      </Hero>
+
+      {/* 고른 노트의 종이 미리보기 1장 (가로 = 글 구역 둘째 사각형) */}
+      {focus && (
+        <div className="paper-stage zone-b" aria-label={`${focus.title} · ${fs?.name ?? '과목 없음'}`}>
+          <Reveal className="paper-reveal">
+            <Paper note={focus} color={fs ? `var(--s-${fs.color})` : 'var(--text-3)'} />
+          </Reveal>
+        </div>
       )}
     </>
   )

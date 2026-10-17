@@ -27,7 +27,7 @@ export function useSitAction() {
         case 'note':
           ui.setNoteFocusId(a.noteId)
           void go('/notes', el)
-          if (a.record) ui.showToast('M1에서 열림')
+          if (a.record) ui.showToast('M2에서 열림')
           break
         case 'scroll':
           document.getElementById(a.id)?.scrollIntoView({ behavior: level === 'off' ? 'auto' : 'smooth', block: 'start' })

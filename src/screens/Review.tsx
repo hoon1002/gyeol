@@ -1,5 +1,5 @@
 /**
- * 복습 v3: 복습 / 13장 · 8분 / 시작 + 지평선 줄 "● 6 ● 4 ● 3".
+ * 복습 v4: 글 구역(design-m1 2-1) 안에 복습 / 13장 · 8분 / 시작 — 3줄. 카드도 같은 구역.
  * 하늘의 사건: 오늘 카드 = 복습 별(희미함) · 평가 = 그 별이 다시 켜짐(relight, 쉬움이면 반짝) ·
  * 복습 끝 = 띠가 부풀고(swellBand) 유성 하나(meteor). 도장 없음.
  * M0 덤 그대로: 간단한 진행(뒤집기 → 4단 평가 → 고정 간격). FSRS는 M2.
@@ -12,11 +12,11 @@ import { ActiveMood as FieldMood, useActive } from '@/app/keepAlive'
 import { useNow, useReview, useSubjects } from '@/db/hooks'
 import { db, type Card } from '@/db/schema'
 import { DAY, MIN, studyDayRange } from '@/lib/time'
-import type { Peri } from '@/lib/situation'
 import { useUi } from '@/stores/ui'
 import { useEffectiveMotion, useMediaQuery } from '@/shell/hooks'
 import { IconClose } from '@/shell/icons'
-import { Actions, Block, FocusLines, Hero, Periphery, PrimaryButton, GENTLE } from './parts'
+import { spaceOf } from '@/shell/spaces'
+import { Actions, Block, FocusLines, Hero, PrimaryButton, GENTLE } from './parts'
 
 const RATINGS = [
   { k: 1, label: '다시', days: 1, level: 0.35, color: 'var(--danger)' },
@@ -26,6 +26,8 @@ const RATINGS = [
 ] as const
 
 const DIM = 0.3
+
+const SKY = spaceOf('/review')
 
 export function ReviewScreen() {
   const { now } = useNow()
@@ -73,7 +75,7 @@ export function ReviewScreen() {
   if (session) {
     return (
       <>
-        <FieldMood preset="review" knotRef={knotRef} data={skyData} stars={skyStars} />
+        <FieldMood preset={SKY.mood} drag={SKY.drag} knotRef={knotRef} data={skyData} stars={skyStars} />
         <ReviewSession
           cards={session}
           knotRef={knotRef}
@@ -92,25 +94,10 @@ export function ReviewScreen() {
 
   const due = data?.due ?? 0
   const minutes = Math.max(1, Math.round(due * 0.6))
-  const peri: Peri[] = data?.bySubject.length
-    ? [
-        {
-          id: 'subjects',
-          label: data.bySubject.map((b) => b.count).join(' · '),
-          value: '',
-          color: color(data.bySubject[0]?.subjectId ?? ''),
-          shelf: [
-            ...data.bySubject.map((b) => ({ k: `${b.count}`, v: name(b.subjectId), color: color(b.subjectId) })),
-            { k: '기억률', v: `${Math.round(data.retention * 100)}%` },
-          ],
-        },
-      ]
-    : []
-
   return (
     <>
-      <FieldMood preset="review" knotRef={knotRef} data={skyData} stars={skyStars} />
-      <Hero knotRef={knotRef} label="복습" variant="split" className="review-hero">
+      <FieldMood preset={SKY.mood} drag={SKY.drag} knotRef={knotRef} data={skyData} stars={skyStars} />
+      <Hero knotRef={knotRef} label="복습" className="review-hero">
         {data && due === 0 ? (
           <>
             <Block>
@@ -133,7 +120,6 @@ export function ReviewScreen() {
                 시작
               </PrimaryButton>
             </Actions>
-            <Periphery items={peri} />
           </>
         )}
       </Hero>
@@ -198,9 +184,9 @@ function ReviewSession({
 
   if (!card) return null
   return (
-    <section className="hero hero-split review-session" aria-label="복습 진행">
+    <section className="hero hero-zone review-session" aria-label="복습 진행">
       <span className="knot-anchor" ref={knotRef} aria-hidden="true" />
-      <div className="hero-col">
+      <div className="hero-col zone-a">
         <AnimatePresence mode="wait">
           <motion.div
             key={card.id + (flipped ? 'b' : 'f')}

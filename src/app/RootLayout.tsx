@@ -11,24 +11,25 @@ import { ensureSeed } from '@/db/seed'
 import { applyTheme, resolveTheme, type Eff } from '@/lib/theme'
 import { CommandPalette } from '@/shell/CommandPalette'
 import { Dock, Toaster, TopBar } from '@/shell/Chrome'
-import { useEffectiveMotion, useMediaQuery, useScrollHide } from '@/shell/hooks'
+import { SettingsSheet } from '@/shell/SettingsSheet'
+import { useEffectiveMotion, useEffectiveRotation, useMediaQuery, useScrollHide } from '@/shell/hooks'
 import { useSettings } from '@/stores/settings'
 import { StarPress } from '@/shell/StarPress'
 import { SPACES } from '@/shell/spaces'
 import { ActiveContext } from './keepAlive'
+import { installZones } from './zones'
 import { Probe } from '@/perf/probe'
 import { TodayScreen } from '@/screens/Today'
 import { NotesScreen } from '@/screens/Notes'
-import { GraphScreen } from '@/screens/Graph'
+import { MapScreen } from '@/screens/Map'
 import { ReviewScreen } from '@/screens/Review'
-import { PlannerScreen } from '@/screens/Planner'
+import { PlanScreen } from '@/screens/Plan'
 import { FocusScreen } from '@/screens/Focus'
-import { SettingsScreen } from '@/screens/Settings'
 import { useUi } from '@/stores/ui'
 
 /**
  * 1분마다(분 경계에 맞춰) + 앱이 다시 보일 때 시계를 갱신 → 상황 엔진 재평가.
- * 전력: 탭이 숨으면 타이머를 멈춘다(숨은 동안 7개 공간 재렌더·DB 재조회 0, 깨우기 0). 다시 보이면 바로 갱신하고 분 경계에 다시 맞춘다.
+ * 전력: 탭이 숨으면 타이머를 멈춘다(숨은 동안 장소 6 재렌더·DB 재조회 0, 깨우기 0). 다시 보이면 바로 갱신하고 분 경계에 다시 맞춘다.
  */
 function useClockTicker() {
   const bump = useUi((s) => s.bumpTick)
@@ -85,12 +86,13 @@ function SkyLink() {
 const SCREENS: Record<string, ComponentType> = {
   '/': TodayScreen,
   '/notes': NotesScreen,
-  '/graph': GraphScreen,
+  '/map': MapScreen,
   '/review': ReviewScreen,
-  '/planner': PlannerScreen,
+  '/plan': PlanScreen,
   '/focus': FocusScreen,
-  '/settings': SettingsScreen,
 }
+
+installZones()
 
 /** 한 공간. 비활성이면 보이지만 않게(visibility, 배치는 유지 → 다시 보일 때 레이아웃 계산 없음) + inert. memo라 활성 여부가 바뀔 때만 다시 그린다 */
 const Space = memo(function Space({ path, active }: { path: string; active: boolean }) {
@@ -149,7 +151,7 @@ export function RootLayout() {
   const fps = useSettings((s) => s.fps)
   const travelPref = useSettings((s) => s.travel)
   const travel = level === 'off' ? 'off' : travelPref
-  const meteors = useSettings((s) => s.meteors)
+  const rotation = useEffectiveRotation()
   useClockTicker()
   useScrollHide()
 
@@ -173,7 +175,7 @@ export function RootLayout() {
   }, [path])
 
   return (
-    <FieldProvider level={level} theme={theme} tier={tier} debug={fps} travel={travel} meteors={meteors}>
+    <FieldProvider level={level} theme={theme} tier={tier} debug={fps} travel={travel} rotation={rotation}>
       <SkyLink />
       <MotionConfig reducedMotion={level === 'off' ? 'always' : 'never'}>
         <div className="app" data-space={path === '/' ? 'today' : path.slice(1)}>
@@ -187,6 +189,7 @@ export function RootLayout() {
           </RippleSurface>
           <Dock />
           <StarPress />
+          <SettingsSheet />
           <CommandPalette />
           <Toaster />
         </div>

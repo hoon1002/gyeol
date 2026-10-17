@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import { db, type FocusSession, type Note, type Subject } from './schema'
 import { useSettings, type ClockPreset } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
-import { addDays, atTime, dayKey, DAY, MIN, startOfWeek, studyDayRange, studyDayStart } from '@/lib/time'
+import { atTime, addDays, DAY, MIN, studyDayRange, studyDayStart } from '@/lib/time'
 import type { DayModel } from '@/lib/situation'
 
 /* ---------- 시계 ---------- */
@@ -63,21 +63,8 @@ function sumMin(list: FocusSession[]): number {
 
 /* ---------- 오늘 ---------- */
 
-export interface WeekDay {
-  day: Date
-  minutes: number
-  topSubjectId: string | null
-  isToday: boolean
-  future: boolean
-}
-
 export interface TodayData {
   model: DayModel
-  week: WeekDay[]
-  weekMinutes: number
-  lastWeekSameSpan: number
-  segments: Array<{ start: Date; end: Date; kind: 'class' | 'focus'; subjectId: string | null }>
-  classesToday: number
   recent: Note[]
 }
 
@@ -93,7 +80,7 @@ export function useToday(now: Date, forceEmpty: boolean): TodayData | undefined 
       db.notes.orderBy('updatedAt').reverse().toArray(),
       db.cards.where('due').below(b).toArray(),
       db.cards.where('due').between(b, b + DAY).count(),
-      db.focusSessions.where('startedAt').between(a - 7 * DAY * 2, b).toArray(),
+      db.focusSessions.where('startedAt').between(a, b).toArray(),
       db.meta.bulkGet(['profile', 'term', 'goalMin']),
     ])
     const [profile, term, goal] = metaRows
@@ -120,33 +107,6 @@ export function useToday(now: Date, forceEmpty: boolean): TodayData | undefined 
     const done = sessions.filter((s) => s.completed && s.endedAt <= t)
     const todaySessions = done.filter((s) => s.startedAt >= a && s.startedAt < b).sort((x, y) => x.startedAt - y.startedAt)
 
-    // 이번 주 (월~일) 날마다 집중 분
-    const ws = startOfWeek(sd)
-    const statKeys = Array.from({ length: 14 }, (_, i) => dayKey(addDays(ws, i - 7)))
-    const stats = await db.dailyStats.bulkGet(statKeys)
-    const dayMinutes = (i: number) => {
-      const day = addDays(ws, i)
-      const da = day.getTime() + 4 * 60 * MIN
-      const ss = done.filter((s) => s.startedAt >= da && s.startedAt < da + DAY)
-      const st = stats[i + 7]
-      const top = (() => {
-        const m = new Map<string, number>()
-        ss.forEach((s) => s.subjectId && m.set(s.subjectId, (m.get(s.subjectId) ?? 0) + (s.endedAt - s.startedAt)))
-        const best = [...m.entries()].sort((x, y) => y[1] - x[1])[0]
-        return best?.[0] ?? st?.topSubjectId ?? null
-      })()
-      return { minutes: (st?.focusMin ?? 0) + sumMin(ss), top }
-    }
-    const todayIdx = Math.round((sd.getTime() - ws.getTime()) / DAY)
-    const week: WeekDay[] = Array.from({ length: 7 }, (_, i) => {
-      const d = dayMinutes(i)
-      return { day: addDays(ws, i), minutes: i > todayIdx ? 0 : d.minutes, topSubjectId: d.top, isToday: i === todayIdx, future: i > todayIdx }
-    })
-    const weekMinutes = week.reduce((s, d) => s + d.minutes, 0)
-    let lastWeekSameSpan = 0
-    for (let i = -7; i <= todayIdx - 7; i++) lastWeekSameSpan += dayMinutes(i).minutes
-    const focusYesterday = todayIdx > 0 ? week[todayIdx - 1]!.minutes : dayMinutes(-1).minutes
-
     const model: DayModel = {
       now,
       name,
@@ -158,18 +118,12 @@ export function useToday(now: Date, forceEmpty: boolean): TodayData | undefined 
       reviewDue: { total: dueCards.length, bySubject },
       reviewTomorrow: tomorrowCount,
       focusToday: { sets: todaySessions.length, minutes: sumMin(todaySessions), sessions: todaySessions },
-      focusYesterday,
       goalMin,
       notes,
       forceEmpty,
     }
 
-    const daySlots = (forceEmpty ? [] : slots).filter((s) => s.weekday === now.getDay())
-    const segments: TodayData['segments'] = [
-      ...daySlots.map((s) => ({ start: atTime(now, s.start), end: atTime(now, s.end), kind: 'class' as const, subjectId: s.subjectId })),
-      ...todaySessions.map((s) => ({ start: new Date(s.startedAt), end: new Date(s.endedAt), kind: 'focus' as const, subjectId: s.subjectId })),
-    ]
-    return { model, week, weekMinutes, lastWeekSameSpan, segments, classesToday: daySlots.length, recent: notes.slice(0, 3) }
+    return { model, recent: notes.slice(0, 3) }
   }, [minuteKey, forceEmpty])
 }
 

@@ -1,15 +1,16 @@
 /**
- * 셸 v2 크롬 (design-v2 3장): 상단 바 · 떠 있는 독/레일 · 과목 렌즈 · 토스트.
- * 상시 내비 표면은 독 하나. 아래로 스크롤하면 상단 바·독이 숨고, 위로 올리면 나타난다.
+ * 셸 v4 크롬 (design-m1 2-0): 상단 바(심볼 · 과목 렌즈 · ⌘K · 점 3개 = 설정 시트) · 독/레일 · 토스트.
+ * 너비 ≥ 600: 왼쪽 레일에 장소 6. 폰(< 600): 아래 독 4(오늘 · 노트 · 복습 · 집중) + ⌘K.
+ * 지도는 노트 위 '노트 | 지도' 토글, 계획은 오늘 맨 아래 줄. 아래로 스크롤하면 상단 바·독이 숨는다.
  */
 import { useRouterState } from '@tanstack/react-router'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef, type MouseEvent } from 'react'
-import { useProfile, useSubjects } from '@/db/hooks'
+import { useSubjects } from '@/db/hooks'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
-import { useEffectiveMotion, useGo, useIsPhone, isTypingTarget } from './hooks'
-import { IconChevron, IconCmd, IconSearch, Symbol } from './icons'
+import { useEffectiveMotion, useGo, useIsPhone, useIsRail, isTypingTarget } from './hooks'
+import { IconChevron, IconCmd, IconMore, IconSearch, Symbol } from './icons'
 import { SPACES, spaceOf, type SpacePath } from './spaces'
 
 function usePath(): string {
@@ -33,7 +34,8 @@ export function TopBar() {
   const space = spaceOf(path)
   const hidden = useUi((s) => s.scrollHidden || s.chromeHidden)
   const openPalette = useUi((s) => s.openPalette)
-  const profile = useProfile()
+  const openSettings = useUi((s) => s.openSettings)
+  const settingsOpen = useUi((s) => s.settingsOpen)
   const nav = useLinkNav()
 
   return (
@@ -56,9 +58,16 @@ export function TopBar() {
         <button type="button" className="icon-btn cmdk-small" aria-label="검색·명령 열기 (⌘K)" onClick={(e) => openPalette('', e.currentTarget)}>
           <IconCmd size={19} />
         </button>
-        <a href="/settings" className={`avatar${path === '/settings' ? ' is-on' : ''}`} aria-label={`${profile.name} · 설정`} onClick={nav('/settings')}>
-          <span aria-hidden="true">{profile.initial}</span>
-        </a>
+        <button
+          type="button"
+          className="icon-btn more-btn"
+          aria-label="설정 (⌘,)"
+          aria-haspopup="dialog"
+          aria-expanded={settingsOpen}
+          onClick={(e) => openSettings(e.currentTarget)}
+        >
+          <IconMore size={20} />
+        </button>
       </div>
     </header>
   )
@@ -178,21 +187,26 @@ function LensPill() {
 
 /* ---------- 떠 있는 독 / 레일 ---------- */
 
+/** 폰 독에 없는 장소는 독의 어느 칸을 켜 두나 (지도 → 노트, 계획 → 오늘) */
+const PHONE_HOME: Partial<Record<string, SpacePath>> = { '/map': '/notes', '/plan': '/' }
+
 export function Dock() {
   const path = usePath()
   const hidden = useUi((s) => s.scrollHidden || s.chromeHidden)
   const openPalette = useUi((s) => s.openPalette)
+  const rail = useIsRail()
   const nav = useLinkNav()
+  const here = rail ? path : (PHONE_HOME[path] ?? path)
   return (
-    <nav className={`dock${hidden ? ' is-hidden' : ''}`} aria-label="공간" inert={hidden ? true : undefined}>
-      {SPACES.filter((s) => s.dock).map((s) => {
+    <nav className={`dock${hidden ? ' is-hidden' : ''}`} aria-label="장소" inert={hidden ? true : undefined}>
+      {SPACES.map((s) => {
         const Icon = s.icon
-        const on = path === s.path
+        const on = here === s.path
         return (
           <a
             key={s.path}
             href={s.path}
-            className={`dock-item${s.phoneHidden ? ' dock-g' : ''}`}
+            className={`dock-item${s.phoneDock ? '' : ' dock-rail-only'}`}
             aria-current={on ? 'page' : undefined}
             aria-label={s.name}
             onClick={nav(s.path)}
@@ -202,8 +216,8 @@ export function Dock() {
           </a>
         )
       })}
-      <span className="dock-sep" aria-hidden="true" />
-      <button type="button" className="dock-item" aria-label="검색·명령 (⌘K)" onClick={(e) => openPalette('', e.currentTarget)}>
+      <span className="dock-sep dock-phone-only" aria-hidden="true" />
+      <button type="button" className="dock-item dock-phone-only" aria-label="검색·명령 (⌘K)" onClick={(e) => openPalette('', e.currentTarget)}>
         <IconCmd size={22} />
         <span className="dock-label" aria-hidden="true">검색·명령 <span className="kbd">⌘K</span></span>
       </button>

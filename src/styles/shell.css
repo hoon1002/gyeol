@@ -1,6 +1,6 @@
 /* =========================================================
    셸 v2 — 상단 바 · 떠 있는 독/레일 · 렌즈 · ⌘K · 토스트 (design-v2 3장)
-   폰 < 600: 아래 독 6칸 / iPad 600–1199: 아래 독 7칸 / 데스크톱 ≥ 1200: 왼쪽 떠 있는 레일
+   v4 (design-m1 2-0): 폰 < 600 = 아래 독 4(오늘·노트·복습·집중) + ⌘K / ≥ 600 = 왼쪽 레일 6(레일 56 + 여백 16 = 72px)
    ========================================================= */
 
 .skip {
@@ -142,10 +142,11 @@
 .dock-label { display: none; }
 
 @media (max-width: 599px) {
-  .dock .dock-g { display: none; }
-  .dock-item { width: 46px; height: 46px; }
+  .dock .dock-rail-only { display: none; }
+  .dock-item { width: 52px; height: 46px; }
 }
-@media (min-width: 1200px) {
+@media (min-width: 600px) {
+  .dock .dock-phone-only { display: none; }
   .dock {
     left: var(--dock-gap); top: 50%; bottom: auto; flex-direction: column;
     border-radius: var(--r-xl); translate: 0 -50%;
@@ -305,9 +306,45 @@
 /* ③ 독/레일 활성 = 아이콘 text-1 + 아래 6px 별빛 점 3px (원형 배경 없음) */
 .dock-item[aria-current="page"] { background: none; box-shadow: none; color: var(--text-1); }
 .dock-item[aria-current="page"]::after { width: 3px; height: 3px; margin-left: -1.5px; bottom: 4px; left: 50%; top: auto; box-shadow: 0 0 6px var(--accent); }
-@media (min-width: 1200px) { .dock-item[aria-current="page"]::after { bottom: 2px; top: auto; left: 50%; margin: 0 0 0 -1.5px; } }
+@media (min-width: 600px) { .dock-item[aria-current="page"]::after { bottom: 2px; top: auto; left: 50%; margin: 0 0 0 -1.5px; } }
 .dock-item svg { color: inherit; }
 .dock-item { color: var(--text-2); }
 /* ⑯ 상단 왼쪽은 심볼만 (공간 이름은 읽기용) */
 .topbar-name, .topbar-brand, .topbar-dot { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .topbar-sym { color: var(--text-1); }
+
+/* ===== M1: 상단 점 3개 · 설정 시트 (design-m1 2-1) ===== */
+.more-btn { margin-left: 2px; }
+.more-btn[aria-expanded="true"] { color: var(--text-1); }
+.sheet-layer { position: fixed; inset: 0; z-index: 85; }
+/* 은하는 useSkySheet로 이미 어두워진다 — 시트 바깥은 옅게만 */
+.settings-scrim { position: absolute; inset: 0; background: rgba(4, 6, 12, .28); }
+:root[data-theme="light"] .settings-scrim { background: rgba(240, 237, 231, .3); }
+.settings-sheet {
+  position: absolute; display: flex; flex-direction: column; outline: none;
+  background: var(--glass); border: 1px solid var(--border);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2); backdrop-filter: blur(20px) saturate(1.2);
+  box-shadow: var(--shadow-3), var(--hairline);
+}
+/* 가로: 오른쪽 패널 (태블릿 가로 380 · 데스크톱 420, 높이 100%) */
+.sheet-layer.is-side .settings-sheet { top: 0; right: 0; bottom: 0; width: min(380px, 92vw); border-width: 0 0 0 1px; }
+@media (min-width: 1200px) { .sheet-layer.is-side .settings-sheet { width: 420px; } }
+/* 세로: 아래 시트 64% · 폰 88% */
+.sheet-layer.is-bottom .settings-sheet { left: 0; right: 0; bottom: 0; height: 64svh; border-radius: var(--r-xl) var(--r-xl) 0 0; border-width: 1px 0 0; padding-top: 10px; }
+@media (max-width: 599px) { .sheet-layer.is-bottom .settings-sheet { height: 88svh; } }
+.sheet-head { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: calc(20px + env(safe-area-inset-top)) 24px 4px 28px; }
+.sheet-layer.is-bottom .sheet-head { padding-top: 8px; }
+.sheet-h { margin: 0; font-family: var(--f-kr-d); font-weight: 300; font-size: 32px; line-height: 1.15; letter-spacing: -.03em; }
+.sheet-head .meta { margin-top: 6px; }
+.sheet-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 24px calc(28px + env(safe-area-inset-bottom)) 28px; }
+.sheet-body .settings { padding: 0; margin: 0; max-width: none; box-sizing: border-box; gap: 0; text-shadow: none; }
+.sheet-body .set-sec:first-child { padding-top: 8px; }
+.sheet-body .set-row { min-height: 60px; }
+
+/* 별 정보 패널: 그 장소의 글 구역(지도 = 오른쪽 아래, 그 밖 = 첫 글 구역) — zones.ts의 --zs-* */
+.star-info[data-zone-place] {
+  left: calc(var(--zs-x0) * 100vw); top: calc(var(--zs-y0) * 100svh); right: auto; bottom: auto; translate: none;
+  width: calc((var(--zs-x1) - var(--zs-x0)) * 100vw); min-height: calc((var(--zs-y1) - var(--zs-y0)) * 100svh);
+  max-width: none; align-content: center; gap: 16px;
+}
+.star-info[data-zone-place] .star-title { font-size: clamp(1.8rem, 1rem + 2.2vw, 3rem); }

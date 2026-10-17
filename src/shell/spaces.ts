@@ -20,12 +20,9 @@ export interface Space {
   keywords: string[]
 }
 
-/**
- * 하늘 preset 이름. 계약은 'map'·'plan'이지만 @/fx의 MoodName에 아직 없어서 옛 이름을 쓴다(fx는 같은 장소로 보낸다).
- * TODO(M1·fx 대기): MoodName에 'map'·'plan'이 생기면 두 줄만 바꾼다.
- */
-export const MAP_MOOD: MoodName = 'graph'
-export const PLAN_MOOD: MoodName = 'planner'
+/** 하늘 preset 이름 (M1 계약: 옛 'graph'·'planner'도 fx가 같은 장소로 보낸다) */
+export const MAP_MOOD: MoodName = 'map'
+export const PLAN_MOOD: MoodName = 'plan'
 
 export const SPACES: Space[] = [
   { path: '/', name: '오늘', mood: 'today', icon: IconToday, phoneDock: true, drag: true, keywords: ['today', 'home', '홈'] },

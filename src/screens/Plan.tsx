@@ -1,17 +1,19 @@
 /**
- * 플래너 첫 화면 (design-v2 4-2): "이번 주, 수업 9개 · 마감 2개" + 이번 주 시간표(선만 있는 격자, 오늘 열만 진하게).
+ * 계획(← 플래너) 첫 화면 (design-v2 4-2): "이번 주, 수업 9개 · 마감 2개" + 이번 주 시간표(선만 있는 격자, 오늘 열만 진하게).
  * 주변부: D-day 3개. 필드: 결이 가로(시간 축)로 흐름, 옹이 = 지금.
  */
 import { useRef } from 'react'
 import { ActiveMood as FieldMood } from '@/app/keepAlive'
 import { useNow, usePlanner, useSubjects } from '@/db/hooks'
-import { addDays, ddayOf, fmtDday, fmtHM, fmtMD, hm, minutesOfDay, startOfWeek, weekdayShort } from '@/lib/time'
-import type { Peri } from '@/lib/situation'
+import { addDays, ddayOf, fmtDday, fmtMD, hm, minutesOfDay, startOfWeek, weekdayShort } from '@/lib/time'
 import { useUi } from '@/stores/ui'
 import { useIsPhone } from '@/shell/hooks'
-import { Actions, Block, EmptyState, FocusLines, Hero, Periphery, PrimaryButton, QuietButton, Reveal } from './parts'
+import { spaceOf } from '@/shell/spaces'
+import { Actions, Block, EmptyState, FocusLines, Hero, PrimaryButton, Reveal } from './parts'
 
-export function PlannerScreen() {
+const SKY = spaceOf('/plan')
+
+export function PlanScreen() {
   const { now } = useNow()
   const data = usePlanner()
   const subjects = useSubjects() ?? []
@@ -29,12 +31,12 @@ export function PlannerScreen() {
   if (data && data.slots.length === 0) {
     return (
       <>
-        <FieldMood preset="planner" />
-        <Hero label="플래너" variant="low">
+        <FieldMood preset={SKY.mood} drag={SKY.drag} />
+        <Hero label="계획">
           <EmptyState
             lines={['시간표', '비어 있음']}
             action="수업 추가"
-            onAction={() => showToast('M1에서 열림')}
+            onAction={() => showToast('M2에서 열림')}
           />
         </Hero>
       </>
@@ -54,35 +56,27 @@ export function PlannerScreen() {
   const nowTop = ((nowMin - startH * 60) / span) * 100
   const nowVisible = nowMin >= startH * 60 && nowMin <= endH * 60
 
-  const peri: Peri[] = open.slice(0, 3).map((t) => ({
-    id: t.id,
-    label: t.title,
-    value: fmtDday(ddayOf(now, t.dueAt)),
-    color: color(t.subjectId),
-    shelf: [
-      { k: '마감', v: `${weekdayShort(new Date(t.dueAt).getDay())}요일 ${fmtHM(t.dueAt)}`, color: color(t.subjectId) },
-      { k: '과목', v: sub(t.subjectId)?.name ?? '미정' },
-      { k: '종류', v: t.kind === 'exam' ? '시험' : t.kind === 'quiz' ? '퀴즈' : '과제' },
-    ],
-  }))
+  const assignments = open.filter((t) => t.kind !== 'exam').length
+  const exam = open.find((t) => t.kind === 'exam')
+  const meta = [`과제 ${assignments}`, exam ? `시험 ${fmtDday(ddayOf(now, exam.dueAt))}` : null].filter(Boolean).join(' · ')
 
   return (
     <>
-      <FieldMood preset="planner" knotRef={knotRef} />
-      <Hero label="플래너" variant="low" className="planner-hero">
-        <Block>
-          <FocusLines lines={['이번 주']} />
-        </Block>
-        <Block>
-          <p className="meta enter enter-1">{fmtMD(ws)} – {fmtMD(addDays(ws, 6))} · 마감 {open.length}</p>
-        </Block>
-        <Actions>
-          <PrimaryButton onClick={(el) => openPalette('과제 추가 ', el)}>+ 과제</PrimaryButton>
-          <QuietButton onClick={() => showToast('M1에서 열림')}>붙여 넣기</QuietButton>
-        </Actions>
-        <Periphery items={peri} />
-      </Hero>
-
+      <FieldMood preset={SKY.mood} drag={SKY.drag} knotRef={knotRef} />
+      {/* 글 구역(띠 위 2/3) 하나에 머리 + 주간 격자 */}
+      <section className="hero hero-zone plan" aria-label="계획">
+        <div className="zone-a plan-zone">
+        <div className="hero-col plan-head">
+          <Block>
+            <FocusLines lines={['이번 주']} />
+          </Block>
+          <Block>
+            <p className="meta enter enter-1" title={`${fmtMD(ws)} – ${fmtMD(addDays(ws, 6))}`}>{meta}</p>
+          </Block>
+          <Actions>
+            <PrimaryButton onClick={(el) => openPalette('과제 추가 ', el)}>＋ 추가</PrimaryButton>
+          </Actions>
+        </div>
       <section className="week-grid-wrap" aria-label="이번 주 시간표">
         <Reveal>
           <div className="week-grid" style={{ ['--days' as string]: days, ['--rows' as string]: endH - startH }}>
@@ -125,6 +119,8 @@ export function PlannerScreen() {
             })}
           </div>
         </Reveal>
+      </section>
+        </div>
       </section>
     </>
   )

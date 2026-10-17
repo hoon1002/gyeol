@@ -11,7 +11,7 @@
  * 앱 루트는 position:relative; z-index:1.
  */
 import type { Sky, Cam, LookOverride, SpecialStar } from '../../galaxy/sky/sky'
-import { Galaxy3D, type Anchor, type AnchorName, type DataStar, type PlaceId } from '../../galaxy3d/engine'
+import { Galaxy3D, type Anchor, type AnchorName, type DataStar, type LinkSpec, type PlaceId } from '../../galaxy3d/engine'
 import { LANDMARKS } from '../../galaxy3d/galaxy'
 import type { SceneName } from '../../galaxy/sky/compositions'
 import { deviceOf, pickComposition } from '../../galaxy/sky/compositions'
@@ -211,6 +211,8 @@ interface LinkRec {
   layer: 'today' | 'graph'
   el: SVGLineElement | null
   drawn: boolean
+  /** 3D 그어짐 시작(초, nowS) — 0이면 이미 그어진 선 */
+  t0?: number
 }
 
 /** 무드 → 3D 장소 (design-v4 §8). 설정은 장소가 아니라 시트 → null(비행 없음), 장소가 아닌 무드는 오늘 시점 */
@@ -235,12 +237,17 @@ function place3d(m: MoodName): PlaceId | null {
   }
 }
 /** 데이터 별 층 → 은하 속 자리(패턴 좌표) · 넓이(u). 하늘 좌표(집 화면 비율 0..1)를 그 둘레에 펼친다 — 사건 51개 표(design-m1) 전 임시 배치 */
-const LAYER3D: Record<Layer, { c: [number, number, number]; span: number }> = {
-  today: { c: LANDMARKS.focus, span: 6 },
-  focus: { c: LANDMARKS.focus, span: 3 },
-  review: { c: LANDMARKS.review, span: 2.4 },
-  graph: { c: LANDMARKS.graph, span: 4 },
-  exam: { c: [8.5, 0.3, 5.5], span: 6 },
+const LAYER3D: Record<Layer, { c: [number, number, number]; span: number; group: string }> = {
+  // design-m1 0-1: seat 나의 자리(반지름 0.8u) · cluster 복습 성단(0.6u) · nebula 지도 성운(1.5u) · exam 시험 별
+  today: { c: LANDMARKS.focus, span: 1.6, group: 'seat' },
+  focus: { c: LANDMARKS.focus, span: 1.6, group: 'seat' },
+  review: { c: LANDMARKS.review, span: 1.2, group: 'cluster' },
+  graph: { c: LANDMARKS.graph, span: 3, group: 'nebula' },
+  exam: { c: [2.0, 0.3, -1.5], span: 0.4, group: 'exam' },
+}
+const pos3 = (s: { layer: Layer; x: number; y: number }): [number, number, number] => {
+  const z = LAYER3D[s.layer]
+  return [z.c[0] + (s.x - 0.5) * z.span, z.c[1] + 0.12, z.c[2] + (s.y - 0.5) * z.span]
 }
 /** 빈 하늘 드래그 기본값 (m1-brief 계약): 오늘·지도·집중은 켬, 노트·복습·계획은 끔 */
 const DRAG_DEFAULT: Partial<Record<MoodName, boolean>> = { landing: true, today: true, graph: true, map: true, focus: true }
@@ -893,10 +900,10 @@ export class FieldEngine {
         for (const s of this.stars.values()) {
           if (s.to <= 0.001 && this.curLevel(s) <= 0.001) continue
           const sel = this.selected === s.id
-          const z = LAYER3D[s.layer]
           list.push({
             id: s.id,
-            pos: [z.c[0] + (s.x - 0.5) * z.span, z.c[1] + 0.12, z.c[2] + (s.y - 0.5) * z.span],
+            group: LAYER3D[s.layer].group,
+            pos: pos3(s),
             L: (sel ? 3 : 1.6) + Math.min(6, s.L / 40),
             color: sel ? GOLD : s.color,
             from: s.from,
@@ -906,6 +913,7 @@ export class FieldEngine {
           })
         }
         this.g3d.setDataStars(list)
+        this.pushLinks3d()
         return
       }
       if (!this.sky) return
@@ -925,12 +933,33 @@ export class FieldEngine {
   private ensureLink(a: string, b: string, layer: 'today' | 'graph', animate: boolean) {
     const key = a < b ? a + '|' + b : b + '|' + a
     if (this.links.has(key)) return
-    const rec: LinkRec = { key, a, b, layer, el: null, drawn: !animate }
+    const rec: LinkRec = { key, a, b, layer, el: null, drawn: !animate, t0: animate ? this.nowS() : 0 }
     this.links.set(key, rec)
     this.renderLink(rec, animate)
   }
 
+  /** 3D 별자리 선: 두 데이터 별 사이 그어짐(V2 600–900ms), 보이는 층만 */
+  private pushLinks3d() {
+    if (!this.g3d) return
+    const vis = LAYERS[this.preset] ?? {}
+    const out: LinkSpec[] = []
+    for (const l of this.links.values()) {
+      const A = this.stars.get(l.a)
+      const B = this.stars.get(l.b)
+      const v = vis[l.layer] ?? 0
+      if (!A || !B || v <= 0) continue
+      const sel = this.selected && (l.a === this.selected || l.b === this.selected)
+      out.push({ a: pos3(A), b: pos3(B), t0: l.t0 ?? 0, dur: l.t0 ? 0.8 : 0, alpha: (sel ? 0.6 : this.selected ? 0.16 : 0.32) * v })
+    }
+    this.g3d.setLinks(out)
+  }
+
   private renderLink(l: LinkRec, animate: boolean) {
+    if (this.g3d) {
+      void animate
+      this.pushStars()
+      return
+    }
     if (!this.svg) return
     const A = this.stars.get(l.a)
     const B = this.stars.get(l.b)
@@ -1094,6 +1123,7 @@ export class FieldEngine {
   }
 
   meteor(o?: { kind?: 'signal' | 'ambient'; size?: 'sm' | 'md' }): void {
+    if (this.g3d) return // design-m1: 3D에 유성 없음(V5 삭제) — 큰 완료는 swellBand
     // 유성 끔: 띠가 잠깐 밝아지는 것(V13 +4%)으로 대체
     if (!this.meteorsOn && (o?.kind ?? 'signal') === 'signal') {
       this.swellBand({ amount: 0.04, ms: 1200 })
@@ -1108,7 +1138,20 @@ export class FieldEngine {
     this.sky?.meteorNow({ size: o?.size })
   }
 
-  glint(near?: Element | { x: number; y: number }): void {
+  glint(near?: Element | { x: number; y: number } | 'seat' | { band: number }): void {
+    if (this.g3d) {
+      // design-m1: V11은 월드 자리에만 — 'seat'(가장 밝은 오늘 별) · { band: 남은 날 }(계획의 시간 띠). 화면 점(레일 아이콘 등)은 뺀다
+      if (this.mode === 'off' || this.theme === 'light' || !near) return
+      if (near === 'seat') {
+        const best = [...this.stars.values()].filter((s) => s.layer === 'today').sort((a, b) => b.level - a.level)[0]
+        this.g3d.sparkle(best ? pos3(best) : [LANDMARKS.focus[0], LANDMARKS.focus[1] + 0.12, LANDMARKS.focus[2]])
+      } else if (typeof near === 'object' && 'band' in near) {
+        const p = this.preset === 'plan' || this.preset === 'planner' ? this.g3d.bandPoint(near.band) : null
+        this.g3d.sparkle(p ?? [LANDMARKS.focus[0], LANDMARKS.focus[1] + 0.12, LANDMARKS.focus[2]])
+      }
+      return
+    }
+    if (near === 'seat' || (near && typeof near === 'object' && 'band' in near)) near = undefined
     if (this.mode === 'off' || !this.sky) return
     let p = { x: this.vw * 0.5, y: this.vh * 0.4 }
     if (near) {
@@ -1124,13 +1167,19 @@ export class FieldEngine {
     this.sky.tap(p.x, p.y, 0.67)
   }
 
-  swellBand(o?: { amount?: number; ms?: number }): void {
+  swellBand(o?: { amount?: number; ms?: number; at?: 'seat' | 'cluster' }): void {
     if (this.mode === 'off') return
+    if (this.g3d) {
+      // V13 원반 부풂 +8% · at: V13s 자리 부풂(+25%). 인자 없이 복습에서 부르면 성단도 같이 (design-m1 #25)
+      this.g3d.swell(o?.at ?? (this.preset === 'review' ? 'cluster' : 'core'))
+      return
+    }
     this.sky?.swellBand(this.mode === 'calm' ? Math.min(0.04, o?.amount ?? 0.08) : (o?.amount ?? 0.08), o?.ms ?? 2000)
   }
 
   /** V7 별가루 모임: 반경 300px 안 별가루 30%가 4초에 걸쳐 그 자리 쪽으로 낙하 방향을 튼다(≤ 25°, 속도 그대로). null이면 4초에 걸쳐 풀린다 */
   gatherDust(target: Element | { x: number; y: number } | 'next' | null): void {
+    if (this.g3d) return // design-m1: 별가루 모임(V7) 삭제
     if (!this.sky) return
     if (!target || this.mode !== 'rich') {
       this.sky.setGather(null)
@@ -1268,11 +1317,13 @@ export class FieldEngine {
     window.clearTimeout(this.resumeTimer)
     if (ink && !this.paused) {
       this.paused = true
+      this.g3d?.setCalm(true)
       if (!ov) this.sky?.setGain(0.85, 300)
       this.sky?.setPaused?.(true)
     } else if (!ink && this.paused) {
       this.resumeTimer = window.setTimeout(() => {
         this.paused = false
+        this.g3d?.setCalm(false)
         if (!this.overlay) this.sky?.setGain(1, 300)
         this.sky?.setPaused?.(false)
         if (this.deferred.length) this.flushDeferred()
@@ -1435,7 +1486,7 @@ export class FieldEngine {
       this.g3d.setTravel(mode)
       // 3D 비행 길이는 회전각으로 정해진다(1.2–3.0s, 동작 줄이기·끔·짧게는 0.5초 어둡게 바꾸기) — dur는 무시
       void dur
-      const ms = id ? this.g3d.setPlace(id, { instant }) : 0
+      const ms = id ? Math.round(this.g3d.setPlace(id, { instant })) : 0
       this.lastFlightS = Math.max(SKY_TIMING.navMs, ms) / 1000
       this.camCur = { ...t, durationMs: ms }
       const fly = mode === 'fly' && ms > 0
@@ -1576,6 +1627,9 @@ export class FieldEngine {
       this.perf.longTasksInNav = 0
     },
     sky: () => this.sky?.stats(),
+    /** M1: 3D 엔진 측정 API (measure · uncap · force · flights …) */
+    g3d: () => this.g3d?.debug ?? null,
+    g3dStats: () => this.g3d?.stats() ?? null,
     debug: () => ({ sky: this.sky?.debugState(), preset: this.preset, hint: this.hint, gate: this.gate, paused: this.paused, overlay: this.overlay, moods: [...this.moods.values()].map((m) => m.preset), pauses: [...this.pauses.values()] }),
     /** 검증용: 다음 자리에 별 탄생(V1) · 별가루 모임 켜기/끄기 */
     birth: (at?: { x: number; y: number }) => this.birthStar({ id: 'test:' + Math.round(performance.now()), at: at ?? 'next', kind: 'set' }),
@@ -1663,6 +1717,10 @@ export class FieldEngine {
     const h = this.vh
     cb(name === 'core' ? { x: w * 0.64, y: h * 0.42, r: h * 0.35, visible: true } : { x: w * 0.5, y: h * 0.46, r: Math.min(w, h) * 0.36, visible: this.preset === 'focus' })
     return () => {}
+  }
+  /** useSkyClock: 집중 시계 (null이면 0.24°/s 공전) */
+  setClock(c: { startedAt: number; durationMs: number; elapsedMs: number; paused: boolean } | null): void {
+    this.g3d?.raw?.setClock(c)
   }
   /** 3D 엔진 (검증·측정용) */
   galaxy3d(): Galaxy3D | null {

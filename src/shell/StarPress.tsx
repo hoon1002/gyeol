@@ -23,7 +23,7 @@ interface StarInfo {
   zoom: (z: number) => number
 }
 
-const INTERACTIVE = 'button, a, input, select, textarea, label, [role="dialog"], [role="button"], .dock, .topbar, .palette, .star-info, .flash, .week-grid, .spines, .cont, .recent'
+const INTERACTIVE = 'button, a, input, select, textarea, label, [role="dialog"], [role="button"], .dock, .topbar, .palette, .sheet-layer, .star-info, .flash, .week-grid, .cont, .recent'
 
 export function StarPress() {
   const { pick } = useSkyPick()
@@ -194,7 +194,7 @@ export function StarPress() {
 
   if (!info) return null
   return (
-    <div ref={panelRef} className="star-info" role="dialog" aria-label={info.title} tabIndex={-1} key={info.id}>
+    <div ref={panelRef} className="star-info" data-zone-place={path} role="dialog" aria-label={info.title} tabIndex={-1} key={info.id}>
       <h2 className="focus-lines star-title">{info.title}</h2>
       <p className="meta">{info.meta}</p>
       <div className="actions">

@@ -20,7 +20,6 @@ export interface DayModel {
   reviewDue: { total: number; bySubject: Array<{ subjectId: string; count: number }> }
   reviewTomorrow: number
   focusToday: { sets: number; minutes: number; sessions: FocusSession[] }
-  focusYesterday: number
   goalMin: number
   notes: Note[]
   forceEmpty?: boolean
@@ -42,7 +41,7 @@ export interface Peri {
 }
 
 export type SitAction =
-  | { kind: 'go'; to: '/' | '/notes' | '/graph' | '/review' | '/planner' | '/focus' | '/settings' }
+  | { kind: 'go'; to: '/' | '/notes' | '/map' | '/review' | '/plan' | '/focus' }
   | { kind: 'focus'; minutes: number; subjectId: string | null }
   | { kind: 'review' }
   | { kind: 'note'; noteId: string | null; record?: boolean }
@@ -152,7 +151,7 @@ export function evaluateSituation(m: DayModel): Situation {
 
   // 1. 빈 상태
   if (m.forceEmpty || m.slots.length === 0) {
-    return { ...base, key: 'empty', title: '시간표', meta: '비어 있음', primary: { label: '만들기', action: { kind: 'go', to: '/planner' } }, quiet: { label: '샘플', action: { kind: 'seed' } }, peri: [], mood: { speed: 0.7, knotStrength: 0.5 }, rings: 0, load: 0.1, pressure: 0, exam: null }
+    return { ...base, key: 'empty', title: '시간표', meta: '비어 있음', primary: { label: '만들기', action: { kind: 'go', to: '/plan' } }, quiet: { label: '샘플', action: { kind: 'seed' } }, peri: [], mood: { speed: 0.7, knotStrength: 0.5 }, rings: 0, load: 0.1, pressure: 0, exam: null }
   }
 
   // 2. 수업 중

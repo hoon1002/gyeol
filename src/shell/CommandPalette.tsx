@@ -18,11 +18,12 @@ import { useSettings, type ThemePref } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import type { MotionLevel } from '@/fx'
 import { useEffectiveMotion, useGo, useIsPhone } from './hooks'
-import { IconArrow, IconDeck, IconDoc, IconFocus, IconMotion, IconPdf, IconPen, IconPlan, IconReview, IconSearch, IconTheme } from './icons'
+import { IconArrow, IconDeck, IconDoc, IconFocus, IconMore, IconMotion, IconPdf, IconPen, IconPlan, IconReview, IconSearch, IconTheme } from './icons'
 import { SPACES, type SpacePath } from './spaces'
 
 type Preview =
   | { kind: 'go'; path: SpacePath }
+  | { kind: 'settings' }
   | { kind: 'focus'; minutes: number; subject: Subject | null; note: Note | null }
   | { kind: 'review'; subject: Subject | null }
   | { kind: 'task'; subject: Subject | null; due: Date | null }
@@ -48,11 +49,10 @@ interface Item {
 const SPACE_DESC: Record<SpacePath, string> = {
   '/': '지금 무엇을 하면 되는지 한 문장으로',
   '/notes': '이어서 쓰기 · 과목 책등 · 최근 노트',
-  '/graph': '노트와 개념이 이어진 별자리',
+  '/map': '노트와 개념이 이어진 별자리',
   '/review': '오늘 복습할 카드',
-  '/planner': '이번 주 시간표와 마감',
-  '/focus': '25분 집중 · 숨 고르기',
-  '/settings': '테마 · 움직임 · 데이터',
+  '/plan': '이번 주 시간표 · 과제 · 시험',
+  '/focus': '25분 집중 · 은하 시계',
 }
 
 const THEME_LABEL: Record<ThemePref, string> = { dark: '밤', light: '낮', system: '시스템' }
@@ -116,6 +116,7 @@ function Palette() {
   const setMotion = useSettings((s) => s.setMotion)
   const setLens = useSettings((s) => s.setLens)
   const setTravel = useSettings((s) => s.setTravel)
+  const setRotation = useSettings((s) => s.setRotation)
   const themePref = useSettings((s) => s.theme)
   const inputRef = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -181,9 +182,9 @@ function Palette() {
           const t = Date.now()
           try {
             await db.tasks.add({ id: uid('task-'), subjectId: sb?.id ?? null, kind: 'assignment', title: `${sb ? sb.name + ' ' : ''}과제`, dueAt: (due ?? new Date(t + 7 * 86_400_000)).getTime(), done: 0, createdAt: t, updatedAt: t })
-            ui().showToast('과제를 추가했어요 · 플래너 D-day에 정렬했어요', colorOf(sb))
+            ui().showToast('과제 추가 · 계획', colorOf(sb))
           } catch {
-            ui().showToast('과제를 저장하지 못했어요')
+            ui().showToast('과제 저장 실패')
           }
         }),
       })
@@ -225,6 +226,11 @@ function Palette() {
         run: (el) => after(() => void go(s.path, el)),
       })
     })
+    list.push({
+      id: 'go-settings', group: '이동', label: '설정', sub: '지금 장소 위에 시트로 · ⌘,', keywords: ['settings', '설정', '테마', '모션', '환경', '회전'],
+      icon: <IconMore size={17} />, preview: { kind: 'settings' },
+      run: () => after(() => ui().openSettings(origin)),
+    })
 
     // ---- 명령 ----
     ;(['dark', 'light', 'system'] as ThemePref[]).forEach((pref) =>
@@ -248,6 +254,13 @@ function Palette() {
         id: 'travel-' + tv, group: '명령', label: `공간 이동 ${{ fly: '비행', short: '짧게', off: '끔' }[tv]}`, keywords: ['공간 이동', '비행', '카메라', 'travel'],
         icon: <IconMotion size={17} />, preview: { kind: 'motion', level: tv === 'off' ? 'off' : 'rich' },
         run: () => after(() => { setTravel(tv); ui().showToast(`공간 이동 ${{ fly: '비행', short: '짧게', off: '끔' }[tv]}`) }),
+      }),
+    )
+    ;(['on', 'slow', 'off'] as const).forEach((rv) =>
+      list.push({
+        id: 'rotation-' + rv, group: '명령', label: `은하 회전 ${{ on: '켬', slow: '느리게', off: '끔' }[rv]}`, keywords: ['은하 회전', '회전', '공전', 'rotation'],
+        icon: <IconMotion size={17} />, preview: { kind: 'motion', level: rv === 'off' ? 'off' : rv === 'slow' ? 'calm' : 'rich' },
+        run: () => after(() => { setRotation(rv); ui().showToast(`은하 회전 ${{ on: '켬', slow: '느리게', off: '끔' }[rv]}`) }),
       }),
     )
     list.push({
@@ -451,7 +464,17 @@ function PreviewPane({ p }: { p: Preview }) {
         <div className="pv-space"><Icon size={28} /></div>
         <p className="pv-title">{s.name}</p>
         <p className="pv-tag">{SPACE_DESC[p.path]}</p>
-        <p className="pv-tag">결이 누른 자리에서 번지며 넘어가요</p>
+        <p className="pv-tag">은하 속 그 장소로 날아가요</p>
+      </>
+    )
+  } else if (p.kind === 'settings') {
+    body = (
+      <>
+        <p className="pv-k">미리보기 · 설정</p>
+        <div className="pv-space"><IconMore size={28} /></div>
+        <p className="pv-title">설정</p>
+        <p className="pv-tag">테마 · 움직임 · 은하 회전 · 데이터</p>
+        <p className="pv-tag">은하는 날지 않고 어두워져요</p>
       </>
     )
   } else if (p.kind === 'focus') {
@@ -487,10 +510,10 @@ function PreviewPane({ p }: { p: Preview }) {
     const d = p.due ? ddayOf(new Date(), p.due) : null
     body = (
       <>
-        <p className="pv-k">미리보기 · 플래너</p>
+        <p className="pv-k">미리보기 · 계획</p>
         <p className="pv-title">{p.subject ? p.subject.name : '과목 미정'} 과제</p>
         <p className="pv-dday">{d !== null ? fmtDday(d) : 'D-?'}</p>
-        <ol className="pv-steps"><li>플래너 D-day에 정렬</li><li>오늘 화면 주변부에 나타나요</li></ol>
+        <ol className="pv-steps"><li>계획의 시간 띠에 놓여요</li><li>오늘 화면에 D-day가 나타나요</li></ol>
       </>
     )
   } else if (p.kind === 'theme') {

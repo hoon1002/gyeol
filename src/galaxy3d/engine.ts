@@ -12,6 +12,7 @@ import { omega, OMEGA_P, LANDMARKS, BAR_ANGLE, ARM_TEX_W as SH_ARM_W, ARM_TEX_H 
 import * as SH from './shaders'
 import GenWorker from './gen.worker.ts?worker'
 import { powerMonitor, SPACE_RULES } from '@/perf/scheduler'
+import { SKY_ZONES, type ZonePlace, type ZoneRect } from './zones'
 
 export type Tier = 'A' | 'B' | 'C'
 export type Rot = 'on' | 'slow' | 'off'
@@ -42,10 +43,14 @@ export interface Place {
   roll: number
   /** 바라보는 점의 화면 자리 (가로 · 세로 화면) */
   seat: [number, number]
+  /** 태블릿 가로(너비 < 1300) · 세로 · 폰(너비 < 600)에서 다르면 (design-m1 4장 끝) */
+  seatT?: [number, number]
   seatP: [number, number]
+  seatPh?: [number, number]
   /** 크기 맞춤 (은하 중심 장소만): 눈에 보이는 팔 고리(11.5u)의 긴 지름(long) 또는 가로 폭(xext)이 화면 높이(h)·폭(w)·짧은 변(short)의 frac배 */
   fit?: { m: 'long' | 'xext'; frac: number; of: 'h' | 'w' | 'short' }
   fitP?: { m: 'long' | 'xext'; frac: number; of: 'h' | 'w' | 'short' }
+  fitPh?: { m: 'long' | 'xext'; frac: number; of: 'h' | 'w' | 'short' }
   /** 해상도 배율(별이 한 줄로 겹치는 옆 모습 등 채우기가 몰리는 장소만) */
   rsK?: number
 }
@@ -53,11 +58,11 @@ const C0: [number, number, number] = [0, 0, 0]
 export const PLACES: Place[] = [
   // design-v4 §8: 장소마다 은하의 실루엣이 다르다. 글·조작이 놓이는 자리는 어둡게 비운다
   { id: 'today', name: '오늘', sub: '위 3/4 — 비스듬한 타원', t: C0, az: 210, el: 30, dist: 25, expo: 1, orbit: 1, roll: -57, seat: [0.62, 0.46], seatP: [0.54, 0.4], fit: { m: 'long', frac: 0.8, of: 'h' }, fitP: { m: 'xext', frac: 0.92, of: 'w' } },
-  { id: 'planner', name: '플래너', sub: '거의 옆 — 화면을 가로지르는 시간의 띠', t: C0, az: 200, el: 8, dist: 40, expo: 0.95, orbit: 0.4, roll: 0, rsK: 0.85, seat: [0.5, 0.66], seatP: [0.5, 0.7], fit: { m: 'long', frac: 1.15, of: 'w' }, fitP: { m: 'long', frac: 1.3, of: 'w' } },
-  { id: 'notes', name: '노트', sub: '정확히 옆 — 오른쪽에 선 책등', t: C0, az: 225, el: 2, dist: 30, expo: 0.9, orbit: 0, roll: -90, seat: [0.86, 0.5], seatP: [0.8, 0.5], fit: { m: 'long', frac: 1.2, of: 'h' }, fitP: { m: 'long', frac: 1.1, of: 'h' } },
-  { id: 'review', name: '복습', sub: '아래에서 — 뒤집힌 은하, 다시 꺼내 보는 기억', t: C0, az: 195, el: -35, dist: 25, expo: 1, orbit: 0.3, roll: 40, seat: [0.6, 0.5], seatP: [0.5, 0.45], fit: { m: 'long', frac: 0.8, of: 'h' }, fitP: { m: 'long', frac: 0.95, of: 'w' } },
+  { id: 'planner', name: '플래너', sub: '거의 옆 — 화면을 가로지르는 시간의 띠', t: C0, az: 200, el: 8, dist: 40, expo: 0.95, orbit: 0.4, roll: 0, rsK: 0.85, seat: [0.5, 0.66], seatP: [0.5, 0.72], seatPh: [0.5, 0.74], fit: { m: 'long', frac: 1.15, of: 'w' }, fitP: { m: 'long', frac: 1.3, of: 'w' } },
+  { id: 'notes', name: '노트', sub: '정확히 옆 — 오른쪽에 선 책등', t: C0, az: 225, el: 2, dist: 30, expo: 0.9, orbit: 0, roll: -90, seat: [0.86, 0.5], seatP: [0.8, 0.5], seatPh: [0.95, 0.5], fit: { m: 'long', frac: 1.2, of: 'h' }, fitP: { m: 'long', frac: 1.1, of: 'h' } },
+  { id: 'review', name: '복습', sub: '아래에서 — 뒤집힌 은하, 다시 꺼내 보는 기억', t: C0, az: 195, el: -35, dist: 25, expo: 1, orbit: 0.3, roll: 40, seat: [0.62, 0.5], seatT: [0.66, 0.5], seatP: [0.5, 0.32], seatPh: [0.5, 0.27], fit: { m: 'long', frac: 0.8, of: 'h' }, fitP: { m: 'long', frac: 0.85, of: 'w' }, fitPh: { m: 'long', frac: 0.95, of: 'w' } },
   { id: 'graph', name: '그래프', sub: '팔 속, 낮게 — 별 하나하나가 생각', t: LANDMARKS.graph, az: 72, el: 25, dist: 11.5, expo: 1, orbit: 0, roll: -30, rsK: 0.9, seat: [0.6, 0.5], seatP: [0.5, 0.45] },
-  { id: 'focus', name: '집중', sub: '정면 — 시계판처럼 25분에 한 바퀴', t: C0, az: 210, el: 90, dist: 25, expo: 0.95, orbit: 0, roll: 0, rsK: 0.9, seat: [0.5, 0.5], seatP: [0.5, 0.42], fit: { m: 'long', frac: 0.66, of: 'short' }, fitP: { m: 'long', frac: 0.66, of: 'short' } }, // 링(베젤)까지 짧은 변의 ≈ 80%, 세로 좌우 여백 ≥ 6%
+  { id: 'focus', name: '집중', sub: '정면 — 시계판처럼 25분에 한 바퀴', t: C0, az: 210, el: 90, dist: 25, expo: 0.95, orbit: 0, roll: 0, rsK: 0.9, seat: [0.6, 0.5], seatT: [0.62, 0.5], seatP: [0.54, 0.4], seatPh: [0.5, 0.36], fit: { m: 'long', frac: 0.66, of: 'short' }, fitP: { m: 'long', frac: 0.66, of: 'short' } }, // 링(베젤)까지 짧은 변의 ≈ 80%, 세로 좌우 여백 ≥ 6%
   { id: 'settings', name: '설정', sub: '집 안, 어둡게', t: C0, az: 210, el: 30, dist: 25, expo: 0.65, orbit: 1, roll: -57, seat: [0.62, 0.46], seatP: [0.54, 0.4], fit: { m: 'long', frac: 0.8, of: 'h' }, fitP: { m: 'xext', frac: 0.92, of: 'w' } },
 ]
 /** 화면에서 바라보는 점의 자리 (design-v4: 0.66, 0.44) · 원반 장축 57° 대각선 고정 기울기(롤 변화 0) */
@@ -187,6 +192,8 @@ export type AnchorName = 'core' | 'focus-disk'
 /** 데이터 별 (오늘의 별자리·복습 카드·노트 별 …): 은하 패턴 좌표(t=0) — 팔과 함께 돈다 */
 export interface DataStar {
   id: string
+  /** 자리 이름(seat · cluster · nebula · exam) — 자리 부풂(V13s) 대상 */
+  group?: string
   pos: [number, number, number]
   L: number
   color: [number, number, number]
@@ -195,6 +202,13 @@ export interface DataStar {
   to: number
   t0: number
   dur: number
+}
+export interface LinkSpec {
+  a: [number, number, number]
+  b: [number, number, number]
+  t0: number
+  dur: number
+  alpha: number
 }
 export interface G3DOptions {
   /** 시제품 쿼리 문자열(?tier=…&rot=…). 앱은 비운다 */
@@ -282,6 +296,7 @@ const P = {
   blit: prog(SH.FULL_VS, SH.BLIT_FS),
   fg: prog(SH.FG_VS, SH.FG_FS),
   down4: prog(SH.FULL_VS, SH.DOWN4_FS),
+  line: prog(SH.LINE_VS, SH.LINE_FS),
 }
 
 /* ---------- 4층 전경 별 (design-v4 §7-2) ---------- */
@@ -339,13 +354,22 @@ const vaoEmpty = gl.createVertexArray()!
 
 /** 글자·크롬 구역 (NDC): 프로토타입의 제목·HUD·버튼 + 앱의 글자 안전 구역·독 (design-v3 §2-1) */
 const maskNdc = new Float32Array(24).fill(9)
+/** 지금 장소의 글 구역 (SKY_ZONES) — 전경 별 마스크와 합성 안전 마스크가 같이 쓴다 */
+const zoneUv = new Float32Array(12).fill(-9)
+function zonePlace(): ZonePlace {
+  if (sheetOpen) return 'sheet'
+  const id = (flight ? flight.to.id : place.id) as PlaceId
+  return id === 'planner' ? 'plan' : id === 'graph' ? 'map' : id === 'settings' ? 'sheet' : (id as ZonePlace)
+}
 function updateMask(cssW: number, cssH: number, dom = true) {
-  const rects: Array<[number, number, number, number]> = []
-  const land = cssW >= cssH
-  // 글자 안전 구역: 1440×900 x120–640 y220–700 · 1180×820 x64–520 y210–650 · 폰 x24–366 y470–730
-  rects.push(land ? [0.06, 0.24, 0.445, 0.79] : [0.06, 0.56, 0.94, 0.87])
-  rects.push(land ? [0.28, 0.9, 0.72, 0.985] : [0, 0.91, 1, 1]) // 독
-  rects.push([0, 0, 1, land ? 0.07 : 0.06]) // 상단
+  const rects: ZoneRect[] = [...SKY_ZONES[zonePlace()][cssW < 600 ? 'phone' : cssW >= cssH ? 'land' : 'port']]
+  zoneUv.fill(-9)
+  rects.slice(0, 3).forEach((r, i) => {
+    zoneUv[i * 4] = r[0]
+    zoneUv[i * 4 + 1] = 1 - r[3]
+    zoneUv[i * 4 + 2] = r[2]
+    zoneUv[i * 4 + 3] = 1 - r[1]
+  })
   if (dom)
     for (const el of opts.maskEls?.() ?? []) {
       if (!el || (el as HTMLElement).offsetParent === null) continue
@@ -441,7 +465,10 @@ worker.onmessage = (e: MessageEvent<{ id: number; ms: number; stars: Float32Arra
   starN = e.data.starCount
   cloudN = e.data.cloudCount - e.data.dustCount
   uploadMs = performance.now() - t0
-  if (!readyAt) readyAt = performance.now()
+  if (!readyAt) {
+    readyAt = performance.now()
+    opts.onFirstFrame?.()
+  }
   kick()
 }
 function generate() {
@@ -528,16 +555,20 @@ const flightLog: Array<{ to: string; ms: number; maxFrame: number; p95: number; 
 /** 처음 구도 맞춤 (화면비별): 기본 3/4 자세에서 원반 가장자리(14.5u 고리 32점 + 팽대부 위아래)가 화면 여백 3% 안에 드는
  *  가장 가까운 거리 → 은하 중심 장소(오늘·플래너·설정)의 거리 배율. 오른쪽 치우침(좌석)은 유지, 세로 화면은 좌석 (0.56, 0.36) */
 let portrait = false
+/** 화면 종류: 데스크톱 · 태블릿 가로(너비 < 1300) · 세로 · 폰(너비 < 600) */
+let lay: 'desk' | 'tabL' | 'port' | 'phone' = 'desk'
 const fitD: Record<string, number> = {}
-const seatOf = (pl: Place): [number, number] => (portrait ? pl.seatP : pl.seat)
+const seatOf = (pl: Place): [number, number] =>
+  lay === 'phone' ? (pl.seatPh ?? pl.seatP) : lay === 'port' ? pl.seatP : lay === 'tabL' ? (pl.seatT ?? pl.seat) : pl.seat
 /** 장소마다 크기 맞춤 (design-v4 §8): 그 장소의 기본 자세·화면 자리에서 눈에 보이는 팔 고리(11.5u)가 규칙대로 화면을 채우는 거리 */
 function computeFit(aspect: number) {
   portrait = aspect < 1
+  lay = cssW < 600 ? 'phone' : portrait ? 'port' : cssW < 1300 ? 'tabL' : 'desk'
   const ring: V3[] = []
   for (let k = 0; k < 48; k++) ring.push([11.5 * Math.cos((k / 48) * Math.PI * 2), 0, 11.5 * Math.sin((k / 48) * Math.PI * 2)])
   const keep: [number, number] = [SEAT[0], SEAT[1]]
   for (const pl of PLACES) {
-    const rule = portrait ? pl.fitP : pl.fit
+    const rule = lay === 'phone' ? (pl.fitPh ?? pl.fitP) : portrait ? pl.fitP : pl.fit
     if (!rule) continue
     const q = homeOrient(pl)
     const back = qRot(q, [0, 0, 1])
@@ -726,6 +757,14 @@ function focusEnter(o: Q) {
   focusBase = o
   focusDisp = 0
 }
+/** useSkyClock: 진행률 × 360° (리더 결정 2). startedAt = 지금 달리는 구간이 시작된 시각(Date.now), elapsedMs = 그 전까지 쌓인 시간 */
+let focusClock: { startedAt: number; durationMs: number; elapsedMs: number; paused: boolean } | null = null
+function clockAngle(): number | null {
+  const c = focusClock
+  if (!c || c.durationMs <= 0) return null
+  const el = c.elapsedMs + (c.paused ? 0 : Math.max(0, Date.now() - c.startedAt))
+  return Math.min(1, el / c.durationMs) * Math.PI * 2
+}
 const focusAngle = (now: number) => (((now - focusT0) / 1000) * 360 * DEG) / (FOCUS_MIN * 60)
 const reduced = () => reducedOS || rot === 'off'
 let sheetOpen = false
@@ -736,6 +775,13 @@ let extExpo = 1
 let lightOn = false
 let lightK = 0
 let anchorDirty = true
+let eventUntil = 0
+let calm = false
+let calmK = 0
+let swellT0 = -1e9
+let swellAt: 'core' | 'seat' | 'cluster' = 'core'
+let lastEye: V3 = [0, 0, 1]
+let lastBasis: { s: V3; u: V3; f: V3 } | null = null
 
 /* ---------- 전력 상태 (design-v4 §7-4) ----------
    활동(입력·비행·관성, 마지막 입력 2s 안) 60fps ×1.0 · 평소(입력 없음 0–60s) 30fps ×0.75 · 깊은 대기(60s+) 15fps ×0.6 ·
@@ -765,7 +811,7 @@ function powerState(now: number): Power {
   const idle = now - lastInput
   const low = lowPower || powerMonitor.lowPower() || now < thermalUntil
   const moving = !!flight || !!drag || Math.hypot(user.wv[0], user.wv[1], user.wv[2]) > 1e-9 || idle < 2000
-  if (moving) return low ? 'normal' : 'active'
+  if (moving || now < eventUntil) return low ? 'normal' : 'active' // 사건 중·끝나고 2초까지 활동 (design-m1 0-2-7)
   // 장소별 규칙 (src/perf/scheduler SPACE_RULES): 집중 20초 → 쉼, 노트·복습·설정 30초 → 깊은 대기
   const rule = sheetOpen ? SPACE_RULES.settings : SPACE_RULES[place.id]
   if (reduced() || low || idle > (rule?.restAfterMs ?? 300_000)) return 'rest'
@@ -993,7 +1039,8 @@ function draw(now: number, opt: DrawOpt = {}) {
   const ramp = smooth01((now - wakeAt) / 600)
   sheetK += ((sheetOpen ? 1 : 0) - sheetK) * Math.min(1, dt / 450)
   lightK += ((lightOn ? 1 : 0) - lightK) * (reduced() ? 1 : Math.min(1, dt / 680))
-  const spd = (1 - smooth01(restK)) * (opt.capture ? 1 : ramp) * (1 - 0.67 * sheetK) // 설정 시트: 느리게
+  calmK += ((calm ? 1 : 0) - calmK) * Math.min(1, dt / 300)
+  const spd = (1 - smooth01(restK)) * (opt.capture ? 1 : ramp) * (1 - 0.67 * sheetK) * (1 - 0.7 * calmK) // 설정 시트·편집 중: 느리게
   // 은하 시계: 회전 켬 1 · 느리게 ⅓ · 끔 0
   simT += (dt / 1000) * ROT[rot] * spd
   // 관성 (τ 0.5s, 느리게 0.25s, 최대 1.2s): 구 위에서 그 축으로 계속 구르다 멈춘 자세에 머문다
@@ -1019,7 +1066,7 @@ function draw(now: number, opt: DrawOpt = {}) {
   if (place.id === 'focus' && !flight && !reduced()) {
     if (drag || Math.hypot(user.wv[0], user.wv[1], user.wv[2]) > 1e-9) focusBase = qMul(qAxis(YAX, focusDisp), orient)
     else {
-      const want = focusAngle(now)
+      const want = clockAngle() ?? focusAngle(now)
       focusDisp = Math.abs(want - focusDisp) > 0.5 * DEG ? focusDisp + (want - focusDisp) * Math.min(1, dt / 200) : want
       orient = qMul(qAxis(YAX, -focusDisp), focusBase)
     }
@@ -1027,27 +1074,29 @@ function draw(now: number, opt: DrawOpt = {}) {
   const st = curCam(now)
   SEAT[0] = st.c.seat[0]
   SEAT[1] = st.c.seat[1]
-  if (st.flying && prevFlightQ && dt > 0) flightPeak = Math.max(flightPeak, (qAngle(prevFlightQ, st.c.q) / DEG / dt) * 1000)
+  if (st.flying && prevFlightQ && dt > 0 && !flight?.fade) flightPeak = Math.max(flightPeak, (qAngle(prevFlightQ, st.c.q) / DEG / dt) * 1000)
   prevFlightQ = st.flying ? st.c.q : null
   // 카메라 호흡: 은하 축 둘레 ±3° · 카메라 가로축 ±1.5° · 거리 ±2% — 동작 줄이기·회전 끔이면 없음
   const bk = (reduced() ? 0 : 1) * spd
   const tt = (now - t0) / 1000
-  const settle = opt.capture ? 1 : 1 + (1 / 0.84 - 1) * Math.pow(1 - Math.min(1, (now - readyAt) / 1300), 3)
+  const settle = 1 // design-m1 #1: 앱 열기에 카메라 진입 비행 없음 (오늘 자세에서 노출만 55 → 100%)
   const dist = st.c.dist * user.zoom * (1 + 0.02 * bk * Math.sin((tt / 24) * Math.PI * 2)) * (reducedOS ? 1 : settle)
   let cq = qMul(qAxis(YAX, -3 * DEG * bk * Math.sin((tt / 40) * Math.PI * 2)), st.c.q)
   cq = qMul(cq, qAxis([1, 0, 0], 1.5 * DEG * bk * Math.sin((tt / 31) * Math.PI * 2 + 1)))
   const target = st.c.t
   const back = qRot(cq, [0, 0, 1])
   const eye: V3 = [target[0] + back[0] * dist, target[1] + back[1] * dist, target[2] + back[2] * dist]
+  lastEye = eye
+  lastBasis = { s: qRot(cq, [1, 0, 0]), u: qRot(cq, [0, 1, 0]), f: [-back[0], -back[1], -back[2]] }
   const vp = viewProj(eye, qRot(cq, [1, 0, 0]), qRot(cq, [0, 1, 0]), [-back[0], -back[1], -back[2]], FOV * DEG, W / H, 0.02, 3000)
   const entrance = opt.capture ? 1 : Math.min(1, (now - readyAt) / 1400)
   updateRing(vp.m, target, now)
-  const expo = st.c.expo * (0.55 + 0.45 * (1 - Math.pow(1 - entrance, 3))) * (1 - 0.15 * st.c.fx) * (1 - st.c.dim) * (1 - 0.35 * sheetK) * extExpo // 시트: 노출 ×0.65
+  const expo = st.c.expo * (0.55 + 0.45 * (1 - Math.pow(1 - entrance, 3))) * (1 - 0.15 * st.c.fx) * (1 - st.c.dim) * (1 - 0.35 * sheetK) * extExpo * (1 + 0.08 * swellK(now)) // 시트: 노출 ×0.65 · V13 원반 부풂 +8%
 
   // 상태별 해상도: 타깃 안의 일부만 쓴다
   // 비행 중 동적 해상도 ×0.8 (움직임이 가려 준다 — 원반 가까이 채우기 비용 ↓)
   // 총 픽셀 상한 4.0MP (power-budget §2: iPad 11\" DPR 2 = 4.0MP)
-  const pxCap = Math.min(1, Math.sqrt(4.0e6 / (W * H)))
+  const pxCap = Math.min(1, Math.sqrt(3.6e6 / (W * H))) // M1: 3.6MP (앱 위에서 활동 GPU 5ms 여유)
   const rs = rsOverride ? rsOverride : opt.capture ? 1 : (flight ? 1 : (place.rsK ?? 1)) * pxCap * (st.flying ? Math.min(0.8, RSCALE[power]) : RSCALE[power])
   const sw = Math.max(2, Math.round(W * rs))
   const sh = Math.max(2, Math.round(H * rs))
@@ -1105,7 +1154,9 @@ function draw(now: number, opt: DrawOpt = {}) {
     gl.drawArrays(gl.POINTS, 0, FG_N)
   }
   // 1c) 데이터 별 (오늘의 별자리·복습 카드·노트 별): 별 프로그램 그대로, 패턴과 함께 돈다
+  syncZones()
   drawDataStars()
+  drawLines(vp.m)
   if (anchorDirty && !st.flying && !opt.capture) emitAnchors(vp.m, target)
   lastVP = vp.m
   // 2) 구름 (장면의 반 해상도): 먼지 투과율 T (곱하기) · 성운·팔 빛 E (더하기)
@@ -1212,7 +1263,9 @@ function draw(now: number, opt: DrawOpt = {}) {
   gl.uniform1f(P.comp.u.uExposure!, expo * 0.55)
   gl.uniform1f(P.comp.u.uAspect!, W / H)
   gl.uniform1f(P.comp.u.uRest!, smooth01(restK))
-  gl.uniform1f(P.comp.u.uLight!, lightK)
+  gl.uniform1f(P.comp.u.uPlate!, lightK)
+  gl.uniform4fv(P.comp.u['uZone[0]']!, zoneUv)
+  gl.uniform2f(P.comp.u.uZoneF!, (cssW < 600 ? 64 : 120) / cssW, (cssW < 600 ? 64 : 120) / cssH)
   gl.drawArrays(gl.TRIANGLES, 0, 3)
   gl.activeTexture(gl.TEXTURE0)
   gl.bindVertexArray(null)
@@ -1321,7 +1374,8 @@ function fgUpdate(dt: number, eye: V3, m: Float32Array, sdpr: number, moving: bo
   if (reducedOS) cap = 6
   const deepK = power === 'deep' ? 0.3 : 1
   fgCapK += (deepK - fgCapK) * Math.min(1, dt / 5000)
-  cap = Math.max(0, Math.round(cap * fgCapK))
+  // 설정 시트 ×0.3 · 편집 중 0 · 낮(건판) 0
+  cap = Math.max(0, Math.round(cap * fgCapK * (1 - 0.7 * sheetK) * (1 - calmK) * (1 - lightK)))
   const areaCap = (rot === 'slow' ? 0.005 : 0.015) * cssW * cssH
   const K = fgK(eye)
   const maxCss = rot === 'slow' ? 8 : 22
@@ -1623,15 +1677,20 @@ function levelOf(d: DataStar, t: number) {
   return d.from + (d.to - d.from) * k * k * (3 - 2 * k)
 }
 function drawDataStars() {
-  if (!dataStars.length) return
   const t = nowS()
-  if (dataArr.length < dataStars.length * 8) dataArr = new Float32Array(dataStars.length * 8)
+  if (sparkles.length) sparkles = sparkles.filter((x) => t < x.t0 + 0.6)
+  const all = sparkles.length ? dataStars.concat(sparkles) : dataStars
+  if (!all.length) return
+  if (dataArr.length < all.length * 8) dataArr = new Float32Array(all.length * 8)
   let n = 0
   let animating = false
-  for (const d of dataStars) {
-    const lv = levelOf(d, t)
+  for (const d of all) {
+    let lv = d.id.startsWith('spark:') ? (t - d.t0 < 0.3 ? 1.4 * Math.sin((Math.PI * (t - d.t0)) / 0.3) : 0) : levelOf(d, t)
     if (d.dur > 0 && t < d.t0 + d.dur) animating = true
     if (lv <= 0.001) continue
+    // 가림: 카메라에서 원반 반대편이면 ×0.5 — 복습(아래에서)은 예외 (design-m1 0-2-2)
+    if (lastEye[1] < 0 && place.id !== 'review') lv *= 0.5
+    if (d.group && d.group === swellAt) lv *= 1 + 0.25 * swellK(performance.now()) // V13s 자리 부풂
     const o = n * 8
     dataArr[o] = Math.hypot(d.pos[0], d.pos[2])
     dataArr[o + 1] = Math.atan2(d.pos[2], d.pos[0])
@@ -1643,7 +1702,7 @@ function drawDataStars() {
     dataArr[o + 7] = 5
     n++
   }
-  if (animating) lastInput = Math.max(lastInput, performance.now() - 1500) // 별이 밝아지는 동안은 평소 박자 이상
+  if (animating) eventUntil = Math.max(eventUntil, performance.now() + 2000) // 사건 중 활동, 끝나고 2초 뒤 평소
   if (!n) return
   gl.useProgram(P.star.p)
   gl.bindBuffer(gl.ARRAY_BUFFER, dataBuf)
@@ -1702,7 +1761,8 @@ function emitAnchors(m: Float32Array, _target: V3) {
   const on = !!c && c[0] > -cssW * 0.2 && c[0] < cssW * 1.2 && c[1] > -cssH * 0.2 && c[1] < cssH * 1.2
   const next: Record<AnchorName, Anchor> = {
     core: { x: c?.[0] ?? 0, y: c?.[1] ?? 0, r: ringPx(m, 11.5), visible: on },
-    'focus-disk': { x: c?.[0] ?? 0, y: c?.[1] ?? 0, r: ringPx(m, RING_R), visible: on && place.id === 'focus' },
+    // r = 눈에 보이는 팔 고리 11.5u의 화면 반지름 — 앱이 링을 R = 1.22r(= 14u 베젤)로 그린다 (design-m1 2-3)
+    'focus-disk': { x: c?.[0] ?? 0, y: c?.[1] ?? 0, r: ringPx(m, 11.5), visible: on && place.id === 'focus' },
   }
   for (const name of ['core', 'focus-disk'] as AnchorName[]) {
     const a = next[name]
@@ -1723,6 +1783,83 @@ function onAnchor(name: AnchorName, cb: (a: Anchor) => void): () => void {
     kick()
   }
   return () => set!.delete(cb)
+}
+
+/* ---------- 사건 층 보조: 부풂 · 반짝 · 선 · 화면→원반 ---------- */
+function swellK(now: number) {
+  const p = (now - swellT0) / 2000
+  return p > 0 && p < 1 ? Math.sin(Math.PI * p) : 0
+}
+let sparkles: DataStar[] = []
+let links: LinkSpec[] = []
+let lineArr = new Float32Array(0)
+const lineBuf = gl.createBuffer()!
+const lineVao = (() => {
+  const vao = gl.createVertexArray()!
+  gl.bindVertexArray(vao)
+  gl.bindBuffer(gl.ARRAY_BUFFER, lineBuf)
+  gl.enableVertexAttribArray(0)
+  gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 16, 0)
+  gl.bindVertexArray(null)
+  return vao
+})()
+function drawLines(m: Float32Array) {
+  if (!links.length) return
+  const t = nowS()
+  if (lineArr.length < links.length * 8) lineArr = new Float32Array(links.length * 8)
+  let n = 0
+  for (const l of links) {
+    const k = l.dur > 0 ? Math.min(1, Math.max(0, (t - l.t0) / l.dur)) : 1
+    if (k <= 0 || l.alpha <= 0.001) continue
+    if (l.dur > 0 && k < 1) eventUntil = Math.max(eventUntil, performance.now() + 2000)
+    const e = k * k * (3 - 2 * k)
+    const b: V3 = [l.a[0] + (l.b[0] - l.a[0]) * e, l.a[1] + (l.b[1] - l.a[1]) * e, l.a[2] + (l.b[2] - l.a[2]) * e]
+    const o = n * 8
+    lineArr[o] = Math.hypot(l.a[0], l.a[2])
+    lineArr[o + 1] = Math.atan2(l.a[2], l.a[0])
+    lineArr[o + 2] = l.a[1]
+    lineArr[o + 3] = l.alpha
+    lineArr[o + 4] = Math.hypot(b[0], b[2])
+    lineArr[o + 5] = Math.atan2(b[2], b[0])
+    lineArr[o + 6] = b[1]
+    lineArr[o + 7] = l.alpha
+    n++
+  }
+  if (!n) return
+  gl.useProgram(P.line.p)
+  gl.uniformMatrix4fv(P.line.u.uVP!, false, m)
+  gl.uniform1f(P.line.u.uTime!, simT)
+  gl.uniform3f(P.line.u.uLineCol!, 0.95, 0.86, 0.68)
+  gl.bindBuffer(gl.ARRAY_BUFFER, lineBuf)
+  gl.bufferData(gl.ARRAY_BUFFER, lineArr.subarray(0, n * 8), gl.DYNAMIC_DRAW)
+  gl.bindVertexArray(lineVao)
+  gl.drawArrays(gl.LINES, 0, n * 2)
+}
+function screenToDisk(x: number, y: number): [number, number, number] | null {
+  const B = lastBasis
+  if (!B) return null
+  const t = 1 / Math.tan((FOV * DEG) / 2)
+  const aspect = cssW / cssH
+  const nx = (x / cssW) * 2 - 1
+  const ny = 1 - (y / cssH) * 2
+  const xv = (nx - (SEAT[0]! - 0.5) * 2) * (aspect / t)
+  const yv = (ny - (SEAT[1]! - 0.5) * -2) / t
+  const dir: V3 = [B.f[0] + B.s[0] * xv + B.u[0] * yv, B.f[1] + B.s[1] * xv + B.u[1] * yv, B.f[2] + B.s[2] * xv + B.u[2] * yv]
+  if (Math.abs(dir[1]) < 1e-5) return null
+  const k = -lastEye[1] / dir[1]
+  if (k <= 0) return null
+  const w: V3 = [lastEye[0] + dir[0] * k, 0, lastEye[2] + dir[2] * k]
+  // 세계 → 패턴 좌표(t=0)
+  const r = Math.hypot(w[0], w[2])
+  const th = Math.atan2(w[2], w[0]) - OMEGA_P * simT
+  return [r * Math.cos(th), 0.1, r * Math.sin(th)]
+}
+let zoneKey = ''
+function syncZones() {
+  const key = zonePlace() + '|' + cssW + 'x' + cssH
+  if (key === zoneKey) return
+  zoneKey = key
+  updateMask(cssW, cssH, !cleanMode)
 }
 
 /* ---------- 바깥에서 부르는 것 ---------- */
@@ -1813,7 +1950,39 @@ return {
   },
   setDataStars: (list: DataStar[]) => {
     dataStars = list
-    kick()
+    if (!stopped) kick() // 쉼·숨김이면 깨우지 않고 최종 상태만 (돌아올 때 보인다)
+  },
+  setLinks: (list: LinkSpec[]) => {
+    links = list
+    if (!stopped) kick()
+  },
+  /** V13 원반 부풂(+8%, 2초) · 자리 부풂(seat·cluster 데이터 별 +25%) */
+  swell: (at: 'core' | 'seat' | 'cluster' = 'core') => {
+    swellT0 = performance.now()
+    swellAt = at
+    eventUntil = Math.max(eventUntil, swellT0 + 4000)
+    if (!stopped) kick()
+  },
+  /** V11 반짝: 월드 자리(패턴 좌표)에 300ms 빛 점 +40% */
+  sparkle: (pos: [number, number, number], color: [number, number, number] = [0.953, 0.824, 0.604]) => {
+    const t = nowS()
+    sparkles.push({ id: 'spark:' + t, pos, L: 4, color, from: 0, to: 0, t0: t, dur: 0.3 })
+    eventUntil = Math.max(eventUntil, performance.now() + 2300)
+    if (!stopped) kick()
+  },
+  /** 화면 점(CSS px) → 원반 평면(y = 0) 위 패턴 좌표 (계획의 시간 띠 band(d) 등) */
+  screenToDisk,
+  /** 계획에서 마감까지 d일 → 시간 띠 위 점 (design-m1 0-1 band) */
+  bandPoint: (days: number) => screenToDisk((0.1 + (0.8 * Math.min(Math.max(days, 0), 14)) / 14) * cssW, SEAT[1] * cssH),
+  /** 편집 중(useFieldPause): 자전·공전 ×0.3, 전경 별 0 (300ms) */
+  setCalm: (on: boolean) => {
+    calm = on
+    touch()
+  },
+  /** useSkyClock: 집중 시계 (null이면 0.24°/s 공전) */
+  setClock: (c: { startedAt: number; durationMs: number; elapsedMs: number; paused: boolean } | null) => {
+    focusClock = c
+    if (place.id === 'focus' && !stopped) kick()
   },
   setRing: (on: boolean) => {
     ringOn = on
@@ -1933,6 +2102,21 @@ export class Galaxy3D {
   }
   now(): number {
     return this.api?.now() ?? performance.now() / 1000
+  }
+  setLinks(list: LinkSpec[]): void {
+    this.api?.setLinks(list)
+  }
+  swell(at?: 'core' | 'seat' | 'cluster'): void {
+    this.api?.swell(at)
+  }
+  sparkle(pos: [number, number, number]): void {
+    this.api?.sparkle(pos)
+  }
+  bandPoint(days: number): [number, number, number] | null {
+    return this.api?.bandPoint(days) ?? null
+  }
+  setCalm(on: boolean): void {
+    this.api?.setCalm(on)
   }
   anchors(name: AnchorName, cb: (a: Anchor) => void): () => void {
     return this.api?.onAnchor(name, cb) ?? (() => {})

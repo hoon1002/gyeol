@@ -435,3 +435,125 @@ button.peri-item:hover, .peri-item[aria-expanded="true"] { color: var(--text-1);
 .peri-item + .peri-item::before { content: "·"; margin-right: 2px; color: var(--text-3); }
 /* ⑬ 플래너: 선만 있는 격자 */
 .wg-slot { background: none; border-radius: 0; }
+
+/* =========================================================
+   M1: 글 구역 배치 (design-m1 2-1). 숫자는 zones.ts가 장소마다 심는 CSS 변수(--za-* · --zb-*)뿐.
+   구역은 화면(뷰포트) 비율이라, 레일만큼 민 .stage 안에서는 --chrome-left를 뺀다.
+   ========================================================= */
+.space:not([data-inactive]) { position: relative; }
+.zone-a, .zone-b { position: absolute; box-sizing: border-box; min-width: 0; }
+.zone-a {
+  left: calc(var(--za-x0) * 100vw - var(--chrome-left)); top: calc(var(--za-y0) * 100svh);
+  width: calc((var(--za-x1) - var(--za-x0)) * 100vw); height: calc((var(--za-y1) - var(--za-y0)) * 100svh);
+}
+.zone-b {
+  left: calc(var(--zb-x0) * 100vw - var(--chrome-left)); top: calc(var(--zb-y0) * 100svh);
+  width: calc((var(--zb-x1) - var(--zb-x0)) * 100vw); height: calc((var(--zb-y1) - var(--zb-y0)) * 100svh);
+}
+.hero-zone { display: block; min-height: 100svh; padding: 0; }
+.hero-zone > .hero-col.zone-a { display: grid; align-content: center; gap: 20px; max-width: none; }
+.hero-zone .focus-lines { font-size: clamp(2.2rem, 1rem + 3vw, 4rem); }
+.phone-only-flex { display: none; }
+@media (max-width: 599px) {
+  .phone-only-flex { display: flex; }
+  .hero-zone .focus-lines { font-size: clamp(2rem, 1.2rem + 3vw, 2.6rem); }
+}
+/* 폰 '노트 | 지도' 토글: 폰 기준 600 */
+@media (min-width: 600px) { .phone-only { display: none !important; } }
+
+/* 오늘: 폰 맨 아래 계획 줄 */
+.plan-line { align-items: center; gap: 8px; font-family: var(--f-mono), var(--f-kr); font-weight: 300; font-size: 13px; color: var(--text-2); text-shadow: var(--sky-text-shadow); }
+.plan-line span:first-child { color: var(--text-1); font-family: var(--f-kr); font-weight: 400; font-size: 14px; }
+.plan-line-v { color: var(--text-3); }
+.plan-line svg { margin-left: auto; color: var(--text-3); }
+.plan-line { min-height: 44px; border-top: 1px solid var(--border); }
+
+/* 복습: 카드 최대 폭 440 (가로) */
+.review-session .flash { width: min(440px, 100%); min-height: 180px; }
+@media (max-width: 599px), (max-aspect-ratio: 1/1) { .review-session .flash { width: 100%; } }
+.review-hero.hero-zone, .review-session.hero-zone { padding: 0; }
+
+/* 계획: 띠 위 2/3. 가로 = 머리(왼쪽) + 격자(오른쪽), 세로·폰 = 머리 위 + 격자 아래 — 격자는 구역 높이를 채운다 */
+.plan-zone { display: flex; flex-direction: column; gap: 18px; }
+.plan-head { display: grid; gap: 16px; max-width: none; }
+.plan .week-grid-wrap { flex: 1 1 auto; min-height: 0; padding: 0; }
+.plan .week-grid-wrap > *, .plan .week-grid { height: 100%; }
+.plan .week-grid { max-width: none; min-height: 0; }
+@media (min-width: 600px) and (min-aspect-ratio: 1001/1000) {
+  .plan-zone { flex-direction: row; align-items: stretch; gap: 32px; }
+  .plan-head { flex: 0 0 clamp(200px, 22vw, 300px); align-content: center; }
+}
+@media (max-width: 599px) { .plan .week-grid { height: 100%; } .plan .wg-col { grid-template-rows: 32px 1fr; } .plan .wg-hours { margin-top: 32px; } }
+
+/* 노트: 가로 = 목록 열 + 종이(가운데), 세로·폰 = 한 단(목록 → 종이). 오른쪽 세로 띠는 빈 하늘 */
+.notes-hero.hero-zone > .hero-col.zone-a { align-content: start; gap: 18px; }
+.notes-list { max-width: none; }
+.notes-list li button.is-on { color: var(--text-1); }
+.notes-list li button.is-on span::before { content: ""; display: inline-block; width: 4px; height: 4px; margin: 0 8px 3px 0; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.notes-list li button { flex-direction: column; align-items: flex-start; gap: 2px; }
+.paper-stage.zone-b { padding: 0; display: grid; place-items: center; pointer-events: none; }
+.paper-stage.zone-b .paper-reveal { width: min(100%, calc((var(--zb-y1) - var(--zb-y0)) * 100svh / 1.28)); }
+/* 세로·폰: 종이는 목록 아래 흐름으로 (둘째 사각형이 없다) */
+@media (max-width: 599px), (max-aspect-ratio: 1/1) {
+  .notes-hero.hero-zone > .hero-col.zone-a { height: auto; min-height: 0; }
+  .notes-hero.hero-zone { min-height: 0; }
+  .paper-stage.zone-b {
+    position: relative; left: auto; top: auto; height: auto;
+    width: calc((var(--za-x1) - var(--za-x0)) * 100vw); margin: 0 0 calc(var(--dock-h) + 48px) calc(var(--za-x0) * 100vw - var(--chrome-left));
+    justify-items: start;
+  }
+  .paper-stage.zone-b .paper-reveal { width: min(100%, 420px); }
+}
+
+/* 지도: 머리(왼쪽 위) — 지도 / 별 54 · 선 87 / 과목 렌즈 칩 한 줄 */
+.map-hero.hero-zone > .hero-col.zone-a { align-content: start; gap: 14px; height: auto; }
+.map-title { font-size: clamp(2rem, 1rem + 2.4vw, 3.2rem) !important; }
+.lens-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.lens-chip { min-height: 36px; padding: 0 12px; font-size: 13px; }
+.lens-chip i { width: 7px; height: 7px; border-radius: 50%; }
+.lens-chip[aria-checked="true"] i { box-shadow: 0 0 0 1.5px var(--bg-0); }
+.graph-hero .hero-col::before { content: none; }
+
+/* 집중 = 은하 시계 (design-m1 2-3). --ring-x/y/r는 FocusBezel이 앵커로 심는다(px, 화면 좌표) */
+.focus-stage.focus-stage { display: block; min-height: 100svh; padding: 0; text-align: left; }
+.focus-bezel { position: fixed; inset: 0; width: 100vw; height: 100svh; pointer-events: none; overflow: visible; opacity: 0; transition: opacity 320ms var(--ease-out); }
+.focus-bezel[data-show="1"] { opacity: 1; }
+:root[data-motion="off"] .focus-bezel { transition: none; }
+.bezel-track { fill: none; stroke: rgba(237, 231, 218, .32); stroke-width: 1.5; }
+.bezel-arc { fill: none; stroke: #F3D29A; stroke-width: 2.5; stroke-linecap: round; transition: stroke 600ms var(--ease-out), opacity 240ms; }
+.focus-bezel[data-state="paused"] .bezel-arc { opacity: .5; }
+.focus-bezel[data-state="done"] .bezel-arc { stroke: rgba(237, 231, 218, .32); }
+:root[data-theme="light"] .bezel-track { stroke: rgba(20, 23, 32, .22); }
+:root[data-theme="light"] .bezel-arc { stroke: #7A5714; }
+:root[data-theme="light"] .focus-bezel[data-state="done"] .bezel-arc { stroke: rgba(20, 23, 32, .22); }
+
+.focus-block { position: absolute; display: grid; gap: 14px; text-shadow: var(--sky-text-shadow); }
+.focus-block .timer { width: auto; gap: 6px; }
+.focus-block .timer-num {
+  font-family: var(--f-mono); font-weight: 400; font-variation-settings: normal; font-feature-settings: "tnum"; font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em; line-height: 1; margin: 0; color: var(--text-1); font-size: 56px;
+}
+@media (min-width: 1200px) { .focus-block .timer-num { font-size: 64px; } }
+@media (max-width: 599px) { .focus-block .timer-num { font-size: 48px; } }
+.focus-block .focus-subject { font-size: clamp(1.25rem, 1rem + .8vw, 1.6rem); min-height: 40px; }
+.focus-block .timer-meta { margin: 0; }
+/* 가로: 링 왼쪽 글 구역, 세로 가운데. 링 바깥 가장자리와 48px 이상 */
+@media (min-width: 600px) and (min-aspect-ratio: 1001/1000) {
+  .focus-block {
+    left: calc(var(--za-x0) * 100vw - var(--chrome-left)); top: calc(var(--za-y0) * 100svh);
+    width: min(calc((var(--za-x1) - var(--za-x0)) * 100vw), calc(var(--ring-x, 60vw) - var(--ring-r, 40svh) - 48px - var(--za-x0) * 100vw));
+    height: calc((var(--za-y1) - var(--za-y0)) * 100svh);
+    align-content: center; justify-items: start;
+  }
+  .focus-block .focus-actions, .focus-block .durations { justify-content: flex-start; }
+}
+/* 세로·폰: 링 아래 바깥 24px(폰 20px), 링 중심과 같은 x, 가운데 정렬 */
+@media (max-width: 599px), (max-aspect-ratio: 1/1) {
+  .focus-block {
+    left: calc(var(--ring-x, 50vw) - var(--chrome-left)); top: calc(var(--ring-y, 40svh) + var(--ring-r, 30vw) + 24px);
+    translate: -50% 0; width: min(560px, calc(100vw - var(--chrome-left) - 2 * var(--gutter)));
+    justify-items: center; text-align: center; gap: 12px;
+  }
+  .focus-block .focus-actions, .focus-block .durations { justify-content: center; }
+}
+@media (max-width: 599px) { .focus-block { top: calc(var(--ring-y, 36svh) + var(--ring-r, 40vw) + 20px); gap: 10px; } }

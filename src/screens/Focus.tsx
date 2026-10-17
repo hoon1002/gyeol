@@ -1,20 +1,25 @@
 /**
- * 집중 v3: 명사구(과목) + 큰 숫자 25:00(Fraunces 200) + 1px 진행선. 원형 링 없음.
+ * 집중 v4 = 은하 시계 (design-m1 2-3): 정면 원반 둘레의 베젤 링(FocusBezel) + 과목 / 남은 시간(mono) / 동작 — 3줄.
+ * 시간 칩 15 · 25 · 50은 대기 때만, 동작 줄 아래.
  * 하늘의 사건: 시작 = 새 별이 희미하게 생김 · 진행 = 그 별이 자람(growStar) ·
  * 세트 끝 = 별 탄생(birthStar) + 직전 별과 선(drawLink) · 끝내기(포기) = 별이 사그라짐(fadeStar).
  * 남은 시간은 시각 차로 계산(새로고침·백그라운드에도 정확). React는 1초마다만, 이 공간이 보일 때만 다시 그린다.
  */
 import { useEffect, useRef, useState } from 'react'
-import { ProgressLine, useSkyEvent } from '@/fx'
+import { useSkyEvent } from '@/fx'
 import { ActiveMood as FieldMood, useActive } from '@/app/keepAlive'
 import { useFocusToday, useNow, useSubjects } from '@/db/hooks'
 import { db } from '@/db/schema'
 import { remainingMs, useFocusTimer } from '@/stores/focus'
 import { useUi } from '@/stores/ui'
 import { IconPause } from '@/shell/icons'
+import { spaceOf } from '@/shell/spaces'
+import { FocusBezel } from './FocusBezel'
 import { PrimaryButton, QuietButton } from './parts'
 
-const DURATIONS = [25, 50, 90]
+const SKY = spaceOf('/focus')
+
+const DURATIONS = [15, 25, 50]
 
 function fmtClock(ms: number): string {
   const s = Math.ceil(ms / 1000)
@@ -31,6 +36,7 @@ export function FocusScreen() {
   const intent = useUi((s) => s.focusIntent)
   const setChromeHidden = useUi((s) => s.setChromeHidden)
   const knotRef = useRef<HTMLDivElement>(null)
+  const stageRef = useRef<HTMLElement>(null)
   const sky = useSkyEvent()
   const [, force] = useState(0)
   const finishing = useRef(false)
@@ -132,8 +138,8 @@ export function FocusScreen() {
     if (done >= 5 * 60_000) {
       try {
         await db.focusSessions.put({ id, subjectId: s.subjectId, plannedMs: s.plannedMs, startedAt: s.startedAt, endedAt: Date.now(), completed: true, createdAt: Date.now() })
+        // 하늘이 응답한다(작은 별) — 토스트 없음 (design-m1 4-2)
         sky.birthStar({ id, at: 'next', kind: 'small', subject: s.subjectId ?? undefined })
-        useUi.getState().showToast('기록됨')
       } catch {
         /* noop */
       }
@@ -153,54 +159,59 @@ export function FocusScreen() {
     <>
       <FieldMood
         preset="focus"
+        drag={SKY.drag}
         knotRef={knotRef}
         data={{ rings: today?.sets ?? 0, pressure: 0, load: 0.2 }}
         stars={today ? { today: today.list.map((s) => ({ id: s.id, at: s.startedAt, kind: 'set' as const })) } : undefined}
       />
-      <section className={`focus-stage${running ? ' is-running' : ''}`} aria-label="집중">
-        <button type="button" className="focus-subject" onClick={cycleSubject} disabled={live} aria-label={`과목: ${subject?.name ?? '자유'} (눌러서 바꾸기)`}>
-          {subject && <i style={{ background: `var(--s-${subject.color})` }} aria-hidden="true" />}
-          <span>{subject?.name ?? '자유'}</span>
-        </button>
+      <section ref={stageRef} className={`focus-stage${running ? ' is-running' : ''}`} aria-label="집중">
+        <FocusBezel active={active} progress={progress} state={timer.phase} stageRef={stageRef} />
+        {/* 글 블록: 가로 = 링 왼쪽 글 구역 세로 가운데, 세로·폰 = 링 아래 바깥(링 중심과 같은 x). 링 안에는 넣지 않는다 */}
+        <div className="focus-block">
+          <button type="button" className="focus-subject" onClick={cycleSubject} disabled={live} aria-label={`과목: ${subject?.name ?? '자유'} (눌러서 바꾸기)`}>
+            {subject && <i style={{ background: `var(--s-${subject.color})` }} aria-hidden="true" />}
+            <span>{subject?.name ?? '자유'}</span>
+          </button>
 
-        <div className="timer" ref={knotRef}>
-          <span className="timer-num" role="timer" aria-label={`남은 시간 ${fmtClock(remain)}`}>
-            {fmtClock(remain)}
-          </span>
-          <ProgressLine value={progress} tone="star" now={live} width="min(480px, 100%)" label={`${Math.round(progress * 100)}% 진행`} />
-          <span className="meta timer-meta" aria-live="polite">{timer.phase === 'paused' ? '멈춤' : ' '}</span>
-        </div>
-
-        <div className="actions focus-actions">
-          {timer.phase === 'idle' && <PrimaryButton onClick={() => start()}>시작</PrimaryButton>}
-          {timer.phase === 'running' && (
-            <button type="button" className="icon-btn ghost big" aria-label="일시정지" onClick={() => timer.pause()}>
-              <IconPause size={20} />
-            </button>
-          )}
-          {timer.phase === 'paused' && (
-            <>
-              <PrimaryButton onClick={() => timer.resume()} arrow={false}>이어서</PrimaryButton>
-              <QuietButton onClick={() => void stop()}>끝내기</QuietButton>
-            </>
-          )}
-          {timer.phase === 'done' && (
-            <>
-              <PrimaryButton onClick={() => { timer.reset(); start() }}>한 번 더</PrimaryButton>
-              <QuietButton onClick={() => timer.reset()}>쉬기</QuietButton>
-            </>
-          )}
-        </div>
-
-        {!live && (
-          <div className="durations enter enter-2" role="radiogroup" aria-label="집중 시간">
-            {DURATIONS.map((m) => (
-              <button key={m} type="button" role="radio" aria-checked={timer.plannedMs === m * 60_000} className="chip mono" onClick={() => timer.setPlanned(m * 60_000)}>
-                {m}
-              </button>
-            ))}
+          <div className="timer" ref={knotRef}>
+            <span className="timer-num" role="timer" aria-label={`남은 시간 ${fmtClock(remain)}`}>
+              {fmtClock(remain)}
+            </span>
+            <span className="sr-only" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)} aria-label="진행" />
+            {timer.phase === 'paused' && <span className="meta timer-meta" aria-live="polite">멈춤</span>}
           </div>
-        )}
+
+          <div className="actions focus-actions">
+            {timer.phase === 'idle' && <PrimaryButton onClick={() => start()}>시작</PrimaryButton>}
+            {timer.phase === 'running' && (
+              <button type="button" className="icon-btn ghost big" aria-label="일시정지" onClick={() => timer.pause()}>
+                <IconPause size={20} />
+              </button>
+            )}
+            {timer.phase === 'paused' && (
+              <>
+                <PrimaryButton onClick={() => timer.resume()} arrow={false}>이어서</PrimaryButton>
+                <QuietButton onClick={() => void stop()}>끝내기</QuietButton>
+              </>
+            )}
+            {timer.phase === 'done' && (
+              <>
+                <PrimaryButton onClick={() => { timer.reset(); start() }}>한 번 더</PrimaryButton>
+                <QuietButton onClick={() => timer.reset()}>쉬기</QuietButton>
+              </>
+            )}
+          </div>
+
+          {timer.phase === 'idle' && (
+            <div className="durations enter enter-2" role="radiogroup" aria-label="집중 시간">
+              {DURATIONS.map((m) => (
+                <button key={m} type="button" role="radio" aria-checked={timer.plannedMs === m * 60_000} className="chip mono" onClick={() => timer.setPlanned(m * 60_000)}>
+                  {m}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </section>
     </>
   )

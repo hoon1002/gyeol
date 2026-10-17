@@ -1,17 +1,16 @@
 /**
- * 설정 (design-v2 4-3): 한 열, 최대 너비 640. 섹션은 상자 없이 제목 + 행.
- * 모양(테마) · 움직임(모션) · 데이터(표시만) · 개발용(시각 고정 · 필드 등급 · FPS).
+ * 설정 시트의 본문 (M1: 장소가 아니라 시트 — 틀·열기·닫기·포커스 가두기는 src/shell/SettingsSheet.tsx).
+ * 섹션은 상자 없이 제목 + 행: 모양(테마) · 움직임(모션 · 은하 회전 · 공간 이동) · 데이터(표시만) · 개발용.
  */
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useMotionPrefs, useSeal, type MotionLevel } from '@/fx'
-import { ActiveMood as FieldMood, useActive } from '@/app/keepAlive'
+import { useActive } from '@/app/keepAlive'
 import { db } from '@/db/schema'
 import { seedSample } from '@/db/seed'
 import { switchTheme } from '@/lib/theme'
-import { useSettings, type ClockPreset, type ThemePref, type TravelPref } from '@/stores/settings'
+import { useSettings, type ClockPreset, type RotationPref, type ThemePref, type TravelPref } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import { useEffectiveMotion, useOsReducedMotion } from '@/shell/hooks'
-import { Block, FocusLines } from './parts'
 
 const CLOCKS: Array<[ClockPreset, string]> = [
   ['live', '실시간'],
@@ -110,15 +109,18 @@ function fmtBytes(b: number | null): string {
   return `${(b / 1024 / 1024).toFixed(1)}MB`
 }
 
-export function SettingsScreen() {
+export const THEME_NAME: Record<ThemePref, string> = { dark: '밤', light: '낮', system: '시스템' }
+export const ROTATION_NAME: Record<RotationPref, string> = { on: '켬', slow: '느리게', off: '끔' }
+
+export function SettingsBody() {
   const theme = useSettings((s) => s.theme)
   const setTheme = useSettings((s) => s.setTheme)
   const motion = useSettings((s) => s.motion)
   const setMotion = useSettings((s) => s.setMotion)
   const travel = useSettings((s) => s.travel)
   const setTravel = useSettings((s) => s.setTravel)
-  const meteors = useSettings((s) => s.meteors)
-  const setMeteors = useSettings((s) => s.setMeteors)
+  const rotation = useSettings((s) => s.rotation)
+  const setRotation = useSettings((s) => s.setRotation)
   const clock = useSettings((s) => s.clock)
   const setClock = useSettings((s) => s.setClock)
   const tier = useSettings((s) => s.tier)
@@ -130,24 +132,16 @@ export function SettingsScreen() {
   const storage = useStorageInfo()
   const showToast = useUi((s) => s.showToast)
   const seal = useSeal()
-  const swatchRef = useRef<HTMLSpanElement>(null)
   const dev = import.meta.env.DEV || (typeof location !== 'undefined' && /[?&]dev\b/.test(location.search))
 
   return (
     <>
-      <FieldMood preset="settings" knotRef={swatchRef} />
       <div className="settings">
-        <Block>
-          <span className="sr-only">설정</span>
-        </Block>
-        <Block>
-          <FocusLines lines={['설정']} />
-        </Block>
 
         <section className="set-sec" aria-labelledby="sec-look">
           <h2 id="sec-look">모양</h2>
           <Row title="하늘">
-            <span className="swatch" ref={swatchRef} aria-hidden="true" />
+            <span className="swatch" aria-hidden="true" />
             <Segmented<ThemePref>
               label="테마"
               value={theme}
@@ -171,7 +165,7 @@ export function SettingsScreen() {
               onChange={(v) => setMotion(v)}
             />
           </Row>
-                  <Row title="공간 이동" hint={osReduced ? '기기 설정 · 동작 줄이기' : undefined}>
+          <Row title="공간 이동" hint={osReduced ? '기기 설정 · 동작 줄이기' : undefined}>
             <Segmented<TravelPref>
               label="공간 이동"
               value={osReduced ? 'off' : travel}
@@ -180,12 +174,13 @@ export function SettingsScreen() {
               onChange={(v) => setTravel(v)}
             />
           </Row>
-          <Row title="유성">
-            <Segmented<'on' | 'off'>
-              label="유성"
-              value={meteors ? 'on' : 'off'}
-              options={[['on', '켬'], ['off', '끔']]}
-              onChange={(v) => setMeteors(v === 'on')}
+          <Row title="은하 회전" hint={osReduced ? '기기 설정 · 동작 줄이기' : undefined}>
+            <Segmented<RotationPref>
+              label="은하 회전"
+              value={osReduced ? 'off' : rotation}
+              disabled={osReduced}
+              options={[['on', '켬'], ['slow', '느리게'], ['off', '끔']]}
+              onChange={(v) => setRotation(v)}
             />
           </Row>
         </section>
@@ -239,7 +234,7 @@ export function SettingsScreen() {
             </Row>
           </section>
         )}
-        <p className="set-foot mono">결 · v3</p>
+        <p className="set-foot mono">결 · M1</p>
       </div>
     </>
   )

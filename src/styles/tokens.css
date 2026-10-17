@@ -90,8 +90,9 @@
 @media (max-width: 599px) {
   :root { --top-h: 48px; --dock-h: 58px; }
 }
-@media (min-width: 1200px) {
-  :root { --chrome-left: calc(var(--rail-w) + var(--dock-gap) + 8px); }
+@media (min-width: 600px) {
+  /* v4: 왼쪽 레일 56 + 여백 16 = 72px (design-m1 2-0) */
+  :root { --chrome-left: calc(var(--rail-w) + var(--dock-gap)); }
 }
 
 /* ===== v3 은하수 (design-v3 3장): 별빛 금 강조, 인주는 시험 별·낙관에만 ===== */

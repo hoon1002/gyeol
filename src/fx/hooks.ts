@@ -163,7 +163,7 @@ export function useFieldPause(active: boolean, reason: PauseReason): void {
 let pending: { commit: () => void | Promise<void>; timer: number; t0: number; done: Array<() => void>; fail: Array<(e: unknown) => void> } | null = null
 let fading: Animation | null = null
 
-const MOOD_NAMES = ['landing', 'today', 'notes', 'graph', 'review', 'planner', 'focus', 'settings']
+const MOOD_NAMES = ['landing', 'today', 'notes', 'graph', 'review', 'planner', 'focus', 'settings', 'map', 'plan']
 /** 목적지 장소 추정: opts.to가 없으면 누른 링크의 href('/', '/notes' …)에서 */
 function guessMood(opts?: TransitionOptions): string | null {
   if (opts?.to) return opts.to
@@ -335,8 +335,10 @@ export interface SkyEvents {
   relight: (ids: string | string[], level: number, o?: { glint?: boolean }) => void
   drawLink: (fromId: string, toId: string, o?: { layer?: 'today' | 'graph'; deferIfPaused?: boolean }) => void
   meteor: (o?: { kind?: 'signal' | 'ambient'; size?: 'sm' | 'md' }) => void
-  glint: (near?: Element | { x: number; y: number }) => void
-  swellBand: (o?: { amount?: number; ms?: number }) => void
+  /** M1: 'seat'(나의 자리의 가장 밝은 오늘 별) · { band: 마감까지 남은 날 }(계획의 시간 띠). 3D에서 화면 점은 무시 */
+  glint: (near?: Element | { x: number; y: number } | 'seat' | { band: number }) => void
+  /** M1: at = 'seat' | 'cluster' 자리 부풂(V13s) */
+  swellBand: (o?: { amount?: number; ms?: number; at?: 'seat' | 'cluster' }) => void
   gatherDust: (target: Element | { x: number; y: number } | 'next' | null) => void
   select: (id: string | null) => void
 }
@@ -478,7 +480,8 @@ export function useSkyCamera(): {
 
 /** 별 누르기: 화면 px ↔ 하늘 좌표, 누른 자리에서 가장 가까운 데이터 별 */
 export function useSkyPick(): {
-  pick: (x: number, y: number, radius?: number) => { id: string; layer: string; sky: [number, number]; screen: [number, number]; dist: number } | null
+  /** world: 3D 은하 좌표 [x, y, z] (M1 추가). 2.5D 대체에서는 [하늘 x, 하늘 y, 0] */
+  pick: (x: number, y: number, radius?: number) => { id: string; layer: string; sky: [number, number]; screen: [number, number]; dist: number; world: [number, number, number] } | null
   toSky: (x: number, y: number) => [number, number]
   toScreen: (skyX: number, skyY: number) => [number, number]
 } {
@@ -496,4 +499,65 @@ export function useSkyPick(): {
 /** 리더 검증용 계측: 굽기 횟수(시작 뒤 늘지 않아야 함), 전환 중 긴 작업 수, 전환 프레임 p95 */
 export function getSkyStats(): SkyStatsOut {
   return getActiveEngine()?.skyStats() ?? { bakes: 0, lastBakeMs: 0, longTasksInNav: 0, navP95Ms: 0, tier: 'C', fps: 0 }
+}
+
+/* ---------- M1 계약 (m1-brief): 설정 시트 · 앵커 · 빈 하늘 드래그 ---------- */
+
+let sheetSeq = 0
+/** 설정 시트가 열려 있는 동안 은하를 어둡게(노출 ×0.65)·느리게. 비행은 없다 */
+export function useSkySheet(open: boolean): void {
+  const eng = useFieldEngine()
+  const idRef = useRef(0)
+  if (!idRef.current) idRef.current = ++sheetSeq
+  useEffect(() => {
+    if (!eng) return
+    const id = idRef.current
+    eng.setSheet(id, open)
+    return () => eng.setSheet(id, false)
+  }, [eng, open])
+}
+
+/**
+ * 은하의 화면 위치(CSS px)를 콜백으로 알린다 — React를 다시 그리지 않는다.
+ * 'focus-disk' = 집중 원반 중심·베젤 반지름(타이머 링 자리), 'core' = 은하 중심·보이는 팔 반지름.
+ * 비행이 끝날 때 · 크기가 바뀔 때 · 끌기가 멈출 때만 부른다(구독하면 마지막 값을 바로 한 번).
+ */
+export function useSkyAnchor(name: 'focus-disk' | 'core', cb: (a: { x: number; y: number; r: number; visible: boolean }) => void): void {
+  const eng = useFieldEngine()
+  const cbRef = useRef(cb)
+  cbRef.current = cb
+  useEffect(() => {
+    if (!eng) return
+    return eng.onAnchor(name, (a) => cbRef.current(a))
+  }, [eng, name])
+}
+
+let dragSeq = 0
+/** 빈 하늘 드래그(트랙볼)를 켜고 끈다. 마지막에 선언한 화면이 이긴다. 기본: 오늘·지도·집중 켬, 노트·복습·계획 끔 */
+export function useSkyDrag(enabled: boolean): void {
+  const eng = useFieldEngine()
+  const idRef = useRef(0)
+  if (!idRef.current) idRef.current = ++dragSeq
+  useLayoutEffect(() => {
+    if (!eng) return
+    const id = idRef.current
+    eng.setDrag(id, enabled)
+    return () => eng.setDrag(id, null)
+  }, [eng, enabled])
+}
+
+/**
+ * 집중 시계 (리더 결정 2, design-m1 #9–#11): 은하 각도 = 진행률 × 360°. null(타이머 없음)이면 집중에서 0.24°/s 공전.
+ * clock.startedAt = 지금 달리는 구간이 시작된 시각(Date.now 기준), clock.elapsedMs = 그 전 구간까지 쌓인 시간, paused면 elapsedMs만 쓴다.
+ * 쉼 상태(20초 무입력)에서는 은하가 멈추고, 돌아오면 그 시각의 각도로 600ms에 걸쳐 따라붙는다.
+ */
+export function useSkyClock(clock: { startedAt: number; durationMs: number; elapsedMs: number; paused: boolean } | null): void {
+  const eng = useFieldEngine()
+  const key = clock ? `${clock.startedAt}|${clock.durationMs}|${clock.elapsedMs}|${clock.paused}` : 'none'
+  const ref = useRef(clock)
+  ref.current = clock
+  useEffect(() => {
+    eng?.setClock(ref.current)
+  }, [eng, key])
+  useEffect(() => () => eng?.setClock(null), [eng])
 }

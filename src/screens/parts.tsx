@@ -19,20 +19,23 @@ export function Hero({
   knotRef,
   className = '',
   label,
-  variant = 'split',
+  variant = 'zone',
 }: {
   children: ReactNode
   knotRef?: RefObject<HTMLSpanElement | null>
   className?: string
   label?: string
-  /** split: 가로 화면에서 글은 왼쪽·옹이는 오른쪽 / center: 가운데 */
-  variant?: 'split' | 'center' | 'low'
+  /**
+   * zone: 글 블록을 그 장소의 글 구역(zones.ts · design-m1 2-1, CSS 변수 --za-*) 안에 놓는다 — M1 장소의 기본.
+   * split · center · low: 옛 배치(404 화면 등)
+   */
+  variant?: 'zone' | 'split' | 'center' | 'low'
 }) {
   return (
     <section className={`hero hero-${variant} ${className}`} aria-label={label}>
       <span className="knot-anchor" ref={knotRef} aria-hidden="true" />
       <LayoutGroup>
-        <div className="hero-col">{children}</div>
+        <div className={`hero-col${variant === 'zone' ? ' zone-a' : ''}`}>{children}</div>
       </LayoutGroup>
     </section>
   )

@@ -63,7 +63,15 @@ export {
   getSkyStats,
   useSkyCamera,
   useSkyPick,
+  // M1 추가 (m1-brief 계약)
+  useSkySheet,
+  useSkyAnchor,
+  useSkyDrag,
+  useSkyClock,
 } from './hooks'
+/** 글 구역 (design-m1 2-1·2-2) — 렌더러 안전 마스크와 앱 배치가 같은 숫자를 쓴다 */
+export { SKY_ZONES, zoneLayout } from '../galaxy3d/zones'
+export type { ZoneRect, ZoneLayout, ZonePlace } from '../galaxy3d/zones'
 export type { SkyEvents, SkyStarsSpec } from './hooks'
 export { SKY_TIMING } from './sky/field'
 export type { SkyPhase, StarKind, SkyStatsOut, CameraTarget, Travel } from './sky/field'
