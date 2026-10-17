@@ -211,3 +211,36 @@ uniform sampler2D uTex;
 out vec4 o;
 void main() { o = vec4(texture(uTex, vUv).rgb, 1.0); }
 `
+
+/* 전경 별: 카메라 둘레 반지름 uR 안에 감싸 도는 3D 별 — 회전·비행 때 눈앞을 스쳐 간다.
+   가까울수록 밝고 조금 크게(약한 보케), 아주 가까우면·가장자리에서는 사라진다(감쌀 때 튀지 않게). 크기 상한 22px */
+export const FG_VS = /* glsl */ `#version 300 es
+precision highp float;
+uniform mat4 uVP;
+uniform vec3 uCam;
+uniform float uR;
+uniform float uPx;
+uniform float uDpr;
+uniform float uK;      // 밀도·밝기 (원반 안 1, 은하 밖 낮게)
+layout(location = 0) in vec4 a0;   // 상자 안 위치(−R..R), 밝기
+layout(location = 1) in vec4 a1;   // 색
+out vec3 vCol;
+out float vSig;
+out float vPx;
+void main() {
+  vec3 rel = mod(a0.xyz - uCam + uR, 2.0 * uR) - uR;
+  float d = length(rel);
+  float fade = smoothstep(0.3, 0.6, d) * (1.0 - smoothstep(0.7 * uR, 0.98 * uR, d));
+  vec4 clip = uVP * vec4(uCam + rel, 1.0);
+  float flux = a0.w / (d * d) * uK * fade;
+  float sig = 0.45 * uDpr + (d < 1.0 ? (1.0 - d) * 2.4 * uDpr : 0.0); // 1u 안에서만 약한 보케 (2–14px)
+  float peak = flux * 40.0 / (6.2831853 * sig * sig);
+  vec3 col = a1.rgb * min(peak, 0.55); // 밝기 ≤ 55%
+  if (clip.w <= 0.0 || max(col.r, max(col.g, col.b)) < 0.002) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vCol = vec3(0.0); vSig = 1.0; vPx = 1.0; return; }
+  vCol = col;
+  vSig = sig;
+  vPx = clamp(ceil(sig * 5.0) + 1.0, 2.0 * uDpr, 14.0 * uDpr); // 2–14px
+  gl_Position = clip;
+  gl_PointSize = vPx;
+}
+`

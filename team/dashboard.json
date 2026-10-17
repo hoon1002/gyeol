@@ -1,57 +1,47 @@
 {
-  "project": "결 GYEOL · v4 기획 완료",
-  "subtitle": "통합 기획서 완료 · 결정 6가지 대기 → M0 3D 품질부터",
+  "project": "결 GYEOL · M0 3D 품질 관문",
+  "subtitle": "360° 회전 · 앞을 지나가는 별 · 품질 Q1–Q8 · 배터리·발열 최적화",
   "phases": [
     {
-      "name": "은하수 v3 · 은하 카메라",
+      "name": "v4 기획 · 3D 시제품",
       "status": "done"
     },
     {
-      "name": "조사 · 기능 재검토 · 3D 디자인 · 3D 시제품",
-      "status": "done",
+      "name": "360° · 전경 별 · 품질 · 전력 모드",
+      "status": "active",
       "members": [
-        "research",
-        "planner",
-        "ad",
-        "fx"
+        "fx",
+        "perf",
+        "ad"
       ]
     },
     {
-      "name": "통합 기획서 v4",
-      "status": "done",
+      "name": "품질 판정 (렌더 검수)",
+      "status": "todo",
       "members": [
-        "planner"
+        "ad"
       ]
     },
     {
-      "name": "리더 검수 · 3D 시제품 확인",
-      "status": "done"
-    },
-    {
-      "name": "기획 보고 → 구현 결정",
-      "status": "active"
+      "name": "리더 검증 · M0 보고",
+      "status": "todo"
     }
   ],
   "members": [
     {
-      "key": "research",
-      "label": "조사원",
-      "task": "3D·우주 웹 수상작 · 못 끊는 학습 앱 · 학습 과학"
+      "key": "fx",
+      "label": "모션 개발자",
+      "task": "360° 회전 · 전경 별 · Q1–Q8 · 전력 모드 · 가로 렌더"
     },
     {
-      "key": "planner",
-      "label": "기획자",
-      "task": "더할 것·뺄 것 · 핵심 루프 · 가치 축적 · 로드맵"
+      "key": "perf",
+      "label": "성능 엔지니어",
+      "task": "배터리·발열 예산 · 측정 도구 · 앱 낭비 제거"
     },
     {
       "key": "ad",
       "label": "아트 디렉터",
-      "task": "3D 은하 아트 · 3D 공간 지도 · 회전 모션 · 생동감"
-    },
-    {
-      "key": "fx",
-      "label": "모션 개발자",
-      "task": "3D 은하 기술 설계 + 실제로 도는 시제품"
+      "task": "360°·전경 별 기준 · 품질 판정"
     }
   ],
   "forecast": {
@@ -70,8 +60,8 @@
       },
       {
         "phase": "M0 3D 품질",
-        "label": "M0 3D 품질 관문 (상한 40만)",
-        "estimate": 400000
+        "label": "M0 3D 품질 관문 (360°·전경 별·Q1–Q8·전력, 상한 40만 + 성능 15만)",
+        "estimate": 550000
       },
       {
         "phase": "M1-M4",

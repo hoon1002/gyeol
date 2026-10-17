@@ -119,7 +119,44 @@ const P = {
   up: prog(SH.FULL_VS, SH.UP_FS),
   comp: prog(SH.FULL_VS, SH.COMPOSITE_FS),
   blit: prog(SH.FULL_VS, SH.BLIT_FS),
+  fg: prog(SH.FG_VS, SH.STAR_FS),
 }
+/* 전경 별 층: 카메라 둘레 반지름 FG_R 상자에 FG_N개 (위치는 시드 고정, 감싸기는 셰이더) */
+const FG_N = 600 // design-v4 §7: 카메라 둘레 0.3–4u 600개
+const FG_R = 4
+const fgVao = (() => {
+  let a = 77 >>> 0
+  const rnd = () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = Math.imul(a ^ (a >>> 15), a | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+  const d = new Float32Array(FG_N * 8)
+  for (let i = 0; i < FG_N; i++) {
+    const o = i * 8
+    d[o] = (rnd() * 2 - 1) * FG_R
+    d[o + 1] = (rnd() * 2 - 1) * FG_R * 0.6
+    d[o + 2] = (rnd() * 2 - 1) * FG_R
+    d[o + 3] = 0.002 + Math.pow(rnd(), 5) * 0.05
+    const T = rnd()
+    const c = T < 0.2 ? [0.75, 0.83, 1] : T < 0.75 ? [1, 0.97, 0.92] : [1, 0.85, 0.66]
+    d[o + 4] = c[0]!
+    d[o + 5] = c[1]!
+    d[o + 6] = c[2]!
+  }
+  const vao = gl.createVertexArray()!
+  gl.bindVertexArray(vao)
+  const b = gl.createBuffer()!
+  gl.bindBuffer(gl.ARRAY_BUFFER, b)
+  gl.bufferData(gl.ARRAY_BUFFER, d, gl.STATIC_DRAW)
+  gl.enableVertexAttribArray(0)
+  gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 32, 0)
+  gl.enableVertexAttribArray(1)
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 16)
+  gl.bindVertexArray(null)
+  return vao
+})()
 const vaoEmpty = gl.createVertexArray()!
 
 interface RT {
@@ -307,6 +344,7 @@ const reduced = () => reducedOS || rot === 'off'
 /* ---------- 입력: 드래그 궤도(관성) · 휠 거리 ---------- */
 let drag: { x: number; y: number; t: number } | null = null
 canvas.addEventListener('pointerdown', (e) => {
+  lastInput = performance.now()
   drag = { x: e.clientX, y: e.clientY, t: performance.now() }
   canvas.setPointerCapture(e.pointerId)
 })
@@ -320,12 +358,17 @@ canvas.addEventListener('pointermove', (e) => {
   const cap = (v: number) => Math.max(-0.09 * DEG, Math.min(0.09 * DEG, v))
   user.vy = cap((-dx * 0.15 * DEG) / dt)
   user.vp = cap((dy * 0.15 * DEG) / dt)
-  user.yaw = Math.max(-35 * DEG, Math.min(35 * DEG, user.yaw + user.vy * dt))
-  user.pitch = Math.max(-12 * DEG, Math.min(12 * DEG, user.pitch + user.vp * dt))
+  user.yaw += user.vy * dt // 360° 자유
+  user.pitch = clampEl(user.pitch + user.vp * dt)
   releasedAt = 0
+  lastInput = now
   drag = { x: e.clientX, y: e.clientY, t: now }
 })
 let releasedAt = 0
+let lastInput = -1e9
+let orbitK = 0
+/** 고도는 8–55° 안 (드래그·공전 모두) */
+const clampEl = (up: number) => Math.max(8 * DEG - cam.pitch, Math.min(55 * DEG - cam.pitch, up))
 const endDrag = () => {
   drag = null
   releasedAt = performance.now()
@@ -337,6 +380,7 @@ canvas.addEventListener(
   (e) => {
     e.preventDefault()
     user.zoom = Math.max(0.35, Math.min(2.6, user.zoom * Math.exp(e.deltaY * 0.0012)))
+    lastInput = performance.now()
   },
   { passive: false },
 )
@@ -392,9 +436,38 @@ let hudT = 0
 let jsMs = 0
 const t0 = performance.now()
 
+/* ---------- 전력 상태 (design-v4 §7 · power-budget) ----------
+   활동(입력·비행 2s 안) 60fps · 평소(입력 뒤 0–60s) 30fps · 깊은 대기(60s+) 15fps·공전 0.3°/s ·
+   쉼(5분+ · 저전력 · saveData) 그리기 멈춤(0fps) · 숨김 0 (rAF가 서고, 돌아오면 600ms 램프) */
+type Power = 'active' | 'normal' | 'deep' | 'rest'
+let power: Power = 'active'
+let lowPower = !!(navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData
+;(navigator as Navigator & { getBattery?: () => Promise<{ charging: boolean; level: number }> }).getBattery?.().then((b) => {
+  lowPower = lowPower || (!b.charging && b.level < 0.2)
+})
+let lastDraw = 0
+let visibleAt = 0
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    visibleAt = performance.now()
+    lastInput = visibleAt
+  }
+})
+function powerState(now: number): Power {
+  const idle = now - lastInput
+  if (flight || drag || idle < 2000 || now - visibleAt < 600) return 'active'
+  if (idle > 300_000 || (lowPower && idle > 60_000)) return 'rest'
+  if (idle > 60_000) return 'deep'
+  return lowPower ? 'deep' : 'normal'
+}
+const FRAME_MS: Record<Power, number> = { active: 1000 / 60, normal: 1000 / 30, deep: 1000 / 15, rest: Infinity }
+
 function frame(now: number) {
   requestAnimationFrame(frame)
-  const dt = last ? Math.min(50, now - last) : 16.7
+  power = powerState(now)
+  if (now - lastDraw < FRAME_MS[power] - 2) return
+  lastDraw = now
+  const dt = last ? Math.min(100, now - last) : 16.7
   const interval = last ? now - last : 0
   last = now
   const j0 = performance.now()
@@ -403,13 +476,18 @@ function frame(now: number) {
   // 관성
   if (!drag) {
     // 관성은 0.6초 안에 그 자리에서 멈춘다(되돌아가지 않음). 동작 줄이기면 관성 0
-    if (reducedOS || now - releasedAt > 600) {
+    if (reducedOS || now - releasedAt > 1200) {
       user.vy = 0
       user.vp = 0
     }
-    const k = Math.exp(-dt / 150)
-    user.yaw = Math.max(-35 * DEG, Math.min(35 * DEG, user.yaw + user.vy * dt))
-    user.pitch = Math.max(-12 * DEG, Math.min(12 * DEG, user.pitch + user.vp * dt))
+    const k = Math.exp(-dt / 500) // 관성 τ 0.5s, 최대 1.2s, 멈춘 자리 유지
+    user.yaw += user.vy * dt
+    user.pitch = clampEl(user.pitch + user.vp * dt)
+    // 자동 공전 (design-v4 §7): 1.0°/s(느리게 0.4°/s), 마지막 입력 3s 뒤 4s에 걸쳐 시작, 입력이 오면 300ms 안에 멈춤, 깊은 대기 0.3°/s
+    const want = !reduced() && !flight && !drag && now - lastInput > 3000 ? 1 : 0
+    orbitK += want > orbitK ? Math.min(want - orbitK, dt / 4000) : Math.max(want - orbitK, -dt / 300)
+    const rate = (power === 'deep' ? 0.3 : rot === 'slow' ? 0.4 : 1.0) * DEG
+    user.yaw += (rate * orbitK * dt) / 1000
     user.vy *= k
     user.vp *= k
   }
@@ -450,6 +528,20 @@ function frame(now: number) {
   gl.uniform1f(S.u.uDpr!, dpr)
   gl.bindVertexArray(starVao)
   gl.drawArrays(gl.POINTS, 0, starN)
+  // 1b) 전경 별 — 원반 안에서는 많이, 은하 밖(오늘·플래너)에서는 드물게
+  {
+    const F = P.fg
+    gl.useProgram(F.p)
+    gl.uniformMatrix4fv(F.u.uVP!, false, vp.m)
+    gl.uniform3f(F.u.uCam!, eye[0], eye[1], eye[2])
+    gl.uniform1f(F.u.uR!, FG_R)
+    gl.uniform1f(F.u.uPx!, px)
+    gl.uniform1f(F.u.uDpr!, dpr)
+    const inDisk = Math.exp(-Math.abs(eye[1]) / 3) * Math.exp(-Math.max(0, Math.hypot(eye[0], eye[2]) - 15) / 6)
+    gl.uniform1f(F.u.uK!, 0.25 + 0.75 * inDisk)
+    gl.bindVertexArray(fgVao)
+    gl.drawArrays(gl.POINTS, 0, FG_N)
+  }
   // 2) 구름 (반 해상도): 먼지 투과율 T (1에서 시작해 곱해 내려감) · 성운·팔 빛 E (더하기)
   if (!dustRT || !emitRT) return
   const C = P.cloud
@@ -557,7 +649,7 @@ function frame(now: number) {
     const s = frames.slice().sort((a, b) => a - b)
     const p95 = s[Math.floor(0.95 * (s.length - 1))] ?? 0
     const lf = flightLog[flightLog.length - 1]
-    hud.textContent = `${fps} fps · p95 ${p95.toFixed(1)}ms · js ${jsMs.toFixed(2)}ms\n별 ${(starN / 1000).toFixed(0)}k · 구름 ${(cloudN / 1000).toFixed(1)}k · 등급 ${tier} · ${W}×${H} · 블룸 ${mips.length}단 · ${hdr ? 'HDR' : 'LDR'}\n생성 ${genMs.toFixed(0)}ms${lf ? ` · 마지막 비행 ${lf.to} ${Math.round(lf.ms)}ms 최장 ${lf.maxFrame.toFixed(1)}ms` : ''}`
+    hud.textContent = `${power} · ${fps} fps · p95 ${p95.toFixed(1)}ms · js ${jsMs.toFixed(2)}ms\n별 ${(starN / 1000).toFixed(0)}k · 구름 ${(cloudN / 1000).toFixed(1)}k · 등급 ${tier} · ${W}×${H} · 블룸 ${mips.length}단 · ${hdr ? 'HDR' : 'LDR'}\n생성 ${genMs.toFixed(0)}ms${lf ? ` · 마지막 비행 ${lf.to} ${Math.round(lf.ms)}ms 최장 ${lf.maxFrame.toFixed(1)}ms` : ''}`
   }
 }
 
