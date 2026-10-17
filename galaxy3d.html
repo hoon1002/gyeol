@@ -18,6 +18,7 @@
       #title b { font-weight: 500; letter-spacing: .02em; }
       #title span { display: block; opacity: .6; font-size: 12px; }
       body.clean .ui, body.clean #hud, body.clean #title { display: none; }
+      #ring { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; display: none; transition: opacity .6s; }
     </style>
   </head>
   <body>
@@ -25,6 +26,8 @@
     <div id="title"><b id="place">오늘</b><span id="placeSub">은하 전체를 비스듬히</span></div>
     <div id="hud"></div>
     <div class="ui" id="ui"></div>
+    <!-- 타이머 자리 미리보기(개발 토글): 집중에서 원반 둘레의 가는 링 + 진행 호 -->
+    <svg id="ring" aria-hidden="true"><circle id="ringC" fill="none" stroke="rgba(237,231,218,.32)" stroke-width="1.5"></circle><path id="ringA" fill="none" stroke="#F3D29A" stroke-width="2.5" stroke-linecap="round"></path></svg>
     <script type="module" src="/src/galaxy3d/main.ts"></script>
   </body>
 </html>

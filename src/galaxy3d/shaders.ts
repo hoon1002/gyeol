@@ -63,7 +63,7 @@ void main() {
   float flux = L / (dd * dd + (sky ? 0.0 : 0.6)) * uExpo * (sky ? 1.0 : mix(0.3, 1.0, smoothstep(1.5, 9.0, d))); // 가까운 별은 대부분 어둡게(밝은 별만 남는다)
   // 피사계 심도: 초점에서 멀수록 번진다(빛의 총량은 같게)
   float coc = sky ? 0.0 : uDof * uPx * abs(1.0 / d - 1.0 / uFocus) * 0.004;
-  float sig = max(0.5 * uDpr, min(coc, 9.0 * uDpr)); // 최소 σ 0.5px(DPR 1 기준) — 점 하나 5×5px
+  float sig = max(0.5 * uDpr, min(coc, 6.0 * uDpr)); // 흐림 상한 σ 6px — 가까운 장소(그래프)에서 큰 점이 채우기 비용을 키우지 않게 // 최소 σ 0.5px(DPR 1 기준) — 점 하나 5×5px
   float E = flux * 260.0;
   float peak = E / (6.2831853 * sig * sig);
   vec3 col = a1.rgb * peak;
@@ -144,6 +144,9 @@ void main() {
   float d = length(c - uCam);
   // 카메라 바로 앞의 큰 구름은 흐려 사라진다(화면을 덮지 않게)
   float near = smoothstep(s * 1.5, s * 6.0, d);
+  // 화면에서 너무 커지는 빛 사각형(가까운 장소의 막대 빛 등)은 흐려 없앤다 — 큰 얼룩도, 채우기 비용도 없게
+  if (kind > 0.5) near *= smoothstep(0.5, 0.2, s / d);
+  if (near < 0.004) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vCol = vec3(0.0); return; }
   vCol = c1.rgb * near * vCol0;
   gl_Position = uVP * vec4(p, 1.0);
 }

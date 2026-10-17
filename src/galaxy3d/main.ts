@@ -32,15 +32,27 @@ interface Place {
   expo: number
   /** 자동 공전 배율 (design-v4 §7-1 장소별 공전: 오늘·플래너·설정 1, 집중 0.3°/s, 노트·복습·그래프 0) */
   orbit: number
+  /** 화면 속 원반 장축 각도(카메라 롤, °). 오늘 −57 · 플래너 0(수평 띠) · 노트 −90(세로 띠) · 복습 +40 */
+  roll: number
+  /** 바라보는 점의 화면 자리 (가로 · 세로 화면) */
+  seat: [number, number]
+  seatP: [number, number]
+  /** 크기 맞춤 (은하 중심 장소만): 눈에 보이는 팔 고리(11.5u)의 긴 지름(long) 또는 가로 폭(xext)이 화면 높이(h)·폭(w)·짧은 변(short)의 frac배 */
+  fit?: { m: 'long' | 'xext'; frac: number; of: 'h' | 'w' | 'short' }
+  fitP?: { m: 'long' | 'xext'; frac: number; of: 'h' | 'w' | 'short' }
+  /** 해상도 배율(별이 한 줄로 겹치는 옆 모습 등 채우기가 몰리는 장소만) */
+  rsK?: number
 }
+const C0: [number, number, number] = [0, 0, 0]
 const PLACES: Place[] = [
-  { id: 'today', name: '오늘', sub: '은하 전체를 3/4 높이에서', t: [0, 0, 0], az: 210, el: 30, dist: 25, expo: 1, orbit: 1 },
-  { id: 'planner', name: '플래너', sub: '물러나 더 높이 — 앞날을 멀리 본다', t: [0, 0, 0], az: 210, el: 40, dist: 40, expo: 0.95, orbit: 1 },
-  { id: 'notes', name: '노트', sub: '바깥 팔의 조용한 끝', t: LANDMARKS.notes, az: 228, el: 16, dist: 9, expo: 0.9, orbit: 0 },
-  { id: 'review', name: '복습', sub: '팔 위의 젊은 산개성단', t: LANDMARKS.review, az: 202, el: 22, dist: 6, expo: 1, orbit: 0 },
-  { id: 'graph', name: '그래프', sub: '막대 끝의 HII 성운 — 생각의 성운', t: LANDMARKS.graph, az: 198, el: 25, dist: 7, expo: 1, orbit: 0 },
-  { id: 'focus', name: '집중', sub: '나의 자리 — 팔 사이 가지', t: LANDMARKS.focus, az: 220, el: 12, dist: 3.5, expo: 0.9, orbit: 0.3 },
-  { id: 'settings', name: '설정', sub: '집 안, 어둡게', t: [0, 0, 0], az: 210, el: 30, dist: 25, expo: 0.65, orbit: 1 },
+  // design-v4 §8: 장소마다 은하의 실루엣이 다르다. 글·조작이 놓이는 자리는 어둡게 비운다
+  { id: 'today', name: '오늘', sub: '위 3/4 — 비스듬한 타원', t: C0, az: 210, el: 30, dist: 25, expo: 1, orbit: 1, roll: -57, seat: [0.62, 0.46], seatP: [0.54, 0.4], fit: { m: 'long', frac: 0.8, of: 'h' }, fitP: { m: 'xext', frac: 0.92, of: 'w' } },
+  { id: 'planner', name: '플래너', sub: '거의 옆 — 화면을 가로지르는 시간의 띠', t: C0, az: 200, el: 8, dist: 40, expo: 0.95, orbit: 0.4, roll: 0, rsK: 0.85, seat: [0.5, 0.66], seatP: [0.5, 0.7], fit: { m: 'long', frac: 1.15, of: 'w' }, fitP: { m: 'long', frac: 1.3, of: 'w' } },
+  { id: 'notes', name: '노트', sub: '정확히 옆 — 오른쪽에 선 책등', t: C0, az: 225, el: 2, dist: 30, expo: 0.9, orbit: 0, roll: -90, seat: [0.86, 0.5], seatP: [0.86, 0.5], fit: { m: 'long', frac: 1.2, of: 'h' }, fitP: { m: 'long', frac: 1.1, of: 'h' } },
+  { id: 'review', name: '복습', sub: '아래에서 — 뒤집힌 은하, 다시 꺼내 보는 기억', t: C0, az: 195, el: -35, dist: 25, expo: 1, orbit: 0.3, roll: 40, seat: [0.6, 0.5], seatP: [0.5, 0.45], fit: { m: 'long', frac: 0.8, of: 'h' }, fitP: { m: 'long', frac: 0.95, of: 'w' } },
+  { id: 'graph', name: '그래프', sub: '팔 속, 낮게 — 별 하나하나가 생각', t: LANDMARKS.graph, az: 200, el: 18, dist: 7, expo: 1, orbit: 0, roll: -30, rsK: 0.9, seat: [0.6, 0.5], seatP: [0.5, 0.45] },
+  { id: 'focus', name: '집중', sub: '정면 — 시계판처럼 25분에 한 바퀴', t: C0, az: 210, el: 90, dist: 25, expo: 0.95, orbit: 0, roll: 0, rsK: 0.9, seat: [0.5, 0.5], seatP: [0.5, 0.42], fit: { m: 'long', frac: 0.72, of: 'short' }, fitP: { m: 'long', frac: 0.72, of: 'short' } },
+  { id: 'settings', name: '설정', sub: '집 안, 어둡게', t: C0, az: 210, el: 30, dist: 25, expo: 0.65, orbit: 1, roll: -57, seat: [0.62, 0.46], seatP: [0.54, 0.4], fit: { m: 'long', frac: 0.8, of: 'h' }, fitP: { m: 'xext', frac: 0.92, of: 'w' } },
 ]
 /** 화면에서 바라보는 점의 자리 (design-v4: 0.66, 0.44) · 원반 장축 57° 대각선 고정 기울기(롤 변화 0) */
 const SEAT: [number, number] = [0.66, 0.44] // 가로. 세로 화면은 resize에서 (0.56, 0.36)
@@ -417,6 +429,11 @@ interface CamS {
   dist: number
   q: Q
   expo: number
+  /** 화면 자리 (비행 중엔 같은 이징으로 옮겨 간다) */
+  seat: [number, number]
+  /** 큰 회전 비행의 가운데 효과(0–1): 노출 85% · 피사계 심도 조금 깊게 · 어둡게 바꾸기(동작 줄이기) */
+  fx: number
+  dim: number
 }
 const YAX: V3 = [0, 1, 0]
 let simT = 0 // 은하 시계
@@ -429,12 +446,12 @@ function placeTarget(pl: Place, t: number): V3 {
 }
 /** 장소 프레임 자세 → 세계 자세 (은하 θ가 늘어나는 쪽으로 함께 돈다) */
 const worldQ = (pl: Place, t: number, o: Q) => qMul(qAxis(YAX, -frameRot(pl, t)), o)
-const homeOrient = (pl: Place) => orientAzEl(pl.az, pl.el)
+const homeOrient = (pl: Place) => orientAzEl(pl.az, pl.el, pl.roll)
 let place = PLACES.find((p) => p.id === qs.get('place')) ?? PLACES[0]!
 let orient: Q = homeOrient(place)
 /** zoom: 핀치·휠 거리 배율 · wv: 관성 각속도(카메라 좌표의 축 × rad/ms, 은하가 굴러가는 쪽) */
 let user = { zoom: 1, wv: [0, 0, 0] as V3 }
-let flight: { from: CamS; to: Place; o: Q; t0: number; dur: number; ang: number } | null = null
+let flight: { from: CamS; to: Place; o: Q; t0: number; dur: number; ang: number; fade: boolean } | null = null
 let flightMax = 0
 let flightPeak = 0
 let prevFlightQ: Q | null = null
@@ -442,48 +459,55 @@ let flightFrames: number[] = []
 const flightLog: Array<{ to: string; ms: number; maxFrame: number; p95: number; angDeg: number; peakDegS: number }> = []
 /** 처음 구도 맞춤 (화면비별): 기본 3/4 자세에서 원반 가장자리(14.5u 고리 32점 + 팽대부 위아래)가 화면 여백 3% 안에 드는
  *  가장 가까운 거리 → 은하 중심 장소(오늘·플래너·설정)의 거리 배율. 오른쪽 치우침(좌석)은 유지, 세로 화면은 좌석 (0.56, 0.36) */
-let fitK = 1
+let portrait = false
+const fitD: Record<string, number> = {}
+const seatOf = (pl: Place): [number, number] => (portrait ? pl.seatP : pl.seat)
+/** 장소마다 크기 맞춤 (design-v4 §8): 그 장소의 기본 자세·화면 자리에서 눈에 보이는 팔 고리(11.5u)가 규칙대로 화면을 채우는 거리 */
 function computeFit(aspect: number) {
-  // 가로: 원반 긴 축이 화면 높이의 80%, 중심 x 0.62 · 세로: 긴 축이 화면 폭의 95%. 바깥 팔 끝·헤일로는 가장자리에서 조금 잘려도 된다
-  SEAT[0] = aspect < 1 ? 0.54 : 0.62
-  SEAT[1] = aspect < 1 ? 0.4 : 0.46
-  const q = homeOrient(PLACES[0]!)
-  const back = qRot(q, [0, 0, 1])
-  const sv = qRot(q, [1, 0, 0])
-  const uv = qRot(q, [0, 1, 0])
-  const f: V3 = [-back[0], -back[1], -back[2]]
-  const ring: Array<[number, number, number]> = []
-  for (let k = 0; k < 48; k++) ring.push([11.5 * Math.cos((k / 48) * Math.PI * 2), 0, 11.5 * Math.sin((k / 48) * Math.PI * 2)]) // 눈에 보이는 팔 끝(≈ 11.5u) 기준
-  const want = aspect < 1 ? 0.92 * 2 * aspect : 0.8 * 2 // NDC 높이 = 2. 세로는 폭(2·aspect) 기준
-  const longAxis = (d: number) => {
-    const m = viewProj([back[0] * d, back[1] * d, back[2] * d], sv, uv, f, FOV * DEG, aspect, 0.02, 3000).m
-    const P2 = ring.map((p) => {
-      const w = m[3]! * p[0] + m[7]! * p[1] + m[11]! * p[2] + m[15]!
-      return [((m[0]! * p[0] + m[4]! * p[1] + m[8]! * p[2] + m[12]!) / w) * aspect, (m[1]! * p[0] + m[5]! * p[1] + m[9]! * p[2] + m[13]!) / w]
-    })
-    // 가로: 긴 축 길이 · 세로: 가로 폭(기울어진 원반이 화면 폭을 채우는 정도)
-    if (aspect < 1) return Math.max(...P2.map((p) => p[0]!)) - Math.min(...P2.map((p) => p[0]!))
-    let L = 0
-    for (let a = 0; a < 24; a++) L = Math.max(L, Math.hypot(P2[a]![0]! - P2[a + 24]![0]!, P2[a]![1]! - P2[a + 24]![1]!))
-    return L
+  portrait = aspect < 1
+  const ring: V3[] = []
+  for (let k = 0; k < 48; k++) ring.push([11.5 * Math.cos((k / 48) * Math.PI * 2), 0, 11.5 * Math.sin((k / 48) * Math.PI * 2)])
+  const keep: [number, number] = [SEAT[0], SEAT[1]]
+  for (const pl of PLACES) {
+    const rule = portrait ? pl.fitP : pl.fit
+    if (!rule) continue
+    const q = homeOrient(pl)
+    const back = qRot(q, [0, 0, 1])
+    const sv = qRot(q, [1, 0, 0])
+    const uv = qRot(q, [0, 1, 0])
+    const f: V3 = [-back[0], -back[1], -back[2]]
+    ;[SEAT[0], SEAT[1]] = seatOf(pl)
+    const want = rule.frac * 2 * (rule.of === 'h' ? 1 : rule.of === 'w' ? aspect : Math.min(1, aspect)) // NDC 높이 2 = 화면 높이
+    const measure = (d: number) => {
+      const m = viewProj([back[0] * d, back[1] * d, back[2] * d], sv, uv, f, FOV * DEG, aspect, 0.02, 3000).m
+      const P2 = ring.map((p) => {
+        const w = m[3]! * p[0] + m[7]! * p[1] + m[11]! * p[2] + m[15]!
+        return [((m[0]! * p[0] + m[4]! * p[1] + m[8]! * p[2] + m[12]!) / w) * aspect, (m[1]! * p[0] + m[5]! * p[1] + m[9]! * p[2] + m[13]!) / w] as [number, number]
+      })
+      if (rule.m === 'xext') return Math.max(...P2.map((p) => p[0])) - Math.min(...P2.map((p) => p[0]))
+      let L = 0
+      for (let a = 0; a < 24; a++) L = Math.max(L, Math.hypot(P2[a]![0] - P2[a + 24]![0], P2[a]![1] - P2[a + 24]![1]))
+      return L
+    }
+    let lo = 4
+    let hi = 200
+    for (let i = 0; i < 32; i++) {
+      const mid = (lo + hi) / 2
+      if (measure(mid) > want) lo = mid
+      else hi = mid
+    }
+    fitD[pl.id] = hi
   }
-  let lo = 6
-  let hi = 150
-  for (let i = 0; i < 32; i++) {
-    const mid = (lo + hi) / 2
-    if (longAxis(mid) > want) lo = mid
-    else hi = mid
-  }
-  fitK = hi / PLACES[0]!.dist
+  ;[SEAT[0], SEAT[1]] = keep
 }
-const pdist = (pl: Place) => pl.dist * (Math.hypot(pl.t[0], pl.t[2]) < 0.01 ? fitK : 1)
-const camNow = (): CamS => ({ t: placeTarget(place, simT), dist: pdist(place), q: worldQ(place, simT, orient), expo: place.expo })
+const pdist = (pl: Place) => fitD[pl.id] ?? pl.dist
+const camNow = (): CamS => ({ t: placeTarget(place, simT), dist: pdist(place), q: worldQ(place, simT, orient), expo: place.expo, seat: seatOf(place), fx: 0, dim: 0 })
 function curCam(now: number): { c: CamS; flying: boolean } {
   if (!flight) return { c: camNow(), flying: false }
   const p = Math.min(1, (now - flight.t0) / flight.dur)
   const e = easeS(p) // 이동·회전 같은 이징
   const a = flight.from
-  const b: CamS = { t: placeTarget(flight.to, simT), dist: pdist(flight.to), q: worldQ(flight.to, simT, flight.o), expo: flight.to.expo }
+  const b: CamS = { t: placeTarget(flight.to, simT), dist: pdist(flight.to), q: worldQ(flight.to, simT, flight.o), expo: flight.to.expo, seat: seatOf(flight.to), fx: 0, dim: 0 }
   const far = Math.abs(Math.log(b.dist / a.dist)) + Math.hypot(b.t[0] - a.t[0], b.t[2] - a.t[2]) / 6
   const arc = Math.sin(Math.PI * p)
   if (p >= 1) {
@@ -493,8 +517,13 @@ function curCam(now: number): { c: CamS; flying: boolean } {
     flight = null
     return { c: camNow(), flying: false }
   }
+  // 회전 끔·동작 줄이기: 0.5초 어둡게 바꾸기(회전 없음) — 가운데에서 자리를 바꾼다
+  if (flight.fade) return { c: { ...(p < 0.5 ? a : b), dim: 1 - Math.abs(1 - 2 * p) }, flying: true }
   return {
     c: {
+      seat: [a.seat[0] + (b.seat[0] - a.seat[0]) * e, a.seat[1] + (b.seat[1] - a.seat[1]) * e],
+      fx: flight.ang > 100 ? arc : 0,
+      dim: 0,
       t: [a.t[0] + (b.t[0] - a.t[0]) * e, a.t[1] + (b.t[1] - a.t[1]) * e, a.t[2] + (b.t[2] - a.t[2]) * e],
       dist: Math.exp(Math.log(a.dist) + (Math.log(b.dist) - Math.log(a.dist)) * e) * (1 + Math.min(0.12, 0.04 * far) * arc),
       // 최단 회전(slerp): 롤도 비행 전체에 고르게 나뉘어 끝에서 목적지 up에 맞는다(급한 롤 없음)
@@ -526,10 +555,9 @@ function startFlight(pl: Place, o: Q, home: boolean) {
   flightPeak = 0
   prevFlightQ = null
   flightFrames = []
-  if (reducedOS) {
-    orient = o
-    flight = null
-  } else flight = { from, to: pl, o, t0: now, dur, ang }
+  const fade = reduced()
+  flight = { from, to: pl, o, t0: now, dur: fade ? 500 : dur, ang, fade }
+  if (pl.id === 'focus') focusEnter(o)
   setTitle()
   updateButtons()
 }
@@ -538,6 +566,10 @@ function flyTo(id: string) {
   if (!pl || pl === place) return
   // 목적지 자세: 장소의 기본 구도를 은하 축 둘레로 돌린 것 가운데 지금 자세와 가장 가까운 것 → 비행 회전 최소
   // (design-v4 §7-1 '지금 방위 + 장소 오프셋'의 구형 버전)
+  startFlight(pl, nearestPose(pl), false)
+}
+/** 장소의 기본 자세를 은하 축 둘레로 돌린 것 가운데 지금 자세와 가장 가까운 것(실루엣은 같다) */
+function nearestPose(pl: Place): Q {
   const cur = curCam(performance.now()).c.q
   const base = homeOrient(pl)
   let best = base
@@ -550,10 +582,68 @@ function flyTo(id: string) {
       best = o
     }
   }
-  startFlight(pl, best, false)
+  return best
 }
 /** 처음 자리로: 장소의 기본 3/4 구도로 slerp (더블클릭 · 더블탭 · 버튼) */
-const goHome = () => startFlight(place, homeOrient(place), true)
+const goHome = () => startFlight(place, nearestPose(place), true)
+
+/* ---------- 타이머 자리 미리보기 (개발 토글 ?ring=1 · 버튼 · __g3d.ring) ---------- */
+let ringOn = qs.get('ring') === '1'
+const RING_R = 12 // 눈에 보이는 팔 바깥 둘레(≈ 11.5u) 바로 바깥
+const ringEl = document.getElementById('ring') as unknown as SVGSVGElement
+const ringC = document.getElementById('ringC')!
+const ringA = document.getElementById('ringA')!
+let ringGeo: { cx: number; cy: number; r: number; frac: number } | null = null // 캔버스 장치 px
+function updateRing(m: Float32Array, target: V3, now: number) {
+  ringGeo = null
+  if (place.id !== 'focus' || (flight && !flight.fade)) {
+    ringEl.style.display = 'none'
+    return
+  }
+  let cx = 0
+  let cy = 0
+  const pts: Array<[number, number]> = []
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2
+    const x = target[0] + RING_R * Math.cos(a)
+    const y = target[1]
+    const z = target[2] + RING_R * Math.sin(a)
+    const w = m[3]! * x + m[7]! * y + m[11]! * z + m[15]!
+    const px = (((m[0]! * x + m[4]! * y + m[8]! * z + m[12]!) / w + 1) / 2) * W
+    const py = ((1 - (m[1]! * x + m[5]! * y + m[9]! * z + m[13]!) / w) / 2) * H
+    pts.push([px, py])
+    cx += px / 16
+    cy += py / 16
+  }
+  const r = pts.reduce((acc, p) => acc + Math.hypot(p[0] - cx, p[1] - cy), 0) / 16
+  const frac = Math.min(1, (now - focusT0) / (FOCUS_MIN * 60_000))
+  ringGeo = { cx, cy, r, frac }
+  if (!ringOn) {
+    ringEl.style.display = 'none'
+    return
+  }
+  const k = cssW / W
+  ringEl.style.display = 'block'
+  ringC.setAttribute('cx', String(cx * k))
+  ringC.setAttribute('cy', String(cy * k))
+  ringC.setAttribute('r', String(r * k))
+  const a1 = -Math.PI / 2 + frac * Math.PI * 2
+  const x1 = cx * k + r * k * Math.cos(a1)
+  const y1 = cy * k + r * k * Math.sin(a1)
+  ringA.setAttribute('d', `M ${cx * k} ${cy * k - r * k} A ${r * k} ${r * k} 0 ${frac > 0.5 ? 1 : 0} 1 ${x1} ${y1}`)
+}
+
+/* ---------- 집중의 시계 (design-v4 §8): 타이머 한 번(25분)에 은하가 정확히 한 바퀴 — 0.24°/s, 각도는 시각에서 ---------- */
+const FOCUS_MIN = 25
+let focusT0 = 0
+let focusBase: Q = [0, 0, 0, 1]
+let focusDisp = 0
+function focusEnter(o: Q) {
+  focusT0 = performance.now()
+  focusBase = o
+  focusDisp = 0
+}
+const focusAngle = (now: number) => (((now - focusT0) / 1000) * 360 * DEG) / (FOCUS_MIN * 60)
 const reduced = () => reducedOS || rot === 'off'
 
 /* ---------- 전력 상태 (design-v4 §7-4) ----------
@@ -736,6 +826,10 @@ function btn(label: string, key: string, on: () => void) {
 }
 PLACES.forEach((p) => btn(p.name, 'p:' + p.id, () => flyTo(p.id)))
 btn('처음 자리로', 'home', () => goHome())
+btn('타이머 링', 'ring', () => {
+  ringOn = !ringOn
+  touch()
+})
 ui.appendChild(Object.assign(document.createElement('span'), { className: 'sep' }))
 ;(['on', 'slow', 'off'] as Rot[]).forEach((r) =>
   btn({ on: '회전 켬', slow: '느리게', off: '끔' }[r], 'r:' + r, () => {
@@ -862,7 +956,18 @@ function draw(now: number, opt: DrawOpt = {}) {
     // 사용자가 만든 지금 자세에서 이어서, 은하 축 둘레로(은하 자전과 같은 방향) 아주 느리게
     if (!flight && orbitK > 0) orient = qNorm(qMul(qAxis(YAX, -(orbitRate * easeInOut(orbitK) * spd * dt) / 1000), orient))
   } else orbitK = Math.max(0, orbitK - dt / 300)
+  // 집중의 시계: 지금 시각의 각도를 따라간다(쉼에서 돌아오면 ≈600ms에 걸쳐 맞는 각도로), 끌면 그 자세에서 이어서
+  if (place.id === 'focus' && !flight && !reduced()) {
+    if (drag || Math.hypot(user.wv[0], user.wv[1], user.wv[2]) > 1e-9) focusBase = qMul(qAxis(YAX, focusDisp), orient)
+    else {
+      const want = focusAngle(now)
+      focusDisp = Math.abs(want - focusDisp) > 0.5 * DEG ? focusDisp + (want - focusDisp) * Math.min(1, dt / 200) : want
+      orient = qMul(qAxis(YAX, -focusDisp), focusBase)
+    }
+  }
   const st = curCam(now)
+  SEAT[0] = st.c.seat[0]
+  SEAT[1] = st.c.seat[1]
   if (st.flying && prevFlightQ && dt > 0) flightPeak = Math.max(flightPeak, (qAngle(prevFlightQ, st.c.q) / DEG / dt) * 1000)
   prevFlightQ = st.flying ? st.c.q : null
   // 카메라 호흡: 은하 축 둘레 ±3° · 카메라 가로축 ±1.5° · 거리 ±2% — 동작 줄이기·회전 끔이면 없음
@@ -877,13 +982,14 @@ function draw(now: number, opt: DrawOpt = {}) {
   const eye: V3 = [target[0] + back[0] * dist, target[1] + back[1] * dist, target[2] + back[2] * dist]
   const vp = viewProj(eye, qRot(cq, [1, 0, 0]), qRot(cq, [0, 1, 0]), [-back[0], -back[1], -back[2]], FOV * DEG, W / H, 0.02, 3000)
   const entrance = opt.capture ? 1 : Math.min(1, (now - readyAt) / 1400)
-  const expo = st.c.expo * (0.55 + 0.45 * (1 - Math.pow(1 - entrance, 3)))
+  updateRing(vp.m, target, now)
+  const expo = st.c.expo * (0.55 + 0.45 * (1 - Math.pow(1 - entrance, 3))) * (1 - 0.15 * st.c.fx) * (1 - st.c.dim)
 
   // 상태별 해상도: 타깃 안의 일부만 쓴다
   // 비행 중 동적 해상도 ×0.8 (움직임이 가려 준다 — 원반 가까이 채우기 비용 ↓)
   // 총 픽셀 상한 4.0MP (power-budget §2: iPad 11\" DPR 2 = 4.0MP)
   const pxCap = Math.min(1, Math.sqrt(4.0e6 / (W * H)))
-  const rs = rsOverride ? rsOverride : opt.capture ? 1 : pxCap * (st.flying ? Math.min(0.8, RSCALE[power]) : RSCALE[power])
+  const rs = rsOverride ? rsOverride : opt.capture ? 1 : (flight ? 1 : (place.rsK ?? 1)) * pxCap * (st.flying ? Math.min(0.8, RSCALE[power]) : RSCALE[power])
   const sw = Math.max(2, Math.round(W * rs))
   const sh = Math.max(2, Math.round(H * rs))
   const cw = Math.max(1, sw >> 1)
@@ -911,7 +1017,7 @@ function draw(now: number, opt: DrawOpt = {}) {
   gl.uniform1f(S.u.uPx!, px)
   gl.uniform1f(S.u.uExpo!, STAR)
   gl.uniform1f(S.u.uFocus!, dist)
-  gl.uniform1f(S.u.uDof!, dist < 12 ? 1 : 0.35)
+  gl.uniform1f(S.u.uDof!, (dist < 12 ? 1 : 0.35) * (1 + 0.6 * st.c.fx))
   gl.uniform1f(S.u.uDpr!, sdpr)
   gl.uniform2f(S.u.uArm!, ARM[0], ARM[1])
   gl.uniform1f(S.u.uRest!, smooth01(restK))
@@ -1269,6 +1375,14 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
     const s = frames.slice().sort((a, b) => a - b)
     return { power, fps, wakes: wake.rate, p95: s[Math.floor(0.95 * (s.length - 1))] ?? 0, jsMs, gpuMs: tq ? gpuMs : null, stars: starN, clouds: cloudN, tier, W, H, genMs, uploadMs, fg: { ...fgStat }, flights: flightLog.slice(), simT, orient, timerQuery: !!tq, wakeAll, drawnAll, restK, stopped }
   },
+  ring: (on: boolean) => {
+    ringOn = on
+    touch()
+  },
+  /** 렌더용: 집중 타이머 진행 (0–1) */
+  focusProgress: (f: number) => {
+    focusT0 = performance.now() - f * FOCUS_MIN * 60_000
+  },
   clean: (on: boolean) => {
     document.body.classList.toggle('clean', on)
     updateMask(cssW, cssH, !on)
@@ -1363,7 +1477,7 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
     return res
   },
   /** 가상 화면 렌더: w×h CSS · DPR 2로 오프스크린 크기를 바꿔 한 장 그리고 PNG를 로컬 저장 도우미로 보낸다 */
-  capture: async (name: string, w: number, h: number, setup?: { az?: number; el?: number; roll?: number; zoom?: number; t?: number; fg?: boolean; moving?: boolean }) => {
+  capture: async (name: string, w: number, h: number, setup?: { place?: string; az?: number; el?: number; roll?: number; zoom?: number; t?: number; fg?: boolean; moving?: boolean; ring?: boolean; progress?: number }) => {
     const keep = { orient, zoom: user.zoom, simT, clean: document.body.classList.contains('clean') }
     document.body.classList.add('clean')
     clearTimeout(timerId)
@@ -1372,6 +1486,15 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
     resize(w, h, 2)
     updateMask(w, h, false)
     if (setup?.t !== undefined) simT = setup.t
+    const pl0 = setup?.place ? PLACES.find((p) => p.id === setup.place) : null
+    if (pl0) {
+      place = pl0
+      flight = null
+      orient = homeOrient(pl0)
+      if (pl0.id === 'focus') focusEnter(orient)
+      if (setup?.progress !== undefined) focusT0 = performance.now() - setup.progress * FOCUS_MIN * 60_000
+      setTitle()
+    }
     if (setup?.az !== undefined) orient = orientAzEl(setup.az, setup.el ?? 30, setup.roll ?? TILT)
     if (setup?.zoom !== undefined) user.zoom = setup.zoom
     orbitK = setup?.fg ? 1 : 0
@@ -1391,7 +1514,28 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
     orient = o0
     last = 0
     draw(tnow + 1300, { capture: true })
-    const blob: Blob = await new Promise((r) => canvas.toBlob((b) => r(b!), 'image/png'))
+    let outCanvas: HTMLCanvasElement = canvas
+    if (setup?.ring && ringGeo) {
+      // 타이머 링은 DOM(SVG) 덧층이라 캔버스에 없다 → 렌더용으로 2D에 겹쳐 그린다
+      const c2 = document.createElement('canvas')
+      c2.width = W
+      c2.height = H
+      const x = c2.getContext('2d')!
+      x.drawImage(canvas, 0, 0)
+      x.lineWidth = 1.5 * 2
+      x.strokeStyle = 'rgba(237,231,218,.32)'
+      x.beginPath()
+      x.arc(ringGeo.cx, ringGeo.cy, ringGeo.r, 0, Math.PI * 2)
+      x.stroke()
+      x.lineWidth = 2.5 * 2
+      x.lineCap = 'round'
+      x.strokeStyle = '#F3D29A'
+      x.beginPath()
+      x.arc(ringGeo.cx, ringGeo.cy, ringGeo.r, -Math.PI / 2, -Math.PI / 2 + Math.max(0.02, ringGeo.frac) * Math.PI * 2)
+      x.stroke()
+      outCanvas = c2
+    }
+    const blob: Blob = await new Promise((r) => outCanvas.toBlob((b) => r(b!), 'image/png'))
     capMoving = false
     let saved = 'no-server'
     try {
