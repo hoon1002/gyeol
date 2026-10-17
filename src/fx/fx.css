@@ -232,3 +232,8 @@ html.theme-light .gx-link { stroke: #3A3428; }
   .gx-progress-fill, .gx-progress-now { transition: none; }
   .gx-caption { animation-duration: 3s; }
 }
+
+/* QA #18 커서: 끌 수 있는 빈 하늘 위 grab · 끄는 중 grabbing. 별 위(:root.star-hover)는 pointer가 이긴다 */
+:root.gx-grab body, :root.gx-grab .stage, :root.gx-grab .hero { cursor: grab; }
+:root.star-hover.gx-grab body, :root.star-hover.gx-grab .stage, :root.star-hover.gx-grab .hero { cursor: pointer; }
+:root.gx-grabbing, :root.gx-grabbing * { cursor: grabbing !important; }

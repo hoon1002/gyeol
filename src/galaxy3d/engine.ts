@@ -498,12 +498,16 @@ let W = 1
 let H = 1
 let dpr = 1
 let cssW = 1
+/** 비행 중에 크기가 바뀌었는가 → 비행 끝에 앵커 강제 재전송(같은 값이어도) */
+let resizedInFlight = false
+let anchorForce = false
 let cssH = 1
 let scene: RT | null = null
 let mips: RT[] = []
 let dustRT: RT | null = null
 let emitRT: RT | null = null
 function resize(vw = innerWidth, vh = innerHeight, vdpr = Math.min(devicePixelRatio || 1, 2)) {
+  if (flight) resizedInFlight = true // QA #20: 비행이 끝난 뒤 앵커를 반드시 다시 보낸다
   cssW = vw
   cssH = vh
   dpr = vdpr * TIERS[tier].scale
@@ -637,6 +641,16 @@ function curCam(now: number): { c: CamS; flying: boolean } {
     orient = flight.o
     flight = null
     anchorDirty = true
+    if (resizedInFlight) {
+      // QA #20: 비행 중 크기가 바뀌었으면 끝난 자리 · 최신 크기 기준으로 앵커를 한 번 더(중복 거르기 없이), 앱 배치가 바뀐 뒤 250ms에 또 한 번
+      resizedInFlight = false
+      anchorForce = true
+      window.setTimeout(() => {
+        anchorDirty = true
+        anchorForce = true
+        kick()
+      }, 250)
+    }
     opts.onState?.()
     return { c: camNow(), flying: false }
   }
@@ -2099,6 +2113,8 @@ function ringPx(m: Float32Array, R: number): number {
 }
 function emitAnchors(m: Float32Array, _target: V3) {
   anchorDirty = false
+  const force = anchorForce
+  anchorForce = false
   const c = projectCss(m, [0, 0, 0])
   const on = !!c && c[0] > -cssW * 0.2 && c[0] < cssW * 1.2 && c[1] > -cssH * 0.2 && c[1] < cssH * 1.2
   const next: Record<AnchorName, Anchor> = {
@@ -2109,7 +2125,7 @@ function emitAnchors(m: Float32Array, _target: V3) {
   for (const name of ['core', 'focus-disk'] as AnchorName[]) {
     const a = next[name]
     const b = anchorLast.get(name)
-    if (b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.r - b.r) < 0.5 && a.visible === b.visible) continue
+    if (!force && b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.r - b.r) < 0.5 && a.visible === b.visible) continue
     anchorLast.set(name, a)
     anchorSubs.get(name)?.forEach((f) => f(a))
   }

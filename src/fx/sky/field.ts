@@ -410,7 +410,7 @@ export class FieldEngine {
     host.appendChild(canvas)
     this.canvas = canvas
     // 누르기 ↔ 끌기 구분 (M3): 하늘 끌기·핀치·관성·휠 뒤의 click 표시 → isSkyDragClick
-    this.cleanups.push(installSkyGesture(this.dragFilter, () => this.g3d?.spin() ?? 0))
+    this.cleanups.push(installSkyGesture(this.dragFilter, () => this.g3d?.spin() ?? 0, () => !!this.g3d && this.dragEnabled()))
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
     svg.setAttribute('class', 'gx-sky-links')
     svg.setAttribute('aria-hidden', 'true')
