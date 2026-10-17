@@ -34,19 +34,19 @@ interface Place {
   orbit: number
 }
 const PLACES: Place[] = [
-  { id: 'today', name: '오늘', sub: '은하 전체를 3/4 높이에서', t: [0, 0, 0], az: 210, el: 30, dist: 31, expo: 1, orbit: 1 },
-  { id: 'planner', name: '플래너', sub: '물러나 더 높이 — 앞날을 멀리 본다', t: [0, 0, 0], az: 210, el: 40, dist: 46, expo: 0.95, orbit: 1 },
+  { id: 'today', name: '오늘', sub: '은하 전체를 3/4 높이에서', t: [0, 0, 0], az: 210, el: 30, dist: 25, expo: 1, orbit: 1 },
+  { id: 'planner', name: '플래너', sub: '물러나 더 높이 — 앞날을 멀리 본다', t: [0, 0, 0], az: 210, el: 40, dist: 40, expo: 0.95, orbit: 1 },
   { id: 'notes', name: '노트', sub: '바깥 팔의 조용한 끝', t: LANDMARKS.notes, az: 228, el: 16, dist: 9, expo: 0.9, orbit: 0 },
   { id: 'review', name: '복습', sub: '팔 위의 젊은 산개성단', t: LANDMARKS.review, az: 202, el: 22, dist: 6, expo: 1, orbit: 0 },
   { id: 'graph', name: '그래프', sub: '막대 끝의 HII 성운 — 생각의 성운', t: LANDMARKS.graph, az: 198, el: 25, dist: 7, expo: 1, orbit: 0 },
   { id: 'focus', name: '집중', sub: '나의 자리 — 팔 사이 가지', t: LANDMARKS.focus, az: 220, el: 12, dist: 3.5, expo: 0.9, orbit: 0.3 },
-  { id: 'settings', name: '설정', sub: '집 안, 어둡게', t: [0, 0, 0], az: 210, el: 30, dist: 31, expo: 0.65, orbit: 1 },
+  { id: 'settings', name: '설정', sub: '집 안, 어둡게', t: [0, 0, 0], az: 210, el: 30, dist: 25, expo: 0.65, orbit: 1 },
 ]
 /** 화면에서 바라보는 점의 자리 (design-v4: 0.66, 0.44) · 원반 장축 57° 대각선 고정 기울기(롤 변화 0) */
 const SEAT = [0.66, 0.44]
 let EMIT = 0.3
 let STAR = 2.2
-let ARM: [number, number] = [0.6, 1.5]
+let ARM: [number, number] = [1.0, 1.4]
 const TILT = -57
 const FOV = 50
 
@@ -159,7 +159,7 @@ const fgVao = (() => {
     d[o] = fgPos[i * 4] = (rnd() * 2 - 1) * FG_R
     d[o + 1] = fgPos[i * 4 + 1] = (rnd() * 2 - 1) * FG_R * 0.6
     d[o + 2] = fgPos[i * 4 + 2] = (rnd() * 2 - 1) * FG_R
-    d[o + 3] = fgPos[i * 4 + 3] = 0.002 + Math.pow(rnd(), 5) * 0.05
+    d[o + 3] = fgPos[i * 4 + 3] = 0.005 + Math.pow(rnd(), 3) * 0.05
     const T = rnd()
     // 흑체 팔레트, 살짝 따뜻하게
     const c = T < 0.18 ? [0.8, 0.87, 1] : T < 0.7 ? [1, 0.96, 0.9] : [1, 0.84, 0.64]
@@ -466,14 +466,27 @@ function schedule() {
   pending = true
   const iv = FRAME_MS[power]
   if (iv < 20) rafId = requestAnimationFrame(frame)
-  else {
-    const wait = Math.max(0, lastDraw + iv - performance.now() - 8)
+  // 평소·깊은 대기: 타이머가 깨운 자리에서 바로 그린다(깨우기 = 그린 프레임, power-budget §4-1).
+  // 창이 가려져 rAF가 멈추면 그리지 않도록 1초마다 rAF 맥박을 한 번 걸고, 1.5초 넘게 맥박이 없으면 rAF가 다시 올 때까지 쉰다.
+  else
     timerId = window.setTimeout(() => {
-      countWake()
-      rafId = requestAnimationFrame(frame)
-    }, wait)
-  }
+      const t = performance.now()
+      if (t - rafSeenAt > 1500) {
+        rafId = requestAnimationFrame((ts) => {
+          rafSeenAt = performance.now()
+          frame(ts, true)
+        })
+        return
+      }
+      if (t - beatAt > 1000) {
+        beatAt = t
+        requestAnimationFrame(() => (rafSeenAt = performance.now()))
+      }
+      frame(t, true)
+    }, Math.max(0, lastDraw + iv - performance.now()))
 }
+let rafSeenAt = performance.now()
+let beatAt = 0
 function kick() {
   if (document.hidden) return
   if (pending) {
@@ -628,17 +641,22 @@ let orbitK = 0 // 0–1 공전 램프 (3s 뒤 4s inout, 입력 300ms 안 0)
 let orbitRate = 1 * DEG // 장소·상태별 공전 속도 (2s·5s 이즈)
 let fgCapK = 1
 const t0 = performance.now()
-function frame(now: number) {
+function frame(now: number, timed = false) {
   pending = false
   countWake()
+  if (!timed) rafSeenAt = performance.now()
   power = powerState(now)
-  if (now - lastDraw < FRAME_MS[power] - 2) {
+  const iv = FRAME_MS[power]
+  if (!timed && now - lastDraw < iv - 4) {
     schedule()
     return
   }
   draw(now)
+  drawnAll++
   schedule()
 }
+let drawnAll = 0
+let rsOverride = 0 // 측정용: 해상도 배율 고정
 
 interface DrawOpt {
   capture?: boolean
@@ -650,7 +668,7 @@ function draw(now: number, opt: DrawOpt = {}) {
   const dt = last ? Math.min(100, now - last) : 16.7
   const interval = last ? now - last : 0
   last = now
-  lastDraw = now
+  lastDraw = performance.now() // 예약 기준은 실제 시각(rAF 타임스탬프는 몇 ms 앞설 수 있다)
   // 쉼 크로스페이드(2s) · 돌아옴(600ms)
   if (power === 'rest') restK = Math.min(1, restK + dt / 2000)
   else restK = Math.max(0, restK - dt / 600)
@@ -695,7 +713,10 @@ function draw(now: number, opt: DrawOpt = {}) {
   const expo = cam.expo * (0.55 + 0.45 * (1 - Math.pow(1 - entrance, 3)))
 
   // 상태별 해상도: 타깃 안의 일부만 쓴다
-  const rs = opt.capture ? 1 : RSCALE[power]
+  // 비행 중 동적 해상도 ×0.8 (움직임이 가려 준다 — 원반 가까이 채우기 비용 ↓)
+  // 총 픽셀 상한 4.0MP (power-budget §2: iPad 11\" DPR 2 = 4.0MP)
+  const pxCap = Math.min(1, Math.sqrt(4.0e6 / (W * H)))
+  const rs = rsOverride ? rsOverride : opt.capture ? 1 : pxCap * (st.flying ? Math.min(0.8, RSCALE[power]) : RSCALE[power])
   const sw = Math.max(2, Math.round(W * rs))
   const sh = Math.max(2, Math.round(H * rs))
   const cw = Math.max(1, sw >> 1)
@@ -781,8 +802,10 @@ function draw(now: number, opt: DrawOpt = {}) {
   gl.uniform1i(P.blit.u.uTex!, 0)
   gl.uniform4f(P.blit.u.uSrc!, ...src(emitRT, cw, ch))
   gl.bindTexture(gl.TEXTURE_2D, emitRT.tex)
+  gl.uniform3f(P.blit.u.uFloor!, 0, 0, 0)
   gl.blendFunc(gl.ONE, gl.ONE)
   gl.drawArrays(gl.TRIANGLES, 0, 3)
+  gl.uniform3f(P.blit.u.uFloor!, 0.4, 0.3, 0.24)
   gl.bindTexture(gl.TEXTURE_2D, dustRT.tex)
   gl.blendFunc(gl.DST_COLOR, gl.ZERO)
   gl.drawArrays(gl.TRIANGLES, 0, 3)
@@ -870,7 +893,8 @@ function draw(now: number, opt: DrawOpt = {}) {
   if (interval > 0 && interval < 250) {
     frames.push(interval)
     if (frames.length > 240) frames.shift()
-    if (st.flying) {
+    if (st.flying && flight && now - flight.t0 > 50) {
+      // 비행 첫 프레임 간격은 평소(30fps 타이머) 박자에서 넘어오는 간격이라 뺀다
       flightFrames.push(interval)
       flightMax = Math.max(flightMax, interval)
     }
@@ -909,7 +933,7 @@ function draw(now: number, opt: DrawOpt = {}) {
 /** 전경 별의 밀도·밝기: 원반 안에서는 1, 은하 밖(오늘·플래너)에서는 낮게 */
 function fgK(eye: V3) {
   const inDisk = Math.exp(-Math.abs(eye[1]) / 3) * Math.exp(-Math.max(0, Math.hypot(eye[0], eye[2]) - 15) / 6)
-  return 0.25 + 0.75 * inDisk
+  return 0.6 + 0.4 * inDisk
 }
 /**
  * 전경 별 고르기 (design-v4 §7-2) — 셰이더와 같은 식으로 600개를 투영해
@@ -990,24 +1014,27 @@ function fgUpdate(dt: number, eye: V3, m: Float32Array, sdpr: number, moving: bo
     A += area[i]!
   }
   const a = Math.min(1, dt / 250)
+  const aFast = Math.min(1, dt / 50)
   let shown = 0
   let shownA = 0
   let vmaxPx = 0
   for (let i = 0; i < FG_N; i++) {
-    fgW[i]! += ((keep[i] ? 1 : 0) - fgW[i]!) * a
+    // 화면 속도: 감싸기 기준을 묶어도 시선 회전(드래그·비행)은 모든 층이 같이 받는다 → 상한을 넘는 별은 50ms 안에 감춘다
+    let v = 0
+    if (area[i]! > 0 && fgSeen[i] && dt > 0) v = (Math.hypot(sx[i]! - fgScr[i * 2]!, sy[i]! - fgScr[i * 2 + 1]!) * 1000) / dt
+    const fast = v > capPx
+    fgW[i]! += ((keep[i] && !fast ? 1 : 0) - fgW[i]!) * (fast ? aFast : a)
     if (fgW[i]! < 0.002) fgW[i] = 0
-    const on = fgW[i]! > 0.3 && area[i]! > 0
-    if (on) {
+    if (fgW[i]! > 0.3 && area[i]! > 0) {
       shown++
       shownA += area[i]!
-      if (fgSeen[i] && dt > 0) {
-        const v = (Math.hypot(sx[i]! - fgScr[i * 2]!, sy[i]! - fgScr[i * 2 + 1]!) * 1000) / dt
-        if (v < 5000) vmaxPx = Math.max(vmaxPx, v)
-      }
+      if (v < 5000) vmaxPx = Math.max(vmaxPx, v)
+    }
+    if (area[i]! > 0) {
       fgScr[i * 2] = sx[i]!
       fgScr[i * 2 + 1] = sy[i]!
     }
-    fgSeen[i] = on ? 1 : 0
+    fgSeen[i] = area[i]! > 0 ? 1 : 0
   }
   gl.bindBuffer(gl.ARRAY_BUFFER, fgWBuf)
   gl.bufferSubData(gl.ARRAY_BUFFER, 0, fgW)
@@ -1051,7 +1078,7 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
   },
   stats: () => {
     const s = frames.slice().sort((a, b) => a - b)
-    return { power, fps, wakes: wake.rate, p95: s[Math.floor(0.95 * (s.length - 1))] ?? 0, jsMs, gpuMs: tq ? gpuMs : null, stars: starN, clouds: cloudN, tier, W, H, genMs, uploadMs, fg: { ...fgStat }, flights: flightLog.slice(), simT, yawDeg: (user.yaw / DEG) % 360, timerQuery: !!tq }
+    return { power, fps, wakes: wake.rate, p95: s[Math.floor(0.95 * (s.length - 1))] ?? 0, jsMs, gpuMs: tq ? gpuMs : null, stars: starN, clouds: cloudN, tier, W, H, genMs, uploadMs, fg: { ...fgStat }, flights: flightLog.slice(), simT, yawDeg: (user.yaw / DEG) % 360, timerQuery: !!tq, wakeAll, drawnAll, restK, stopped }
   },
   clean: (on: boolean) => {
     document.body.classList.toggle('clean', on)
@@ -1078,6 +1105,15 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
     lastInput = performance.now() - sec * 1000
     kick()
   },
+  /** 측정용: 활동 상태 fps 상한을 풀어 기기 최대 처리량(=실제 프레임 비용)을 본다 */
+  uncap: (on: boolean) => {
+    FRAME_MS.active = on ? 1 : 1000 / 60
+    touch()
+  },
+  rs: (x: number) => {
+    rsOverride = x
+    touch()
+  },
   lowPower: (on: boolean) => {
     lowPower = on
     touch()
@@ -1091,9 +1127,9 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
   measure: async (sec: number, state?: Power | 'auto') => {
     if (state && state !== 'auto') forced = state
     if (state === 'auto') forced = null
-    restK = 0
+    if (state !== 'auto' && state !== 'rest') restK = 0
     gpuSync = !tq
-    kick()
+    if (state !== 'auto') kick()
     await new Promise((r) => setTimeout(r, 1200)) // 전환 안정
     Object.assign(meas, { on: true, drawn: 0, wakes: 0, js: [], gpu: [], iv: [], t0: performance.now(), states: {} })
     const w0 = wakeTotal()

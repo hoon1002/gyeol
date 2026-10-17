@@ -52,7 +52,7 @@ void main() {
   vec4 clip = uVP * vec4(p, 1.0);
   float d = max(length(p - uCam), 0.02);
   bool sky = kind > 2.5 && kind < 3.5;
-  float L = (sky ? a0.w * 40.0 : a0.w) * gain;
+  float L = (sky ? a0.w * 24.0 : a0.w) * gain;
   float dd = sky ? 30.0 : d;
   // 빛의 양 = 밝기 / 거리² (가까이 갈수록 별은 커지지 않고 밝아진다)
   float flux = L / (dd * dd) * uExpo;
@@ -237,9 +237,10 @@ export const BLIT_FS = /* glsl */ `#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform sampler2D uTex;
+uniform vec3 uFloor;   // 먼지 투과율 하한: 사진의 먼지띠는 짙은 갈색이지 구멍 난 검정이 아니다
 ${SRC}
 out vec4 o;
-void main() { o = vec4(S(uTex, vUv * uSrc.xy), 1.0); }
+void main() { o = vec4(max(S(uTex, vUv * uSrc.xy), uFloor), 1.0); }
 `
 
 /* 4층 전경 별 (design-v4 §7-2): 카메라 둘레 반지름 uR 상자에 감싸 도는 3D 별 — 회전·비행 때 눈앞을 스쳐 간다.

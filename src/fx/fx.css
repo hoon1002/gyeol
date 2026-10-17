@@ -219,12 +219,15 @@ html.theme-light .gx-link { stroke: #3A3428; }
 @keyframes gx-caption { 0% { opacity: 0; } 7% { opacity: 1; } 91% { opacity: 1; } 100% { opacity: 0; } }
 
 /* ProgressLine: 1px 진행선 + 지금 표시 1×7px */
-.gx-progress { position: relative; height: 7px; }
+.gx-progress { position: relative; height: 7px; container-type: inline-size; }
 .gx-progress::before { content: ""; position: absolute; left: 0; right: 0; top: 3px; height: 1px; background: currentColor; opacity: .18; }
 .gx-progress-fill { position: absolute; left: 0; top: 3px; height: 1px; width: 100%; background: var(--star-gold, #F3D29A); transform-origin: 0 50%; transform: scaleX(var(--gx-pl, 0)); transition: transform 1s linear; }
 .gx-progress.is-quiet .gx-progress-fill { background: var(--text-2, rgba(243, 241, 236, .6)); }
-.gx-progress-now { position: absolute; top: 0; width: 1px; height: 7px; left: calc(var(--gx-pl, 0) * 100%); background: var(--star-gold, #F3D29A); transition: left 1s linear; }
+/* 지금 표시: left(배치) 대신 transform(합성) — 100cqw = 진행선 폭 */
+.gx-progress-now { position: absolute; top: 0; left: 0; width: 1px; height: 7px; transform: translateX(calc(var(--gx-pl, 0) * 100cqw)); background: var(--star-gold, #F3D29A); transition: transform 1s linear; }
 .gx-progress.is-quiet .gx-progress-now { background: var(--text-1, #F3F1EC); }
+/* 한 걸음이 1px 미만이면 전환 없이 (ProgressLine이 붙인다) */
+.gx-progress.is-step .gx-progress-fill, .gx-progress.is-step .gx-progress-now { transition: none; }
 @media (prefers-reduced-motion: reduce) {
   .gx-progress-fill, .gx-progress-now { transition: none; }
   .gx-caption { animation-duration: 3s; }

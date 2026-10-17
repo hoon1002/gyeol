@@ -523,6 +523,7 @@ precision highp float;
 ${BAND}
 uniform float uRes;
 uniform float uTime;
+uniform float uAnimTime; // 사건 시계(데이터 별 보간·누름) — 주변 시계 uTime과 분리(전력 쉼)
 uniform float uMotion;   // 0 = 정지 장면
 uniform vec4 uPointer;   // css px x, y, 반경, 세기(0..1, 켜짐 250ms · 꺼짐 900ms)
 uniform vec4 uTaps[4];   // css px x, y, t0, 세기
@@ -560,7 +561,7 @@ void main() {
     float kind = floor(aKind + 0.01);
     float fr = aKind - kind;
     burst = fr > 0.4 ? 2.0 : (fr > 0.1 ? 1.0 : 0.0);
-    age = uTime - aAnim.z;
+    age = uAnimTime - aAnim.z;
     if (kind < 3.0) {
       // 밝기 보간 (V3 다시 켜짐 · V4 꺼져 감 · 성장): 단조, 넘침 없음
       float k = smoothstep(0.0, 1.0, clamp(age / max(aAnim.w, 0.001), 0.0, 1.0));
@@ -580,7 +581,7 @@ void main() {
   float tb = 0.0;
   for (int i = 0; i < 4; i++) {
     vec4 tp = uTaps[i];
-    float age = uTime - tp.z;
+    float age = uAnimTime - tp.z;
     if (tp.w > 0.0 && age >= 0.0 && age < 1.8) {
       float env = smoothstep(0.0, 0.2, age) * (1.0 - smoothstep(0.35, 1.8, age));
       tb += env * tp.w * (1.0 - smoothstep(16.0, 110.0, length(px - tp.xy)));

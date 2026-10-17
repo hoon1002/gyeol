@@ -10,6 +10,7 @@
 import { bandFrame, pickComposition, type Composition, type SceneName } from './compositions'
 import { DYN_L, dustCount, makeDust, makeStars, STRIDE, type StarSets } from './starfield'
 import * as SH from './shaders'
+import { AmbientClock, decideState, DEFAULT_RULE, powerMonitor, scheduleFrame, stateInterval, type PowerRule, type PowerState } from '@/perf/scheduler'
 
 export type Tier = 'A' | 'B' | 'C'
 
@@ -49,6 +50,9 @@ export interface SkyStats {
   p95: number
   renderer: string
   running: boolean
+  /** 전력 상태 (power-budget §2) */
+  power?: PowerState
+  lowPower?: boolean
 }
 
 /** 장면 바깥에서 덧씌우는 값 (앱 공간별 노출 등) */
@@ -184,6 +188,17 @@ export class Sky {
   private tierAuto = true
   private raf = 0
   private running = false
+  /* 전력 (src/perf/scheduler): 다음 프레임 예약 취소 · 상태 · 사건 창 · 주변 시계 */
+  private cancelNext: (() => void) | null = null
+  private pstate: PowerState = 'active'
+  private rule: PowerRule = DEFAULT_RULE
+  /** 이 시각(performance.now)까지는 사건 = 기기 주사율 */
+  private evUntil = 0
+  /** 쉼·깊은 대기라도 이 시각에 한 장은 그린다 (데이터 별 작은 보간의 끝) */
+  private wantAt = 0
+  private needFrame = true
+  private amb!: AmbientClock
+  private unWake: (() => void) | null = null
   private lastFrame = 0
   private epoch = performance.now()
   /* 움직임 시계: 프레임마다 최대 20ms만 나아간다 → 앱이 메인 스레드를 잠깐 막아도 비행·노출이 건너뛰지 않는다 */
@@ -257,6 +272,20 @@ export class Sky {
     canvas.addEventListener('webglcontextrestored', this.onRestored)
     document.addEventListener('visibilitychange', this.onVis)
     this.scheduleMeteor(performance.now(), true)
+    this.amb = new AmbientClock(this.now())
+    powerMonitor.start()
+    this.unWake = powerMonitor.onWake(() => this.kick())
+  }
+
+  /** 공간별 전력 규칙 (집중 20초 → 쉼, 글 많은 화면 30초 → 깊은 대기) */
+  setPowerRule(rule: PowerRule | null): void {
+    this.rule = rule ?? DEFAULT_RULE
+    this.kick()
+  }
+
+  /** 사건: ms 동안 기기 주사율로 (전환·비행처럼 결과 그대로) */
+  private wake(ms: number) {
+    this.evUntil = Math.max(this.evUntil, performance.now() + ms)
   }
 
   /* ---------- 공개 ---------- */
@@ -378,7 +407,8 @@ export class Sky {
     this.ptr.y = y
     this.ptr.t = performance.now()
     this.ptr.r = type === 'pen' ? 80 : 120
-    this.kick()
+    // 루프가 돌고 있으면 그 박자(활동 60)로 충분 — 포인터마다 vsync로 당기지 않는다
+    if (!this.running) this.kick()
   }
 
   pointerLeave(): void {
@@ -392,6 +422,7 @@ export class Sky {
     this.taps = this.taps.filter((p) => t0 - p.t0 < 1.8)
     this.taps.push({ x, y, t0, a: strength })
     while (this.taps.length > 4) this.taps.shift()
+    this.wake(1850)
     this.kick()
   }
 
@@ -414,6 +445,25 @@ export class Sky {
       keep.forEach((k) => this.dropSet(k))
       this.specials = [set]
     }
+    // 전력: 눈에 띄는 보간(밝기 차 ≥ 0.05 · 피어남)은 사건(주사율), 작은 보간(집중 별 자람 0.004)은 끝에 한 장만
+    const tn = this.now()
+    let big = 0
+    let small = 0
+    for (const sp of list) {
+      if (sp.t0 === undefined) continue
+      if (sp.mode === 'birth' || sp.mode === 'relight') {
+        big = Math.max(big, sp.t0 + 2.4 - tn)
+        continue
+      }
+      if (sp.mode !== 'anim' || sp.dur === undefined) continue
+      const end = sp.t0 + Math.max(sp.dur, sp.burst ? 1.6 : 0) - tn
+      if (end <= 0) continue
+      if (sp.burst || Math.abs((sp.to ?? 0) - (sp.from ?? 0)) >= 0.05) big = Math.max(big, end)
+      else small = Math.max(small, end)
+    }
+    if (live) big = Math.max(big, DATA_FADE)
+    if (big > 0) this.wake(big * 1000 + 50)
+    if (small > 0) this.wantAt = Math.max(this.wantAt, performance.now() + small * 1000 + 30)
     this.kick(true)
   }
 
@@ -428,6 +478,7 @@ export class Sky {
   swellBand(amount = 0.08, ms = 2000): void {
     if (this.isStill()) return
     this.swell = { t0: performance.now(), amt: amount, dur: ms }
+    this.wake(ms)
     this.kick()
   }
 
@@ -495,6 +546,7 @@ export class Sky {
     if (p) {
       this.gather = { x: p.x, y: p.y, from: cur, to: 1, t0: now }
     } else this.gather = { ...this.gather, from: cur, to: 0, t0: now }
+    this.wake(4200)
     this.kick()
   }
   private gatherAt(now: number): number {
@@ -597,6 +649,7 @@ export class Sky {
     this.met.t0 = -1e9
     this.met.forced = true
     this.met.len = o?.size === 'sm' ? 80 : 120
+    this.wake(1000)
     this.kick()
   }
 
@@ -618,6 +671,8 @@ export class Sky {
       p95: this.p95,
       renderer: this.renderer,
       running: this.running,
+      power: this.pstate,
+      lowPower: powerMonitor.lowPower(),
     }
   }
 
@@ -659,7 +714,7 @@ export class Sky {
   debugState() {
     const now = performance.now()
     return {
-      running: this.running, raf: this.raf, still: this.isStill(), animating: this.animating(now), jobQueued: this.jobQueued, job: !!this.job,
+      running: this.running, raf: this.raf, power: this.pstate, evMs: Math.round(this.evUntil - now), wantMs: this.wantAt ? Math.round(this.wantAt - now) : 0, met: Math.round(now - this.met.t0), still: this.isStill(), animating: this.animating(now), jobQueued: this.jobQueued, job: !!this.job,
       xHold: this.xHold, flightHold: this.flightHold, flT0: this.fl.t0 > 1e11 ? 'held' : Math.round(this.fl.t0 - this.ct()), xT0: this.xT0 > 1e11 ? 'held' : Math.round(this.xT0 - this.ct()),
       scene: this.scene, bright: this.compTo?.bright, gain: this.gainAt(now), plate: this.plateAt(now), cam: this.camAt(this.ct()), freeze: this.freezeAt, reduced: this.reduced, tier: this.tier,
       lost: this.lost, destroyed: this.destroyed, hidden: document.hidden, layer: !!this.layer,
@@ -677,6 +732,8 @@ export class Sky {
   destroy(): void {
     this.destroyed = true
     this.stop()
+    this.unWake?.()
+    this.unWake = null
     this.canvas.removeEventListener('webglcontextlost', this.onLost)
     this.canvas.removeEventListener('webglcontextrestored', this.onRestored)
     document.removeEventListener('visibilitychange', this.onVis)
@@ -824,7 +881,7 @@ export class Sky {
     this.compile('compose', SH.FULL_VS, SH.COMPOSE_FS, [...band, 'uStars', 'uStars3', 'uBlur', 'uBlur3', 'uNebula', 'uDust', 'uStill', 'uSeed'])
     this.compile('present', SH.FULL_VS, SH.PRESENT_FS, [...band, 'uL0', 'uL1', 'uP0', 'uP1', 'uLayerMix', 'uSafeB', 'uMix', 'uBright', 'uStarExpo', 'uFaint', 'uBlue', 'uAirglow', 'uGain', 'uTint', 'uTile', 'uTileRect', 'uTileW'])
     this.compile('plate', SH.FULL_VS, SH.PLATE_FS, ['uA', 'uPlate'])
-    this.compile('starD', SH.STAR_DYN_VS, SH.STAR_DYN_FS, [...band, 'uRes', 'uTime', 'uMotion', 'uPointer', 'uTaps', 'uStatic', 'uAlpha', 'uFocus', 'uStarExpo', 'uDynCut', 'uSpikes'])
+    this.compile('starD', SH.STAR_DYN_VS, SH.STAR_DYN_FS, [...band, 'uRes', 'uTime', 'uAnimTime', 'uMotion', 'uPointer', 'uTaps', 'uStatic', 'uAlpha', 'uFocus', 'uStarExpo', 'uDynCut', 'uSpikes'])
     this.compile('dust', SH.DUST_VS, SH.DUST_FS, [...band, 'uRes', 'uTime', 'uAlpha', 'uFall', 'uGather'])
     this.compile('meteor', SH.METEOR_VS, SH.METEOR_FS, ['uView', 'uMet', 'uMetP', 'uMetA'])
     if (!this.parallel) this.finishPrograms()
@@ -1295,34 +1352,81 @@ export class Sky {
       }
       return
     }
-    // 루프가 '도는 중'으로 표시됐지만 예약된 프레임이 없으면 다시 건다 (멈춤 방지)
-    if (this.running && this.raf) return
-    this.running = true
+    this.needFrame = true
+    // 루프가 '도는 중'이고 다음 vsync에 예약돼 있으면 그대로. 낮은 fps로 먼 예약(타이머)이거나 예약이 없으면 다음 vsync로 당긴다
+    if (this.running && this.cancelNext && this.nextIsVsync) return
+    // 쉬던(또는 낮은 fps로 기다리던) 루프를 깨울 때 첫 간격은 '프레임 시간'이 아니다 → 0 (전환 계측·등급 표본 오염 방지)
     this.lastFrame = 0
-    cancelAnimationFrame(this.raf)
-    this.raf = requestAnimationFrame(this.frame)
+    this.running = true
+    this.schedule(0)
+  }
+
+  /** 다음 프레임 예약 (src/perf/scheduler: 6ms 넘게 남으면 setTimeout → rAF, 깨우기 = 그린 프레임) */
+  private nextIsVsync = false
+  private schedule(delayMs: number) {
+    this.cancelNext?.()
+    this.nextIsVsync = delayMs <= 6
+    this.cancelNext = scheduleFrame(this.frame, delayMs)
   }
 
   private stop() {
     cancelAnimationFrame(this.raf)
     this.raf = 0
+    this.cancelNext?.()
+    this.cancelNext = null
     this.running = false
   }
 
   private frame = (t: number) => {
     this.raf = 0
+    this.cancelNext = null
     const still = this.isStill()
     if (this.destroyed || this.lost || document.hidden || (still && !this.animating(performance.now()) && !this.jobQueued && this.progsReady)) {
       this.running = false
       if (still && !this.destroyed && !this.lost && !document.hidden) this.kick(true)
       return
     }
-    this.raf = requestAnimationFrame(this.frame)
+    // 전력 상태 (power-budget §2): 사건·전환·비행·굽기 = 기기 주사율(결과 그대로), 입력 2초 = 60, 평소 30, 깊은 대기 15, 쉼 0
+    const n0 = performance.now()
+    const metOn = this.meteorsOn && n0 - this.met.t0 < this.met.dur * 1000 + 50
+    const busy = !this.progsReady || this.jobQueued || !!this.job || this.animating(n0) || n0 < this.evUntil || metOn
+    const st = decideState(n0, { busy, rule: this.rule })
+    this.pstate = st
+    // 깊은 대기·쉼에서는 환경 유성을 미룬다(신호 유성은 그대로)
+    if ((st === 'deep' || st === 'rest') && !this.met.forced && n0 >= this.met.next) this.scheduleMeteor(n0)
     const cap = TIER[this.tier].cap
-    if (cap && this.lastFrame && t - this.lastFrame < cap - 2) return
+    let want = Math.max(cap, stateInterval(st))
+    // 쉼으로 들어가는 2초 동안은 15fps로 주변 시계를 멈춰 간다
+    if (want === Infinity && this.amb.settling()) want = Math.max(cap, 1000 / 15)
+    const due = this.needFrame || (this.wantAt > 0 && n0 >= this.wantAt - 8)
+    if (want === Infinity && !due) {
+      // 쉼: 예약 없음(깨우기 0). 입력·사건·visibilitychange가 kick으로 깨운다
+      this.running = false
+      return
+    }
+    // 반 vsync(≈ 4–8ms)까지 이른 프레임은 그린다(다시 예약하면 깨우기만 는다)
+    // (rAF 시각은 늦게 시작한 프레임이면 지난 vsync일 수 있어 performance.now로 비교)
+    if (!due && this.lastDrawN && n0 - this.lastDrawN < want - 7) {
+      this.schedule(this.lastDrawN + want - n0)
+      return
+    }
+    // 다음 프레임 예약 (쉼이면 남은 한 장 예약만)
+    if (want === Infinity) {
+      if (this.wantAt > n0 + 8) this.schedule(this.wantAt - n0)
+      else this.running = false
+    } else this.schedule(want <= 0 ? 0 : n0 + want - performance.now())
+    this.lastDrawN = n0
+    const sample = want <= Math.max(cap, 0.5) && this.prevWant === want
+    this.prevWant = want
+    this.needFrame = false
+    if (this.wantAt > 0 && n0 >= this.wantAt - 8) this.wantAt = 0
     const interval = this.lastFrame ? t - this.lastFrame : 0
     const dt = interval || 16.7
     this.lastFrame = t
+    // 주변 시계(반짝임·별가루): 사건 시계와 분리 — 쉼이면 2초에 걸쳐 멈추고 깨어나면 600ms에 걸쳐 다시 흐른다
+    if (this.freezeAt === null && !still) this.amb.advance(n0, interval || 16.7, st)
+    powerMonitor.noteFrame(interval, want === Infinity ? 1000 / 15 : want || 1000 / 60, want === 0 && this.prevSample)
+    this.prevSample = want === 0
     const j0 = performance.now()
     this.clk += Math.min(20, j0 - this.clkReal)
     this.clkReal = j0
@@ -1334,8 +1438,11 @@ export class Sky {
     const js = performance.now() - j0
     this.jsMs = this.jsMs ? this.jsMs * 0.95 + js * 0.05 : js
     this.onFrame?.(interval, js)
-    this.measure(t, interval)
+    this.measure(t, interval, sample)
   }
+  private prevWant = -1
+  private lastDrawN = 0
+  private prevSample = false
 
   /** 한 프레임: 프로그램 준비 → 굽기 한 조각 → 그리기 */
   private tick(t: number, still: boolean) {
@@ -1399,7 +1506,9 @@ export class Sky {
     this.camU[1] = cam.y
     this.camU[2] = cam.z
     this.camU[3] = cam.par
-    const time = this.freezeAt ?? (still ? 12.0 : this.now())
+    // 주변 시간(반짝임·별가루) = 전력 상태를 따르는 주변 시계, 사건 시간(데이터 별 보간·누름) = now()
+    const time = this.freezeAt !== null ? this.amb.t : still ? 12.0 : this.amb.t
+    const animTime = this.freezeAt ?? (still ? 12.0 : this.now())
     const motion = !still || this.freezeAt !== null
     const plateK = this.plateAt(now)
     const W = this.canvas.width
@@ -1473,6 +1582,7 @@ export class Sky {
     gl.useProgram(pd.p)
     gl.uniform1f(pd.u.uRes!, this.res)
     gl.uniform1f(pd.u.uTime!, time)
+    gl.uniform1f(pd.u.uAnimTime!, animTime)
     gl.uniform1f(pd.u.uMotion!, motion && plateK < 0.999 ? 1 : 0)
     gl.uniform4f(pd.u.uPointer!, this.ptr.x, this.ptr.y, this.ptr.r, still ? 0 : this.ptr.k)
     gl.uniform4fv(pd.u.uTaps!, taps)
@@ -1617,7 +1727,7 @@ export class Sky {
    * 가려진 탭·포커스 없는 창·스로틀(간격 > 100ms) 프레임이 끼면 그 창은 버리고 처음부터 다시 센다 → 백그라운드에서 강등되지 않는다.
    * 강등·재굽기는 전환·비행 중이 아닌 유휴 프레임에만 적용한다(pendingTier).
    */
-  private measure(t: number, interval: number) {
+  private measure(t: number, interval: number, sample = true) {
     if (!this.fpsT) this.fpsT = t
     this.fpsN++
     if (t - this.fpsT >= 1000) {
@@ -1626,7 +1736,8 @@ export class Sky {
       this.fpsT = t
       this.onStats?.(this.stats())
     }
-    if (!this.tierAuto || this.job) return
+    // 등급 판정 표본은 매 vsync를 요청한 프레임만 (전력 상태로 일부러 늦춘 프레임은 느린 게 아니다) — 끊지 않고 건너뜀
+    if (!this.tierAuto || this.job || !sample) return
     if (document.hidden || !document.hasFocus() || interval <= 0 || interval > 100) {
       // 스로틀·숨김·창이 가려져 포커스 없음(미리보기 창 등은 hidden=false여도 프레임이 들쭉날쭉): 연속 표본이 끊겼다 → 처음부터
       this.samples = []
@@ -1685,6 +1796,7 @@ export class Sky {
           this.pendingTier = auto
         }
       }
+      this.amb.wakeFromStop(performance.now())
       this.kick(true)
     }
   }

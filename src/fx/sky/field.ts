@@ -14,6 +14,7 @@ import { mulberry32 } from '../../galaxy/sky/rng'
 import { examStar, todayStarPositions } from '../../galaxy/scenes'
 import type { FieldStats } from '../engine/engine'
 import type { FieldData, Mood, MoodName, MotionLevel, MotionPrefs, PauseReason, RippleOptions, ThemeName, Tier } from '../types'
+import { SPACE_RULES } from '@/perf/scheduler'
 
 export type Mode = 'rich' | 'calm' | 'off'
 
@@ -523,6 +524,8 @@ export class FieldEngine {
     if (typeof dim === 'number' && l.bright !== undefined) l.bright = Math.max(0.5, Math.min(1, l.bright * dim))
     const ms = this.mode === 'off' ? 0 : this.mode === 'calm' ? Math.min(durMs, 600) : durMs
     this.sky?.setScene(scene, instant || ms === 0, l, ms)
+    // 전력 규칙: 집중 20초 → 쉼, 노트·복습·설정 30초 → 깊은 대기 (power-budget §2)
+    this.sky?.setPowerRule?.(SPACE_RULES[preset] ?? null)
     if (changed || instant) {
       this.camStack = []
       this.goCamera({ scene: preset }, instant)
