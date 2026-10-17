@@ -4,7 +4,7 @@
  * 매 프레임 CPU는 카메라 행렬·유니폼과 전경 별 600개 가중치만 바꾼다.
  * 쿼리: ?tier=A|B|C · ?rot=on|slow|off · ?place=today|… · ?clean=1(UI 숨김) · ?hud=0 · ?lowpower=1
  */
-import { omega, OMEGA_P, LANDMARKS, ARM_TEX_W as SH_ARM_W, ARM_TEX_H as SH_ARM_H } from './galaxy'
+import { omega, OMEGA_P, LANDMARKS, BAR_ANGLE, ARM_TEX_W as SH_ARM_W, ARM_TEX_H as SH_ARM_H } from './galaxy'
 import * as SH from './shaders'
 import GenWorker from './gen.worker.ts?worker'
 
@@ -48,10 +48,10 @@ const PLACES: Place[] = [
   // design-v4 §8: 장소마다 은하의 실루엣이 다르다. 글·조작이 놓이는 자리는 어둡게 비운다
   { id: 'today', name: '오늘', sub: '위 3/4 — 비스듬한 타원', t: C0, az: 210, el: 30, dist: 25, expo: 1, orbit: 1, roll: -57, seat: [0.62, 0.46], seatP: [0.54, 0.4], fit: { m: 'long', frac: 0.8, of: 'h' }, fitP: { m: 'xext', frac: 0.92, of: 'w' } },
   { id: 'planner', name: '플래너', sub: '거의 옆 — 화면을 가로지르는 시간의 띠', t: C0, az: 200, el: 8, dist: 40, expo: 0.95, orbit: 0.4, roll: 0, rsK: 0.85, seat: [0.5, 0.66], seatP: [0.5, 0.7], fit: { m: 'long', frac: 1.15, of: 'w' }, fitP: { m: 'long', frac: 1.3, of: 'w' } },
-  { id: 'notes', name: '노트', sub: '정확히 옆 — 오른쪽에 선 책등', t: C0, az: 225, el: 2, dist: 30, expo: 0.9, orbit: 0, roll: -90, seat: [0.86, 0.5], seatP: [0.86, 0.5], fit: { m: 'long', frac: 1.2, of: 'h' }, fitP: { m: 'long', frac: 1.1, of: 'h' } },
+  { id: 'notes', name: '노트', sub: '정확히 옆 — 오른쪽에 선 책등', t: C0, az: 225, el: 2, dist: 30, expo: 0.9, orbit: 0, roll: -90, seat: [0.86, 0.5], seatP: [0.8, 0.5], fit: { m: 'long', frac: 1.2, of: 'h' }, fitP: { m: 'long', frac: 1.1, of: 'h' } },
   { id: 'review', name: '복습', sub: '아래에서 — 뒤집힌 은하, 다시 꺼내 보는 기억', t: C0, az: 195, el: -35, dist: 25, expo: 1, orbit: 0.3, roll: 40, seat: [0.6, 0.5], seatP: [0.5, 0.45], fit: { m: 'long', frac: 0.8, of: 'h' }, fitP: { m: 'long', frac: 0.95, of: 'w' } },
-  { id: 'graph', name: '그래프', sub: '팔 속, 낮게 — 별 하나하나가 생각', t: LANDMARKS.graph, az: 200, el: 18, dist: 7, expo: 1, orbit: 0, roll: -30, rsK: 0.9, seat: [0.6, 0.5], seatP: [0.5, 0.45] },
-  { id: 'focus', name: '집중', sub: '정면 — 시계판처럼 25분에 한 바퀴', t: C0, az: 210, el: 90, dist: 25, expo: 0.95, orbit: 0, roll: 0, rsK: 0.9, seat: [0.5, 0.5], seatP: [0.5, 0.42], fit: { m: 'long', frac: 0.72, of: 'short' }, fitP: { m: 'long', frac: 0.72, of: 'short' } },
+  { id: 'graph', name: '그래프', sub: '팔 속, 낮게 — 별 하나하나가 생각', t: LANDMARKS.graph, az: 72, el: 25, dist: 11.5, expo: 1, orbit: 0, roll: -30, rsK: 0.9, seat: [0.6, 0.5], seatP: [0.5, 0.45] },
+  { id: 'focus', name: '집중', sub: '정면 — 시계판처럼 25분에 한 바퀴', t: C0, az: 210, el: 90, dist: 25, expo: 0.95, orbit: 0, roll: 0, rsK: 0.9, seat: [0.5, 0.5], seatP: [0.5, 0.42], fit: { m: 'long', frac: 0.66, of: 'short' }, fitP: { m: 'long', frac: 0.66, of: 'short' } }, // 링(베젤)까지 짧은 변의 ≈ 80%, 세로 좌우 여백 ≥ 6%
   { id: 'settings', name: '설정', sub: '집 안, 어둡게', t: C0, az: 210, el: 30, dist: 25, expo: 0.65, orbit: 1, roll: -57, seat: [0.62, 0.46], seatP: [0.54, 0.4], fit: { m: 'long', frac: 0.8, of: 'h' }, fitP: { m: 'xext', frac: 0.92, of: 'w' } },
 ]
 /** 화면에서 바라보는 점의 자리 (design-v4: 0.66, 0.44) · 원반 장축 57° 대각선 고정 기울기(롤 변화 0) */
@@ -568,6 +568,18 @@ function flyTo(id: string) {
   // (design-v4 §7-1 '지금 방위 + 장소 오프셋'의 구형 버전)
   startFlight(pl, nearestPose(pl), false)
 }
+/** 그래프 자세 조건: 막대를 끝에서 보지 않고(막대와 시선 ≥ 30°), 눈이 막대 끝 바깥쪽에 있어 막대가 화면 뒤로 물러나 작게 보일 것 */
+function graphOk(q: Q) {
+  const b = qRot(q, [0, 0, 1])
+  const a = BAR_ANGLE + OMEGA_P * simT
+  return barLook(q) <= Math.cos(30 * DEG) && b[0] * Math.cos(a) + b[2] * Math.sin(a) >= 0.2
+}
+/** |cos(막대 축, 시선)| — 1이면 막대를 끝에서 본다 */
+function barLook(q: Q) {
+  const f = qRot(q, [0, 0, -1])
+  const a = BAR_ANGLE + OMEGA_P * simT
+  return Math.abs(f[0] * Math.cos(a) + f[2] * Math.sin(a))
+}
 /** 장소의 기본 자세를 은하 축 둘레로 돌린 것 가운데 지금 자세와 가장 가까운 것(실루엣은 같다) */
 function nearestPose(pl: Place): Q {
   const cur = curCam(performance.now()).c.q
@@ -576,7 +588,9 @@ function nearestPose(pl: Place): Q {
   let bestA = 9
   for (let k = 0; k < 72; k++) {
     const o = qMul(qAxis(YAX, k * 5 * DEG), base)
-    const a = qAngle(cur, worldQ(pl, simT, o))
+    const wq = worldQ(pl, simT, o)
+    if (pl.id === 'graph' && !graphOk(wq)) continue
+    const a = qAngle(cur, wq)
     if (a < bestA) {
       bestA = a
       best = o
@@ -589,7 +603,7 @@ const goHome = () => startFlight(place, nearestPose(place), true)
 
 /* ---------- 타이머 자리 미리보기 (개발 토글 ?ring=1 · 버튼 · __g3d.ring) ---------- */
 let ringOn = qs.get('ring') === '1'
-const RING_R = 12 // 눈에 보이는 팔 바깥 둘레(≈ 11.5u) 바로 바깥
+const RING_R = 14 // 시계 베젤: 보이는 팔 가장 바깥(≈ 13u)보다 ≈ 7% 크게 — 은하가 돌아도 팔이 링을 뚫지 않는다
 const ringEl = document.getElementById('ring') as unknown as SVGSVGElement
 const ringC = document.getElementById('ringC')!
 const ringA = document.getElementById('ringA')!
