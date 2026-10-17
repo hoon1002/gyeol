@@ -4,6 +4,7 @@ import { flushSync } from 'react-dom'
 import { getActiveEngine, useFieldEngine, usePrefsInternal } from './context'
 import type { CameraTarget, SkyPhase, SkyStatsOut, StarKind } from './sky/field'
 import { input } from './engine/input'
+import { isSkyDragClick } from './sky/gesture'
 import type {
   FieldData,
   FieldMoodProps,
@@ -350,6 +351,10 @@ export interface SkyEvents {
   fileDust: (id: string, subjectId: string | null, to?: 'note' | 'task' | 'archive') => void
   /** D8 검색 결과 별 반짝 뒤 고정(+25%, 나머지 ×0.5). []이면 원래대로 */
   glintNotes: (ids: string[]) => void
+  /** M3 잉크가 별이 된다: 노트를 닫거나 쪽을 다 썼을 때 — 지도 노트 별 600ms +40% 뒤 원래대로(안 보이면 최종 상태만) */
+  inkSettled: (noteId: string, o?: { pages?: number }) => void
+  /** M3 K6 메모 고정: 그 별가루 점을 고리 안쪽 자리에 멈추고(표류 0) 조금 밝게. false면 풀기 */
+  pinDust: (id: string, on: boolean) => void
   /** D9 과목 성운 피기 (순간 ①). 카메라는 움직이지 않는다 */
   bloomNebula: (subjectId: string, color: string) => void
   /** D10 은하 보이기: 첫 실행 자세(FieldMood 'onboarding') → 오늘, 회전 0 · 2.6초. 끝나면 resolve */
@@ -373,6 +378,8 @@ const NOOP_EVENTS: SkyEvents = {
   setDust: () => {},
   fileDust: () => {},
   glintNotes: () => {},
+  inkSettled: () => {},
+  pinDust: () => {},
   bloomNebula: () => {},
   revealGalaxy: () => Promise.resolve(),
   importNotes: () => {},
@@ -398,6 +405,8 @@ export function useSkyEvent(): SkyEvents {
       setDust: (n) => eng.setDust?.(n),
       fileDust: (id, sj, to) => eng.fileDust?.(id, sj, to),
       glintNotes: (ids) => eng.glintNotes?.(ids),
+      inkSettled: (id, o) => eng.inkSettled?.(id, o),
+      pinDust: (id, on) => eng.pinDust?.(id, on),
       bloomNebula: (sj, c) => eng.bloomNebula?.(sj, c),
       revealGalaxy: () => eng.revealGalaxy?.() ?? Promise.resolve(),
       importNotes: (ids) => eng.importNotes?.(ids),
@@ -519,6 +528,8 @@ export function useSkyPick(): {
   pick: (x: number, y: number, radius?: number) => { id: string; layer: string; kind?: 'note'; sky: [number, number]; screen: [number, number]; dist: number; world: [number, number, number] } | null
   toSky: (x: number, y: number) => [number, number]
   toScreen: (skyX: number, skyY: number) => [number, number]
+  /** M3: 이 click이 하늘 끌기·핀치·관성·휠 뒤에 온 것이면 참 — '빈 하늘 누르기'로 보지 않는다 */
+  isDragClick: (e: Event) => boolean
 } {
   const eng = useFieldEngine()
   return useMemo(
@@ -526,6 +537,7 @@ export function useSkyPick(): {
       pick: (x: number, y: number, r?: number) => eng?.pick?.(x, y, r) ?? null,
       toSky: (x: number, y: number) => eng?.toSky?.(x, y) ?? [x / window.innerWidth, y / window.innerHeight],
       toScreen: (wx: number, wy: number) => eng?.toScreenPx?.(wx, wy) ?? [wx * window.innerWidth, wy * window.innerHeight],
+      isDragClick: isSkyDragClick,
     }),
     [eng],
   )
@@ -595,4 +607,17 @@ export function useSkyClock(clock: { startedAt: number; durationMs: number; elap
     eng?.setClock(ref.current)
   }, [eng, key])
   useEffect(() => () => eng?.setClock(null), [eng])
+}
+
+/**
+ * M3 K0 종이 펼침 (design-ink 1-3): 필기 노트를 펼친 동안 true.
+ * 은하 띠(책등)가 오른쪽 화면 밖으로 비켜나고 노출 0.5, 520ms 뒤 쉼(rAF 0). false · 언마운트면 600ms 램프로 깨어나 제자리.
+ * 동작 줄이기면 즉시. 펼친 동안은 잉크·키 입력이 하늘을 깨우지 않는다(useFieldPause(true, 'ink')와 함께 써도 된다).
+ */
+export function useSkyPaper(open: boolean): void {
+  const eng = useFieldEngine()
+  useEffect(() => {
+    if (!open || !eng) return
+    return eng.paperHold?.()
+  }, [open, eng])
 }

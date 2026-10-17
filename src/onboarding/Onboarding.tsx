@@ -17,6 +17,8 @@ import { skyBloom, skyReveal, subjectColorValue } from '@/capture/sky'
 import { Timetable } from '@/capture/Timetable'
 import { IcsButton } from '@/capture/IcsImport'
 import { IosInstallLine } from '@/onboarding/IosInstall'
+import { tip } from '@/shell/Tip'
+import { IconArrow, IconCheck, IconClose, IconGridDraw, IconSample } from '@/shell/icons'
 import '@/styles/onboarding.css'
 
 type Step = 0 | 1 | 2 | 3
@@ -68,7 +70,8 @@ function Flow({ mode }: { mode: OnboardingMode }) {
   const mem = useMemoryStore()
   const real = useMemo(() => dbStore(dbSubjects, planner?.slots ?? []), [dbSubjects, planner])
   const store: TimetableStore = mode === 'dry' ? mem : real
-  const [step, setStep] = useState<Step>(0)
+  // M3: 0단계(브랜드 소개)는 없앴다 — 하늘(첫 실행 자세)이 소개다
+  const [step, setStep] = useState<Step>(1)
   const [grid, setGrid] = useState(false)
   const [revealed, setRevealed] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -122,41 +125,47 @@ function Flow({ mode }: { mode: OnboardingMode }) {
   const slots = store.slots
   return (
     <div className="onb-layer">
-      {step < 3 && <button type="button" className="onb-skip mono" onClick={() => void finish()}>건너뛰기</button>}
+      {step < 3 && (
+        <div className="onb-corner">
+          {step === 1 && (
+            <button type="button" className="ibtn" {...tip('샘플로 시작')} disabled={busy} onClick={() => void sample()}>
+              <IconSample size={20} />
+            </button>
+          )}
+          <button type="button" className="ibtn" {...tip('건너뛰기')} onClick={() => void finish()}>
+            <IconClose size={20} />
+          </button>
+        </div>
+      )}
       <div className={`onb${grid && step === 2 ? ' is-wide' : ''}`} data-zone-place="/" role="dialog" aria-label="처음 시작">
-        {step === 0 && (
-          <div className="onb-step" key="s0">
-            <h1 className="onb-h">결</h1>
-            <p className="meta">은하 하나로 쓰는 공부 기록</p>
-            <div className="actions">
-              <button type="button" className="btn-primary" autoFocus onClick={() => setStep(1)}>시작</button>
-              <button type="button" className="btn-quiet" disabled={busy} onClick={() => void sample()}>샘플로 시작</button>
-            </div>
-          </div>
-        )}
         {step === 1 && <Subjects store={store} mode={mode} onNext={() => setStep(2)} removeMem={mem.removeSubject} />}
         {step === 2 && (
           <div className="onb-step" key="s2">
             <h1 className="onb-h">시간표</h1>
-            <p className="meta mono">수업 {slots.length}</p>
+            {slots.length > 0 && <p className="meta mono" aria-label={`수업 ${slots.length}개`}>{slots.length}</p>}
             <div className="onb-row">
-              <IcsButton store={store} className="btn-ghost small" label="캘린더 파일" />
-              <button type="button" className="btn-ghost small" aria-pressed={grid} onClick={() => setGrid((v) => !v)}>직접 그리기</button>
+              <IcsButton store={store} />
+              <button type="button" className={`ibtn${grid ? ' is-on' : ''}`} aria-pressed={grid} {...tip('직접 그리기')} onClick={() => setGrid((v) => !v)}>
+                <IconGridDraw size={20} />
+              </button>
             </div>
             {grid && <Timetable store={store} now={now} className="onb-grid" />}
             <div className="actions">
-              <button type="button" className="btn-primary" onClick={() => setStep(3)}>다 됐어요</button>
-              <button type="button" className="btn-quiet" onClick={() => setStep(3)}>나중에</button>
+              <button type="button" className="gold-btn" {...tip('다 됐어요')} onClick={() => setStep(3)}>
+                <IconCheck size={24} />
+              </button>
             </div>
           </div>
         )}
         {step === 3 && (
           <div className="onb-step" key="s3">
             <h1 className="onb-h">내 은하</h1>
-            <p className="meta mono">과목 {store.subjects.length} · 수업 {slots.length}</p>
+            <p className="sr-only">과목 {store.subjects.length}개, 수업 {slots.length}개</p>
             <IosInstallLine once />
             <div className="actions">
-              <button type="button" className="btn-primary" autoFocus disabled={!revealed} onClick={() => void finish()}>시작</button>
+              <button type="button" className="gold-btn" {...tip('시작')} autoFocus disabled={!revealed} onClick={() => void finish()}>
+                <IconArrow size={24} />
+              </button>
             </div>
           </div>
         )}
@@ -196,12 +205,10 @@ function Subjects({ store, mode, onNext, removeMem }: { store: TimetableStore; m
   return (
     <div className="onb-step" key="s1">
       <h1 className="onb-h">이번 학기 과목</h1>
-      <p className="meta mono">{list.length}</p>
       <div className="onb-input">
         <input
           ref={ref}
           className="tt-in"
-          placeholder="과목 이름"
           aria-label="과목 이름"
           value={name}
           enterKeyHint="enter"
@@ -233,7 +240,9 @@ function Subjects({ store, mode, onNext, removeMem }: { store: TimetableStore; m
         </ul>
       )}
       <div className="actions">
-        <button type="button" className={list.length ? 'btn-primary' : 'btn-ghost'} disabled={!list.length} onClick={onNext}>다음</button>
+        <button type="button" className="gold-btn" {...tip('다음')} disabled={!list.length} onClick={onNext}>
+          <IconArrow size={24} />
+        </button>
       </div>
     </div>
   )

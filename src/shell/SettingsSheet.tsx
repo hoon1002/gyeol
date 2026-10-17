@@ -7,11 +7,10 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useRef } from 'react'
 import { useSkySheet } from '@/fx'
-import { ROTATION_NAME, SettingsBody, THEME_NAME } from '@/screens/Settings'
-import { useFocusTimer } from '@/stores/focus'
-import { useSettings } from '@/stores/settings'
+import { SettingsBody } from '@/screens/Settings'
+import { tip } from './Tip'
 import { useUi } from '@/stores/ui'
-import { isTypingTarget, useEffectiveMotion, useEffectiveRotation, useMediaQuery } from './hooks'
+import { isTypingTarget, useEffectiveMotion, useMediaQuery } from './hooks'
 import { IconClose } from './icons'
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -48,10 +47,6 @@ function Sheet() {
   const off = level === 'off'
   const side = useMediaQuery('(min-width: 600px) and (min-aspect-ratio: 1/1)')
   const panelRef = useRef<HTMLDivElement>(null)
-  const theme = useSettings((s) => s.theme)
-  const rotation = useEffectiveRotation()
-  const minutes = useFocusTimer((s) => Math.round(s.plannedMs / 60_000))
-  const summary = `${THEME_NAME[theme]} · ${minutes}분 · 회전 ${ROTATION_NAME[rotation]}`
 
   // 열 때: 뒤 스크롤 잠금 + 시트로 포커스 / 닫을 때: 연 자리로 포커스
   useEffect(() => {
@@ -124,11 +119,8 @@ function Sheet() {
       >
         {!side && <span className="sheet-grip" aria-hidden="true" />}
         <header className="sheet-head">
-          <div>
-            <h2 id="settings-title" className="sheet-h">설정</h2>
-            <p className="meta">{summary}</p>
-          </div>
-          <button type="button" className="icon-btn ghost sheet-close" aria-label="닫기" onClick={close}>
+          <h2 id="settings-title" className="sr-only">설정</h2>
+          <button type="button" className="icon-btn ghost sheet-close" {...tip('닫기', { kbd: 'esc' })} onClick={close}>
             <IconClose size={18} />
           </button>
         </header>

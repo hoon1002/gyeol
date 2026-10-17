@@ -21,3 +21,6 @@
 @media (max-width: 599px) { .onb.is-wide { left: 8px; right: 8px; padding: 12px; } }
 /* 첫 실행 동안 크롬(상단 바·레일·독)은 숨긴다 — 다른 장소의 chromeHidden 갱신과 겹치지 않게 CSS로 */
 :root[data-onboarding] .topbar, :root[data-onboarding] .dock { opacity: 0; pointer-events: none; visibility: hidden; }
+/* M3: 오른쪽 위 = 샘플(1단계) · 건너뛰기 아이콘 */
+.onb-corner { position: fixed; top: calc(10px + env(safe-area-inset-top)); right: var(--gutter); z-index: 2; pointer-events: auto; display: flex; gap: 4px; }
+.onb .ibtn.is-on { color: var(--accent); }

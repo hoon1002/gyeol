@@ -12,7 +12,9 @@ import { useSettings } from '@/stores/settings'
 import { useGo } from '@/shell/hooks'
 import { IconMap, IconNote } from '@/shell/icons'
 import { spaceOf } from '@/shell/spaces'
-import { Block, EmptyState, FocusLines, Hero } from './parts'
+import { tip } from '@/shell/Tip'
+import { Hint } from '@/shell/Hint'
+import { Hero } from './parts'
 
 const SKY = spaceOf('/map')
 
@@ -24,14 +26,14 @@ export function NotesMapToggle({ on }: { on: 'notes' | 'map' }) {
     <a
       className="phone-only seg-link"
       href={to}
-      aria-label={on === 'notes' ? '지도로' : '노트로'}
+      {...tip(on === 'notes' ? '지도' : '노트')}
       onClick={(e) => {
         e.preventDefault()
         void go(to, e.currentTarget)
       }}
     >
-      <span className={`seg${on === 'notes' ? ' is-on' : ''}`}><IconNote size={16} /> 노트</span>
-      <span className={`seg${on === 'map' ? ' is-on' : ''}`}><IconMap size={16} /> 지도</span>
+      <span className={`seg seg-i${on === 'notes' ? ' is-on' : ''}`}><IconNote size={18} /></span>
+      <span className={`seg seg-i${on === 'map' ? ' is-on' : ''}`}><IconMap size={18} /></span>
     </a>
   )
 }
@@ -46,13 +48,20 @@ export function MapScreen() {
   const empty = !!notes && notes.length === 0
   const skyStars = useMemo(() => (stars ? { notes: stars.notes, noteLinks: stars.noteLinks, subjects: skySubjects } : undefined), [stars, skySubjects])
 
+  const nStars = stars?.notes.length ?? notes?.length ?? 0
+  const nLines = stars?.noteLinks.length ?? 0
+
   if (empty) {
     return (
       <>
         <FieldMood preset={SKY.mood} drag={SKY.drag} stars={skyStars} />
         <Hero label="지도" className="map-hero">
+          <h1 className="sr-only">지도</h1>
           <NotesMapToggle on="map" />
-          <EmptyState lines={['별자리', '[[ → 빛줄기']} />
+          {/* 빈 지도: 첫 회 그림(H3) — 두 별 사이 [[ 가 선으로 */}
+          <span className="map-h3" aria-hidden="true">
+            <Hint id="H3" side="bottom" />
+          </span>
         </Hero>
       </>
     )
@@ -62,26 +71,22 @@ export function MapScreen() {
     <>
       <FieldMood preset={SKY.mood} drag={SKY.drag} stars={skyStars} />
       <Hero label="지도" className="map-hero">
+        <h1 className="sr-only">지도</h1>
+        <p className="sr-only">
+          별 {nStars} · 선 {nLines}
+        </p>
         <NotesMapToggle on="map" />
-        <Block>
-          <FocusLines lines={['지도']} className="map-title" />
-        </Block>
-        <Block>
-          <p className="meta enter enter-1">별 {stars?.notes.length ?? notes?.length ?? 0} · 선 {stars?.noteLinks.length ?? 0}</p>
-        </Block>
-        <Block className="enter enter-1">
-          <div className="lens-chips" role="radiogroup" aria-label="과목 렌즈">
-            {[null, ...subjects].map((s) => {
-              const id = s?.id ?? null
-              return (
-                <button key={id ?? 'all'} type="button" role="radio" aria-checked={lens === id} className="chip lens-chip" onClick={() => setLens(id)}>
-                  <i style={{ background: s ? `var(--s-${s.color})` : 'var(--text-3)' }} aria-hidden="true" />
-                  {s ? s.short : '전체'}
-                </button>
-              )
-            })}
-          </div>
-        </Block>
+        {/* 과목 렌즈: 색 점 줄(전체 = 빈 고리, 고른 것 = 고리 + 점). 이름은 툴팁 */}
+        <div className="lens-dots enter enter-1" role="radiogroup" aria-label="과목 렌즈">
+          {[null, ...subjects].map((s) => {
+            const id = s?.id ?? null
+            return (
+              <button key={id ?? 'all'} type="button" role="radio" aria-checked={lens === id} className="lens-dot" {...tip(s ? s.name : '전체')} onClick={() => setLens(id)}>
+                <i className={`sdot is-lg${s ? '' : ' is-none'}`} style={s ? { ['--c' as string]: `var(--s-${s.color})` } : undefined} />
+              </button>
+            )
+          })}
+        </div>
       </Hero>
     </>
   )

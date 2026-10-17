@@ -1,10 +1,11 @@
 /**
- * 오늘 화면 상황 엔진 (design-v2 4-1 조건 · 문구는 design-v3 4-2 '글 다이어트').
- * 형식: 명사구 1 + 메타 1 + 동작 1(+보조 0~1) + 지평선 줄(항목 ≤ 3). "~요" 문장·자랑·비교·% 없음.
+ * 오늘 화면 상황 엔진 — M3 '조용한 화면'(design-quiet 1-2 · 리더 결정 3).
+ * 한 줄 규칙: 수업 중이면 과목 이름, 아니면 숫자 하나(`09:00` + 과목 점 · `D-3` + 인주 점) 또는 없음.
+ * 동작은 금빛 원 아이콘 하나(+ 숫자 뱃지). 이름·강의실·범위는 툴팁(길게)과 스크린리더 문장으로만.
  * 1분마다, 그리고 앱이 다시 보일 때 재평가(useNow).
  */
 import type { CourseSlot, FocusSession, Note, Subject, Task } from '@/db/schema'
-import { addDays, atTime, clamp, ddayOf, fmtDday, fmtHM, hm, minutesOfDay, MIN, weekdayKo, weekdayShort } from './time'
+import { addDays, atTime, clamp, ddayOf, fmtDday, hm, minutesOfDay, MIN, weekdayShort } from './time'
 
 export type SitKey = 'empty' | 'class' | 'exam' | 'before' | 'gap' | 'night' | 'morning' | 'late' | 'free'
 
@@ -48,17 +49,28 @@ export type SitAction =
   | { kind: 'scroll'; id: string }
   | { kind: 'seed' }
 
+export type SitIcon = 'note' | 'focus' | 'review' | 'grid'
+
+/** 늘 보이는 한 줄(없을 수 있음) */
+export interface SitLine {
+  text: string
+  /** 숫자(모노)인가, 데이터 글(과목 이름)인가 */
+  num: boolean
+  /** 앞 점 색(과목 · 인주). 없으면 점 없음 */
+  dot: string | null
+  /** 툴팁(길게) — 강의실·과목 이름·범위 */
+  tip: string
+  /** 스크린리더 문장 */
+  sr: string
+}
+
 export interface Situation {
   key: SitKey
-  /** 명사구 (12자 이하) */
-  title: string
-  /** 메타 한 줄 (모노) */
-  meta: string
-  /** 수업 진행선 (D5: 남은 시간은 글 대신 선) */
+  line: SitLine | null
+  /** 수업 진행선 (남은 시간은 글 대신 선) */
   progress: { value: number; label: string } | null
-  primary: { label: string; action: SitAction } | null
-  quiet: { label: string; action: SitAction } | null
-  peri: Peri[]
+  /** 금빛 원 하나: 아이콘 + 숫자 뱃지(0이면 없음). label = aria-label = 툴팁 */
+  primary: { icon: SitIcon; label: string; badge: number | null; action: SitAction } | null
   mood: { speed: number; knotStrength: number }
   tintSubject: string | null
   rings: number
@@ -94,11 +106,6 @@ export function nextSlotAfter(now: Date, slots: CourseSlot[]): SlotAt | null {
   return null
 }
 
-function stripSubject(title: string, subjects: Subject[]): string {
-  for (const s of subjects) if (title.startsWith(s.name + ' ')) return title.slice(s.name.length + 1)
-  return title
-}
-
 export function evaluateSituation(m: DayModel): Situation {
   const { now, subjects } = m
   const nm = (id: string | null | undefined) => subjects.find((s) => s.id === id)?.name ?? '자유'
@@ -111,50 +118,33 @@ export function evaluateSituation(m: DayModel): Situation {
   const endedToday = today.filter((x) => x.end.getTime() <= t)
   const nextAny = nextSlotAfter(now, m.slots)
   const openTasks = m.tasks.filter((x) => !x.done && x.dueAt >= t - 12 * 60 * MIN).sort((a, b) => a.dueAt - b.dueAt)
-  const exams = openTasks.filter((x) => x.kind === 'exam')
-  const nearestExam = exams[0] ?? null
+  const nearestExam = openTasks.find((x) => x.kind === 'exam') ?? null
   const examD = nearestExam ? ddayOf(now, nearestExam.dueAt) : 99
-  const nearestAssignment = openTasks.find((x) => x.kind !== 'exam') ?? null
   const rev = m.reviewDue.total
-  const revMin = Math.max(1, Math.round(rev * 0.6))
   const sets = m.focusToday.sets
   const load = clamp(rev / 40, 0, 1)
   const pressure = examD <= 3 ? 1 : clamp((14 - examD) / 14, 0, 1)
   const exam = nearestExam && examD >= 0 && examD <= 14 ? { id: nearestExam.id, dday: examD } : null
-
-  /* 지평선 줄 항목 */
-  const dayShelf = (list: SlotAt[]): ShelfRow[] =>
-    list.length ? list.slice(0, 5).map((x) => ({ k: x.slot.start, v: `${nm(x.slot.subjectId)} · ${x.slot.room}`, color: subjectColor(x.slot.subjectId, subjects) })) : [{ k: '—', v: '수업 없음' }]
-  const taskShelf = (): ShelfRow[] =>
-    openTasks.length
-      ? openTasks.slice(0, 5).map((x) => ({ k: fmtDday(ddayOf(now, x.dueAt)), v: `${x.title} · ${weekdayShort(new Date(x.dueAt).getDay())} ${fmtHM(x.dueAt)}`, color: subjectColor(x.subjectId, subjects) }))
-      : [{ k: '—', v: '마감 없음' }]
-  const pNext = (): Peri | null => {
-    const n = nextToday ?? nextAny
-    if (!n) return null
-    const sameDay = ddayOf(now, n.start) === 0
-    return { id: 'next', label: `${sameDay ? '' : weekdayShort(n.start.getDay()) + ' '}${n.slot.start} ${nm(n.slot.subjectId)}`, value: '', color: subjectColor(n.slot.subjectId, subjects), shelf: dayShelf(sameDay ? today : slotsOn(n.start, m.slots)) }
-  }
-  const pReview = (): Peri =>
-    rev > 0
-      ? { id: 'review', label: `복습 ${rev}`, value: '', color: subjectColor(m.reviewDue.bySubject[0]?.subjectId, subjects), shelf: m.reviewDue.bySubject.map((b) => ({ k: `${b.count}`, v: nm(b.subjectId), color: subjectColor(b.subjectId, subjects) })) }
-      : { id: 'review', label: '복습 끝', value: '', color: 'var(--accent)', shelf: [{ k: '내일', v: `${m.reviewTomorrow}장` }] }
-  const pExam = (): Peri | null =>
-    nearestExam ? { id: 'exam', label: `${stripSubject(nearestExam.title, subjects)} ${fmtDday(examD)}`, value: '', color: 'var(--seal)', shelf: taskShelf() } : null
-  const pTask = (): Peri | null =>
-    nearestAssignment ? { id: 'task', label: `${stripSubject(nearestAssignment.title, subjects)} ${fmtDday(ddayOf(now, nearestAssignment.dueAt))}`, value: '', color: subjectColor(nearestAssignment.subjectId, subjects), shelf: taskShelf() } : null
-  const line = (...xs: Array<Peri | null>): Peri[] => xs.filter((x): x is Peri => !!x).slice(0, 3)
   const lastNote = (subjectId: string | null | undefined) => m.notes.find((n) => n.subjectId === subjectId) ?? null
   const base = { load, pressure, rings: sets, tintSubject: null as string | null, exam, progress: null as Situation['progress'] }
-  const review: SitAction = { kind: 'review' }
-  const focus25: SitAction = { kind: 'focus', minutes: 25, subjectId: null }
 
-  // 1. 빈 상태
+  /** 다음 수업 한 줄: `09:00` + 과목 점, 오늘이 아니면 `월 09:00` */
+  const slotLine = (n: SlotAt | null): SitLine | null => {
+    if (!n) return null
+    const sameDay = ddayOf(now, n.start) === 0
+    const when = `${sameDay ? '' : weekdayShort(n.start.getDay()) + ' '}${n.slot.start}`
+    const name = nm(n.slot.subjectId)
+    return { text: when, num: true, dot: subjectColor(n.slot.subjectId, subjects), tip: [name, n.slot.room].filter(Boolean).join(' · '), sr: `다음 수업 ${sameDay ? '' : weekdayShort(n.start.getDay()) + '요일 '}${n.slot.start} ${name}` }
+  }
+  const reviewBtn = (): Situation['primary'] => (rev > 0 ? { icon: 'review', label: '복습', badge: rev, action: { kind: 'review' } } : null)
+  const focusBtn: NonNullable<Situation['primary']> = { icon: 'focus', label: '25분 집중', badge: null, action: { kind: 'focus', minutes: 25, subjectId: null } }
+
+  // 1. 빈 상태: 시간표 그리기 아이콘 하나
   if (m.forceEmpty || m.slots.length === 0) {
-    return { ...base, key: 'empty', title: '시간표', meta: '비어 있음', primary: { label: '만들기', action: { kind: 'go', to: '/plan' } }, quiet: { label: '샘플', action: { kind: 'seed' } }, peri: [], mood: { speed: 0.7, knotStrength: 0.5 }, rings: 0, load: 0.1, pressure: 0, exam: null }
+    return { ...base, key: 'empty', line: null, primary: { icon: 'grid', label: '시간표 만들기', badge: null, action: { kind: 'go', to: '/plan' } }, mood: { speed: 0.7, knotStrength: 0.5 }, rings: 0, load: 0.1, pressure: 0, exam: null }
   }
 
-  // 2. 수업 중
+  // 2. 수업 중: 한 줄 = 과목 이름(데이터)
   if (current) {
     const left = Math.max(1, Math.ceil((current.end.getTime() - t) / MIN))
     const total = (current.end.getTime() - current.start.getTime()) / MIN
@@ -163,28 +153,22 @@ export function evaluateSituation(m: DayModel): Situation {
     return {
       ...base,
       key: 'class',
-      title: name,
-      meta: `${current.slot.start} – ${current.slot.end} · ${current.slot.room}`,
+      line: { text: name, num: false, dot: null, tip: [`${current.slot.start}–${current.slot.end}`, current.slot.room].filter(Boolean).join(' · '), sr: `${name} 수업 중, ${left}분 남음` },
       progress: { value: clamp(1 - left / total, 0, 1), label: `${name} 수업, ${left}분 남음` },
-      primary: { label: '노트 열기', action: { kind: 'note', noteId: note?.id ?? null } },
-      quiet: { label: '녹음', action: { kind: 'note', noteId: note?.id ?? null, record: true } },
-      peri: line(pNext(), pReview(), pExam()),
+      primary: { icon: 'note', label: '노트 열기', badge: null, action: { kind: 'note', noteId: note?.id ?? null } },
       mood: { speed: 0.8, knotStrength: 0.95 },
       tintSubject: current.slot.subjectId,
     }
   }
 
-  // 3. 시험 직전 (D-3 이하)
+  // 3. 시험 직전 (D-3 이하): 한 줄 = `D-3` + 인주 점, 범위는 길게
   if (nearestExam && examD <= 3 && examD >= 0) {
     const scope = m.examScope[nearestExam.id] ?? { total: 0, left: 0 }
     return {
       ...base,
       key: 'exam',
-      title: nearestExam.title,
-      meta: `${fmtDday(examD)} · 범위 ${scope.left} / ${scope.total}`,
-      primary: { label: '시험 복습', action: review },
-      quiet: { label: '범위', action: { kind: 'go', to: '/review' } },
-      peri: line(pNext(), pTask()),
+      line: { text: fmtDday(examD), num: true, dot: 'var(--seal)', tip: `${nearestExam.title} · 범위 ${scope.left}/${scope.total}`, sr: `${nearestExam.title}까지 ${examD}일, 범위 ${scope.total}장 중 ${scope.left}장 남음` },
+      primary: { icon: 'review', label: '시험 복습', badge: scope.left || rev || null, action: { kind: 'review' } },
       mood: { speed: 1.6, knotStrength: 1.1 },
       tintSubject: nearestExam.subjectId,
     }
@@ -196,11 +180,8 @@ export function evaluateSituation(m: DayModel): Situation {
     return {
       ...base,
       key: 'before',
-      title: nm(nextToday.slot.subjectId),
-      meta: `${nextToday.slot.start} · ${nextToday.slot.room}`,
-      primary: { label: '지난 노트', action: { kind: 'note', noteId: note?.id ?? null } },
-      quiet: { label: 'PDF', action: { kind: 'note', noteId: note?.id ?? null } },
-      peri: line(pReview(), pExam()),
+      line: slotLine(nextToday),
+      primary: { icon: 'note', label: '지난 노트', badge: null, action: { kind: 'note', noteId: note?.id ?? null } },
       mood: { speed: 1.1, knotStrength: 0.9 },
       tintSubject: nextToday.slot.subjectId,
     }
@@ -208,85 +189,31 @@ export function evaluateSituation(m: DayModel): Situation {
 
   // 5. 공강
   if (hour >= 5 && endedToday.length > 0 && nextToday) {
-    return {
-      ...base,
-      key: 'gap',
-      title: '공강',
-      meta: `~ ${nextToday.slot.start}${rev ? ` · 복습 ${rev}장 ${revMin}분` : ''}`,
-      primary: rev ? { label: '복습', action: review } : { label: '25분', action: focus25 },
-      quiet: rev ? { label: '25분', action: focus25 } : null,
-      peri: line(pNext(), pTask()),
-      mood: { speed: 1.0, knotStrength: 0.9 },
-    }
+    return { ...base, key: 'gap', line: slotLine(nextToday), primary: reviewBtn() ?? focusBtn, mood: { speed: 1.0, knotStrength: 0.9 } }
   }
 
-  // 6. 밤
+  // 6. 밤: 하늘(오늘의 별자리)이 말한다. 한 줄 = 다음 수업
   if (hour >= 21 || (hour >= 5 && today.length > 0 && endedToday.length === today.length && minutesOfDay(now) >= hm('16:00'))) {
-    const n = nextAny
-    const isTomorrow = n ? ddayOf(now, n.start) === 1 : false
-    return {
-      ...base,
-      key: 'night',
-      title: '오늘의 별',
-      meta: n ? `${isTomorrow ? '내일' : weekdayKo(n.start)} ${n.slot.start} ${nm(n.slot.subjectId)}` : '다음 수업 없음',
-      primary: { label: '25분 집중', action: focus25 },
-      quiet: null,
-      peri: line(pTask(), pReview(), pExam()),
-      mood: { speed: 0.6, knotStrength: 1.0 },
-    }
+    return { ...base, key: 'night', line: slotLine(nextAny), primary: focusBtn, mood: { speed: 0.6, knotStrength: 1.0 } }
   }
 
   // 7. 아침
   if (hour >= 5 && hour < 12 && startedToday.length === 0) {
-    const f = today[0]
-    return {
-      ...base,
-      key: 'morning',
-      title: weekdayKo(now),
-      meta: f ? `${f.slot.start} ${nm(f.slot.subjectId)} · 수업 ${today.length}` : '수업 없음',
-      primary: { label: '복습', action: review },
-      quiet: null,
-      peri: line(pExam()),
-      mood: { speed: 0.9, knotStrength: 0.8 },
-    }
+    return { ...base, key: 'morning', line: slotLine(today[0] ?? null), primary: reviewBtn() ?? focusBtn, mood: { speed: 0.9, knotStrength: 0.8 } }
   }
 
-  // 8. 새벽
+  // 8. 새벽: 글 없음(다음 수업 숫자만)
   if (hour < 5) {
-    return {
-      ...base,
-      key: 'late',
-      title: '새벽',
-      meta: nextAny ? `다음 ${nextAny.slot.start} ${nm(nextAny.slot.subjectId)}` : '다음 수업 없음',
-      primary: null,
-      quiet: null,
-      peri: [],
-      mood: { speed: 0.3, knotStrength: 0.6 },
-    }
+    return { ...base, key: 'late', line: slotLine(nextAny), primary: null, mood: { speed: 0.3, knotStrength: 0.6 } }
   }
 
-  // 그 밖: 수업 없는 날 · 첫 수업 전 낮
-  if (nextToday) {
-    return {
-      ...base,
-      key: 'free',
-      title: nm(nextToday.slot.subjectId),
-      meta: `${nextToday.slot.start} · ${nextToday.slot.room}`,
-      primary: rev ? { label: '복습', action: review } : { label: '25분', action: focus25 },
-      quiet: rev ? { label: '25분', action: focus25 } : null,
-      peri: line(pTask()),
-      mood: { speed: 1.0, knotStrength: 0.9 },
-      tintSubject: nextToday.slot.subjectId,
-    }
-  }
+  // 그 밖: 첫 수업 전 낮 · 수업 없는 날
   return {
     ...base,
     key: 'free',
-    title: '수업 없는 날',
-    meta: rev ? `복습 ${rev}장 · ${revMin}분` : '복습 없음',
-    primary: rev ? { label: '복습', action: review } : { label: '25분', action: focus25 },
-    quiet: rev ? { label: '25분', action: focus25 } : null,
-    peri: line(pTask()),
+    line: slotLine(nextToday),
+    primary: reviewBtn() ?? focusBtn,
     mood: { speed: 1.0, knotStrength: 0.9 },
+    tintSubject: nextToday?.slot.subjectId ?? null,
   }
 }

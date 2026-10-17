@@ -1,0 +1,42 @@
+// 1초 메모: 빈 Enter, 아주 긴 글, 연속 저장, 조합 중 Enter, 사진만
+await size(1440, 900); setMode('mouse'); await nav('/', 2500)
+const out = []
+const dust = async () => +(await ev(`document.querySelector('[aria-label^="별가루"]')?.getAttribute('aria-label').match(/\\d+/)?.[0] ?? -1`))
+const open = async () => (await st()).layers.some((l) => /memo-layer/.test(l))
+let d0 = await dust()
+await key('n'); await sleep(250); await key('Enter'); await sleep(400)
+out.push(`empty Enter → open=${await open()} dust ${d0}→${await dust()}`)
+await key('Escape'); await sleep(300)
+// 긴 글
+await key('n'); await sleep(200); await insert('긴메모 '.repeat(900)); await sleep(300)
+const ta = await ev(`(() => { const t = document.querySelector('.memo-input'); const r = t.getBoundingClientRect(); const L = document.querySelector('.memo-layer .memo-row, .memo-layer').getBoundingClientRect(); return { taH: Math.round(r.height), scrollH: t.scrollHeight, layerTop: Math.round(L.top), vh: innerHeight } })()`)
+out.push('long memo textarea → ' + JSON.stringify(ta))
+await shot('qa-memo-long_1440x900', { clip: { x: 0, y: 0, width: 1440, height: 900 }, scale: 0.5 })
+d0 = await dust(); await key('Enter'); await sleep(700)
+out.push(`long save → open=${await open()} dust ${d0}→${await dust()}`)
+// 연속 저장 3번(빠르게)
+d0 = await dust()
+for (const s of ['연속1', '연속2', '연속3']) { await key('n'); await insert(s); await key('Enter') }
+await sleep(900)
+out.push(`3 rapid saves → dust ${d0}→${await dust()} open=${await open()}`)
+// 조합 중 Enter
+d0 = await dust()
+await key('n'); await sleep(200); await ime('하'); await ime('한'); await sleep(50)
+await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 229, nativeVirtualKeyCode: 229 })
+await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+await sleep(400)
+out.push(`IME Enter(229) → open=${await open()} dust ${d0}→${await dust()} text=${JSON.stringify(await ev(`document.querySelector('.memo-input').value`))}`)
+await insert('한'); await sleep(100); await key('Enter'); await sleep(600)
+out.push(`then Enter → open=${await open()} dust→${await dust()}`)
+// 사진만
+await key('n'); await sleep(200)
+const doc = await send('DOM.getDocument', { depth: 1 })
+const { nodeId } = await send('DOM.querySelector', { nodeId: doc.root.nodeId, selector: '.memo-layer input[type=file]' })
+if (nodeId) {
+  await send('DOM.setFileInputFiles', { nodeId, files: [process.cwd() + '/team/qa-tools/out/qa-pixel.png'] }); await sleep(600)
+  out.push('photo thumb → ' + JSON.stringify(await find('.memo-layer img')))
+  d0 = await dust(); await key('Enter'); await sleep(700)
+  out.push(`photo-only Enter → open=${await open()} dust ${d0}→${await dust()}`)
+} else out.push('no file input')
+print(out.join('\n'))
+print(logs().filter((l) => !/Failed to load resource/.test(l.text)))

@@ -1,7 +1,8 @@
 /**
  * 백업 `.gyeol.zip` (m2-brief 8, design-m2 8장). fflate로 묶는다.
  *   manifest.json  { app, format, schema, exportedAt, counts{표: 행 수}, hashes{표: 내용 해시}, assets }
- *   data.json      { 표 이름: 행[] } — Blob은 { $asset: 'assets/<id>.<확장자>', type } 참조로 빼낸다
+ *   data.json      { 표 이름: 행[] } — Blob은 { $asset: 'assets/<id>.<확장자>', type } 참조로 빼내고,
+ *                  ArrayBuffer·TypedArray(획 points 등)는 { $bin: base64, t: 'Float32Array' }로 넣는다
  *   assets/…       사진 등 원본
  *   notes/*.md     노트 마크다운 사본(noteBodies.text) — 읽기용, 가져오기에는 쓰지 않는다
  * 가져오기: 'merge'(같은 id면 updatedAt(없으면 createdAt)이 큰 쪽, 없는 행은 넣음) · 'replace'(모든 표를 비우고 넣음).
@@ -35,6 +36,47 @@ export interface ImportResult {
 type Row = Record<string, unknown>
 type AnyDB = Dexie
 
+/* ---------- 바이너리(ArrayBuffer · TypedArray · DataView): JSON에서 사라지지 않게 { $bin: base64, t: 타입 이름 } ---------- */
+
+type Bin = ArrayBuffer | ArrayBufferView
+
+function isBin(v: unknown): v is Bin {
+  return v instanceof ArrayBuffer || ArrayBuffer.isView(v)
+}
+
+function binBytes(v: Bin): Uint8Array {
+  return v instanceof ArrayBuffer ? new Uint8Array(v) : new Uint8Array(v.buffer, v.byteOffset, v.byteLength)
+}
+
+function binType(v: Bin): string {
+  return v instanceof ArrayBuffer ? 'ArrayBuffer' : v.constructor.name
+}
+
+function toB64(u8: Uint8Array): string {
+  let out = ''
+  for (let i = 0; i < u8.length; i += 0x8000) out += String.fromCharCode(...u8.subarray(i, i + 0x8000))
+  return btoa(out)
+}
+
+function fromB64(b64: string): Uint8Array {
+  const raw = atob(b64)
+  const u8 = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) u8[i] = raw.charCodeAt(i)
+  return u8
+}
+
+const VIEWS: Record<string, new (b: ArrayBuffer) => ArrayBufferView> = {
+  Int8Array, Uint8Array, Uint8ClampedArray, Int16Array, Uint16Array, Int32Array, Uint32Array, Float32Array, Float64Array, BigInt64Array, BigUint64Array, DataView,
+}
+
+/** { $bin, t } → 원래 타입 (복사본 버퍼라 정렬이 맞다) */
+function unbin(o: { $bin: string; t?: string }): Bin {
+  const u8 = fromB64(o.$bin)
+  const buf = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
+  const V = o.t ? VIEWS[o.t] : undefined
+  return V ? new V(buf) : buf
+}
+
 /* ---------- 해시 (표 내용 = 기본 키 순 정렬 + 키 정렬 JSON, Blob = 바이트 SHA-256) ---------- */
 
 async function sha256(data: Uint8Array | string): Promise<string> {
@@ -45,6 +87,7 @@ async function sha256(data: Uint8Array | string): Promise<string> {
 
 async function canon(v: unknown): Promise<unknown> {
   if (v instanceof Blob) return { $blob: await sha256(new Uint8Array(await v.arrayBuffer())), type: v.type, size: v.size }
+  if (isBin(v)) return { $bin: await sha256(binBytes(v)), t: binType(v), size: v.byteLength }
   if (Array.isArray(v)) return Promise.all(v.map(canon))
   if (v && typeof v === 'object') {
     const out: Row = {}
@@ -93,6 +136,7 @@ export async function exportBackup(d: AnyDB = db): Promise<{ blob: Blob; filenam
       files[path] = [new Uint8Array(await v.arrayBuffer()), { level: 0 }]
       return { $asset: path, type: v.type }
     }
+    if (isBin(v)) return { $bin: toB64(binBytes(v)), t: binType(v) }
     if (Array.isArray(v)) return Promise.all(v.map((x, i) => pull(x, `${hint}-${i}`)))
     if (v && typeof v === 'object') {
       const out: Row = {}
@@ -175,6 +219,7 @@ export async function openBackup(file: Blob): Promise<OpenedBackup> {
     if (Array.isArray(v)) return v.map(put)
     if (v && typeof v === 'object') {
       const o = v as Row
+      if (typeof o.$bin === 'string' && Object.keys(o).length <= 2) return unbin(o as { $bin: string; t?: string })
       if (typeof o.$asset === 'string' && Object.keys(o).length <= 2) {
         const bytes = files[o.$asset]
         return new Blob(bytes ? [bytes as BlobPart] : [], { type: String(o.type ?? '') })
@@ -268,6 +313,45 @@ export async function roundTrip(src: AnyDB = db): Promise<{ ok: boolean; bytes: 
   }
 }
 
+/**
+ * 합성 왕복 시험: 임시 원본 DB에 사진 Blob · 획(points = ArrayBuffer와 Float32Array 둘 다) · 쪽 · 메모(고정·체크리스트)를 넣고
+ * roundTrip(원본)으로 표마다 개수·해시를 비교한 뒤 임시 DB를 지운다. 실제 DB는 건드리지 않는다.
+ */
+export async function roundTripSynthetic(): Promise<Awaited<ReturnType<typeof roundTrip>> & { strokesChecked: boolean }> {
+  const src = cloneSchema(`gyeol-rt-syn-${Date.now()}`)
+  try {
+    await src.open()
+    const now = Date.now()
+    const has = (n: string) => src.tables.some((t) => t.name === n)
+    const pts = new Float32Array(4 * 200).map((_, i) => (i % 4 === 3 ? now + i : Math.sin(i) * 300))
+    await src.table('subjects').put({ id: 's1', name: '물리', short: '물리', color: 'phys', aliases: ['물리'], order: 0, createdAt: now, updatedAt: now })
+    await src.table('notes').put({ id: 'n1', title: '손글씨', subjectId: 's1', kind: 'ink', createdAt: now, updatedAt: now })
+    await src.table('memos').put({ id: 'm1', text: '[ ] 하나\n[x] 둘', checklist: true, pinned: true, subjectId: 's1', state: 'inbox', filedTo: null, createdAt: now, updatedAt: now })
+    await src.table('assets').put({ id: 'a1', ownerId: 'm1', mime: 'image/png', blob: new Blob([new Uint8Array([137, 80, 78, 71, 1, 2, 3])], { type: 'image/png' }), createdAt: now })
+    if (has('pages')) await src.table('pages').put({ id: 'p1', noteId: 'n1', index: 0, template: 'grid', updatedAt: now })
+    if (has('strokes')) {
+      await src.table('strokes').bulkPut([
+        { id: 'k1', pageId: 'p1', layer: 0, tool: 'pen', color: '#F2EFE8', width: 2, points: pts.buffer.slice(0), updatedAt: now },
+        { id: 'k2', pageId: 'p1', layer: 0, tool: 'highlighter', color: '#F3D29A', width: 12, points: new Float32Array(pts.subarray(0, 40)), updatedAt: now },
+      ])
+    }
+    const rt = await roundTrip(src)
+    // 획 points가 같은 타입·같은 값으로 돌아오는지 직접 본다
+    let strokesChecked = !has('strokes')
+    if (has('strokes')) {
+      const { blob } = await exportBackup(src)
+      const back = await openBackup(blob)
+      const k1 = back.data.strokes?.find((r) => r.id === 'k1')?.points
+      const k2 = back.data.strokes?.find((r) => r.id === 'k2')?.points
+      strokesChecked = k1 instanceof ArrayBuffer && k1.byteLength === pts.byteLength && new Float32Array(k1)[5] === pts[5] && k2 instanceof Float32Array && k2.length === 40 && k2[7] === pts[7]
+    }
+    return { ...rt, ok: rt.ok && strokesChecked, strokesChecked }
+  } finally {
+    src.close()
+    await Dexie.delete(src.name)
+  }
+}
+
 if (import.meta.env.DEV && typeof window !== 'undefined') {
-  ;(window as Window & { __gyeolBackup?: unknown }).__gyeolBackup = { roundTrip, tableHashes, exportBackup, openBackup }
+  ;(window as Window & { __gyeolBackup?: unknown }).__gyeolBackup = { roundTrip, roundTripSynthetic, tableHashes, exportBackup, openBackup }
 }

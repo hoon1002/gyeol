@@ -7,7 +7,7 @@
  *
  * 저장 피드백은 하늘이 한다(토스트 없음, design-m2 0장).
  */
-import { db, uid, type Memo, type Subject } from '@/db/schema'
+import { db, uid, type Asset, type Memo, type Subject } from '@/db/schema'
 import { parseCommand } from '@/lib/parser'
 import { skyDust } from './sky'
 import { closeMemoSheet, openMemoSheet } from './open'
@@ -17,8 +17,37 @@ export interface SaveMemoOpts {
   subjectId?: string | null
   /** 사진 메모 (카메라·파일·붙여넣기) → assets */
   photo?: Blob | null
+  /** 음성 메모 (MediaRecorder) → assets, 길이(ms)는 asset 행의 durationMs */
+  audio?: { blob: Blob; ms: number } | null
+  /** 체크리스트 메모: 줄마다 항목(☐ · [ ] 접두 허용) → kind 'check' + items */
+  checklist?: boolean
+  pinned?: boolean
   /** 하늘 별가루(D1). 기본 true */
   sky?: boolean
+}
+
+/** M3 메모 (schema v3 타입: kind · items · pinned · pageId · durationMs — 버전 올림 없음) */
+export type MemoX = Memo
+export type AssetX = Asset & { durationMs?: number }
+export type CheckItem = NonNullable<Memo['items']>[number]
+
+const CHECK_RE = /^\s*(?:☐|\[( |x|X)?\])\s?/
+
+/** 글 줄 → 체크 항목 (☐ · [ ] · [x] 접두는 떼고, 빈 줄은 버린다) */
+export function itemsFromText(text: string): CheckItem[] {
+  return text
+    .split('\n')
+    .map((l) => ({ m: l.match(CHECK_RE), l }))
+    .filter(({ l }) => l.replace(CHECK_RE, '').trim())
+    .map(({ m, l }, i) => ({ id: `i${i}-${Math.random().toString(36).slice(2, 7)}`, text: l.replace(CHECK_RE, '').trim(), done: !!m?.[1] && m[1] !== ' ' }))
+}
+
+/** 메모의 체크 항목: items가 있으면 그것, M3 초기에 글('[x] …')로 만든 체크 메모는 읽어서 옮긴다 */
+export function memoItems(m: Memo): CheckItem[] | null {
+  if (m.items?.length) return m.items
+  const legacy = (m as Memo & { checklist?: boolean }).checklist
+  if (m.kind === 'check' || legacy) return itemsFromText(m.text)
+  return null
 }
 
 /** 과목 별칭 목록으로 추정 (이름 · 짧은 이름 · 별칭, 긴 것부터) */
@@ -74,15 +103,23 @@ export async function saveMemo(text: string, opts: SaveMemoOpts = {}): Promise<s
   const t0 = performance.now()
   const body = text.replace(/\s+$/u, '').replace(/^\s+/u, '')
   const raw = opts.photo ?? null
-  if (!body && !raw) return null
+  const audio = opts.audio ?? null
+  if (!body && !raw && !audio) return null
   const id = uid('memo-')
   const subjectId = opts.subjectId === undefined ? await guessSubjectId(body) : opts.subjectId
   const photo = raw ? await shrinkPhoto(raw) : null
   const now = Date.now()
-  const assetId = photo ? uid('asset-') : null
-  const memo: Memo = { id, text: body, assetId, subjectId, state: 'inbox', filedTo: null, createdAt: now, updatedAt: now }
+  const assetId = photo || audio ? uid('asset-') : null
+  const items = opts.checklist ? itemsFromText(body) : null
+  const kind: Memo['kind'] = items?.length ? 'check' : audio ? 'voice' : photo ? 'photo' : 'text'
+  // 체크 메모의 text는 항목 글을 줄로 이은 것(검색 색인용)
+  const memo: Memo = { id, text: items?.length ? items.map((x) => x.text).join('\n') : body, assetId, subjectId, state: 'inbox', filedTo: null, createdAt: now, updatedAt: now, kind }
+  if (items?.length) memo.items = items
+  if (audio) memo.durationMs = Math.round(audio.ms)
+  if (opts.pinned) memo.pinned = true
   await db.transaction('rw', db.memos, db.assets, async () => {
-    if (photo && assetId) await db.assets.add({ id: assetId, ownerId: id, mime: photo.type || 'image/jpeg', blob: photo, createdAt: now })
+    if (assetId && audio) await db.assets.add({ id: assetId, ownerId: id, mime: audio.blob.type || 'audio/webm', blob: audio.blob, createdAt: now, durationMs: Math.round(audio.ms) } as AssetX)
+    else if (assetId && photo) await db.assets.add({ id: assetId, ownerId: id, mime: photo.type || 'image/jpeg', blob: photo, createdAt: now })
     await db.memos.add(memo)
   })
   if (opts.sky !== false) {

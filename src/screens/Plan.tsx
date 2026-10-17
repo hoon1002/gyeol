@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ActiveMood as FieldMood } from '@/app/keepAlive'
 import { useNow, usePlanner, useSubjects } from '@/db/hooks'
-import { addDays, ddayOf, fmtDday, fmtMD, startOfWeek } from '@/lib/time'
+import { ddayOf, fmtDday } from '@/lib/time'
 import { useUi } from '@/stores/ui'
 import { spaceOf } from '@/shell/spaces'
 import { IconMore } from '@/shell/icons'
@@ -13,7 +13,11 @@ import { Timetable } from '@/capture/Timetable'
 import { IcsButton } from '@/capture/IcsImport'
 import { dbStore } from '@/capture/slots'
 import { NO_DUE } from '@/capture/file'
-import { Actions, Block, FocusLines, PrimaryButton } from './parts'
+import { Block, FocusLines } from './parts'
+import { tip } from '@/shell/Tip'
+import { Hint } from '@/shell/Hint'
+import { IconPlus } from '@/shell/icons'
+import { useActive } from '@/app/keepAlive'
 
 const SKY = spaceOf('/plan')
 
@@ -24,6 +28,7 @@ export function PlanScreen() {
   const knotRef = useRef<HTMLSpanElement>(null)
   const openPalette = useUi((s) => s.openPalette)
   const [menu, setMenu] = useState(false)
+  const active = useActive()
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -38,7 +43,6 @@ export function PlanScreen() {
   const slots = data?.slots ?? []
   const store = useMemo(() => dbStore(subjects ?? [], slots), [subjects, slots])
 
-  const ws = startOfWeek(now)
   const tasks = data?.tasks ?? []
   const open = tasks.filter((t) => !t.done && t.dueAt >= now.getTime())
   const todo = tasks.filter((t) => !t.done && t.dueAt === NO_DUE).length
@@ -52,26 +56,33 @@ export function PlanScreen() {
       <section className="hero hero-zone plan" aria-label="계획">
         <div className="zone-a plan-zone">
           <div className="hero-col plan-head">
-            <Block>
-              <FocusLines lines={[slots.length ? '이번 주' : '시간표']} />
-            </Block>
-            <Block>
-              <p className="meta enter enter-1" title={`${fmtMD(ws)} – ${fmtMD(addDays(ws, 6))}`}>{slots.length ? meta : '빈 칸을 끌어 수업 넣기'}</p>
-            </Block>
-            <Actions>
-              <PrimaryButton onClick={(el) => openPalette('과제 추가 ', el)}>＋ 추가</PrimaryButton>
+            <h1 className="sr-only">계획</h1>
+            {exam && (
+              <Block>
+                <div className="today-line is-num" tabIndex={0} {...tip(`${exam.title}`)} aria-label={`${exam.title}까지 ${ddayOf(now, exam.dueAt)}일`}>
+                  <i className="sdot is-lg is-seal" aria-hidden="true" />
+                  <FocusLines lines={[fmtDday(ddayOf(now, exam.dueAt))]} as="h2" />
+                </div>
+              </Block>
+            )}
+            <p className="sr-only">{meta}</p>
+            <div className="today-acts">
+              <button type="button" className="gold-btn" {...tip('과제')} onClick={(e) => openPalette('과제 추가 ', e.currentTarget)}>
+                <IconPlus size={24} />
+              </button>
               <div className="plan-more" ref={menuRef}>
-                <button type="button" className="icon-btn ghost" aria-label="더 보기" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((v) => !v)}>
+                <button type="button" className="icon-btn ghost" {...tip('더 보기')} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((v) => !v)}>
                   <IconMore size={20} />
                 </button>
                 {/* 메뉴를 닫아도 미리보기 시트가 살아 있게 늘 마운트(hidden으로만 숨김) */}
                 <div className="plan-menu" role="menu" hidden={!menu}>
-                  <IcsButton store={store} className="plan-menu-item" label="캘린더 파일 가져오기" onPicked={() => setMenu(false)} />
+                  <IcsButton store={store} className="plan-menu-item" label="캘린더 파일 가져오기" iconOnly={false} onPicked={() => setMenu(false)} />
                 </div>
               </div>
-            </Actions>
+            </div>
           </div>
-          <section className="week-grid-wrap" aria-label="이번 주 시간표">
+          <section className="week-grid-wrap hint-host-block" aria-label="이번 주 시간표">
+            <Hint id="H2" side="top" active={active} />
             {data && subjects && <Timetable store={store} now={now} knotRef={knotRef} />}
           </section>
         </div>

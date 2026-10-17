@@ -4,3 +4,10 @@ dev-dist
 *.local
 .DS_Store
 team/logs/
+# 팀원 헤드리스 크롬 임시 프로필·시험 도구 (커밋 금지)
+.tmp-*/
+team/.qa-profile/
+team/.*-profile/
+**/*-chrome-profile/
+**/.chrome-*/
+team/qa-tools/node_modules/

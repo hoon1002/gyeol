@@ -1,5 +1,5 @@
 /**
- * 오늘 v4: 글 구역(design-m1 2-1) 안에 명사구 1 + 메타 1 + 동작 1(+보조) — 3줄 + 조용한 줄 '별가루 n ›'(M2, '최근' 장은 뺌).
+ * 오늘 M3(design-quiet 1-2): 글 구역 안에 한 줄(수업 중 = 과목 이름, 아니면 숫자 하나 또는 없음) + 금빛 원 하나 + ✦ n(별가루).
  * 가로 화면에서 별가루함을 열면 이 글 구역이 그 자리에서 별가루함으로 바뀐다(design-m2 2-1).
  * 폰: 맨 아래 한 줄 '계획 · 시험 D-5 ›'을 누르면 계획으로(폰 독에는 계획이 없다).
  * 하늘이 말한다(D5): 오늘 집중 = 오늘의 별(별자리), 시험 임박 = 붉은 별, 남은 수업 = 진행선, 복습량 = 복습 별.
@@ -16,9 +16,19 @@ import { useGo, useMediaQuery } from '@/shell/hooks'
 import { DustBox } from '@/capture/DustBox'
 import { useCapture } from '@/capture/store'
 import { spaceOf } from '@/shell/spaces'
-import { IconArrow } from '@/shell/icons'
+import { IconDust, IconFocus, IconGridDraw, IconNote, IconPlan, IconReview } from '@/shell/icons'
+import { tip } from '@/shell/Tip'
+import { Hint } from '@/shell/Hint'
+import { useActive } from '@/app/keepAlive'
 import { useResolvedColors, useSitAction, type ColorKey } from './actions'
-import { Actions, Block, FocusLines, Hero, PrimaryButton, QuietButton } from './parts'
+import { Block, FocusLines, Hero } from './parts'
+import type { SitIcon } from '@/lib/situation'
+
+const ICON = { note: IconNote, focus: IconFocus, review: IconReview, grid: IconGridDraw } as const
+function PrimaryIcon({ icon }: { icon: SitIcon }) {
+  const I = ICON[icon]
+  return <I size={24} />
+}
 
 const SKY = spaceOf('/')
 
@@ -37,6 +47,7 @@ export function TodayScreen() {
   const openDust = useCapture((s) => s.openDust)
   const land = useMediaQuery('(min-width: 600px) and (min-aspect-ratio: 1/1)')
   const inline = land && dustOpen
+  const active = useActive()
 
   const sit = useMemo(() => (data ? evaluateSituation(data.model) : null), [data])
   const subjects: Subject[] = data?.model.subjects ?? []
@@ -69,7 +80,7 @@ export function TodayScreen() {
   const upcoming = data.model.tasks.filter((t) => !t.done && t.dueAt >= nowMs).sort((x, y) => x.dueAt - y.dueAt)
   const nextExam = upcoming.find((t) => t.kind === 'exam')
   const nextTask = nextExam ?? upcoming[0]
-  const planNext = nextTask ? `${nextExam ? '시험' : '마감'} ${fmtDday(ddayOf(data.model.now, nextTask.dueAt))}` : null
+  const planNext = nextTask ? fmtDday(ddayOf(data.model.now, nextTask.dueAt)) : null
   const skyLabel = fm.sets ? `오늘의 별 ${fm.sets}개, 집중 ${fmtDur(fm.minutes)}` : '오늘의 별 없음'
 
   return (
@@ -82,30 +93,38 @@ export function TodayScreen() {
         ) : (
         <div className="today-swap" key="today">
         {/* 하늘의 오늘의 별은 StarPress가 누르기를 받는다(다가가 한 줄로 보기) */}
-        <p className="sr-only">{skyLabel}</p>
-        <Block>
-          <FocusLines lines={[sit.title]} swapKey={sit.key + sit.title} />
-        </Block>
-        <Block>
-          <p className="meta enter enter-1" key={sit.key + sit.meta}>{sit.meta}</p>
-        </Block>
+        <h1 className="sr-only">오늘</h1>
+        <p className="sr-only">{skyLabel}{sit.line ? `, ${sit.line.sr}` : ''}</p>
+        {sit.line && (
+          <Block>
+            <div className={`today-line${sit.line.num ? ' is-num' : ''}`} {...tip(sit.line.tip)} tabIndex={0} key={sit.key + sit.line.text}>
+              {sit.line.dot && <i className="sdot is-lg" style={{ ['--c' as string]: sit.line.dot }} aria-hidden="true" />}
+              <FocusLines lines={[sit.line.text]} swapKey={sit.key + sit.line.text} as="h2" />
+            </div>
+          </Block>
+        )}
         {sit.progress && (
           <Block className="enter enter-1">
             <ProgressLine value={sit.progress.value} label={sit.progress.label} tone="quiet" width="min(420px, 100%)" />
           </Block>
         )}
-        {(sit.primary || (sit.quiet && sit.quiet.label !== '녹음')) && (
-          <Actions swapKey={sit.key}>
-            {sit.primary && <PrimaryButton onClick={(el) => run(sit.primary!.action, el)}>{sit.primary.label}</PrimaryButton>}
-            {/* 음성 메모는 M2 범위 밖: '녹음' 보조 버튼은 숨긴다 */}
-            {sit.quiet && sit.quiet.label !== '녹음' && <QuietButton onClick={(el) => run(sit.quiet!.action, el)}>{sit.quiet.label}</QuietButton>}
-          </Actions>
-        )}
-        {dust > 0 && (
-          <button type="button" className="quiet-line mono dust-line not-phone" onClick={(e) => openDust(e.currentTarget)}>
-            별가루 {dust} ›
-          </button>
-        )}
+        <div className="today-acts">
+          {sit.primary && (
+            <span className="hint-host">
+              <button type="button" className="gold-btn" {...tip(sit.primary.label)} onClick={(e) => run(sit.primary!.action, e.currentTarget)}>
+                <PrimaryIcon icon={sit.primary.icon} />
+                {sit.primary.badge ? <span className="ibadge" aria-hidden="true">{sit.primary.badge}</span> : null}
+              </button>
+              <Hint id="H1" side="right" active={active && !inline} />
+            </span>
+          )}
+          {dust > 0 && (
+            <button type="button" className="ibtn inum dust-line" {...tip('별가루')} aria-label={`별가루 ${dust}개`} onClick={(e) => openDust(e.currentTarget)}>
+              <IconDust size={18} />
+              <span aria-hidden="true">{dust}</span>
+            </button>
+          )}
+        </div>
         </div>
         )}
       </Hero>
@@ -114,21 +133,16 @@ export function TodayScreen() {
       <a
         className="plan-line zone-b phone-only-flex"
         href="/plan"
+        {...tip(planNext ? `계획 ${planNext}` : '계획')}
         onClick={(e) => {
           if (e.metaKey || e.ctrlKey) return
           e.preventDefault()
           void go('/plan', e.currentTarget)
         }}
       >
-        <span>계획</span>
-        {planNext && <span className="plan-line-v">· {planNext}</span>}
-        <IconArrow size={14} />
+        <IconPlan size={18} />
+        {planNext && <span className="plan-line-v">{planNext}</span>}
       </a>
-      {dust > 0 && (
-        <button type="button" className="quiet-line mono dust-line-phone phone-only-flex" onClick={(e) => openDust(e.currentTarget)}>
-          별가루 {dust}
-        </button>
-      )}
 
     </>
   )

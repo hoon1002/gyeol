@@ -1,0 +1,51 @@
+/* =========================================================
+   복습 (design-quiet 1-4 · 리더 결정 1) — 앱 A. 글 없이 `▤ 13` + 금빛 ▶, 평가는 ↺ · ✓(길게 = 세 단계).
+   ========================================================= */
+.rv-quiet .rv-head { display: flex; align-items: center; gap: 20px; }
+.rv-count { display: inline-flex; align-items: center; gap: 7px; color: var(--text-2); text-shadow: var(--sky-text-shadow); }
+.rv-count .mono { font: 400 15px/1 var(--f-mono); font-variant-numeric: tabular-nums; }
+
+/* 카드: 앞면은 누르면 뒤집힌다 */
+.rv-quiet .flash.is-front { cursor: pointer; }
+.rv-quiet .flash.is-front:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rv-quiet .flash-meta { gap: 8px; }
+.rv-quiet .flash-meta .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.rv-quiet .flash-meta .mono { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* 평가: ↺ 조용한 원 · ✓ 금빛 원 */
+.rv-quiet .rv-actions { min-height: 92px; align-items: flex-start; }
+.rv-rate { display: flex; align-items: flex-start; gap: 28px; }
+.rv-btn { position: relative; display: grid; justify-items: center; gap: 6px; }
+.rv-again {
+  display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%;
+  border: 1px solid var(--border-strong); background: var(--glass); color: var(--text-2);
+  transition: transform 160ms var(--ease-out), color var(--dur-fast), border-color var(--dur-fast);
+}
+.rv-again:hover { color: var(--text-1); border-color: var(--text-3); }
+.rv-again:active { transform: scale(.94); transition-duration: 90ms; }
+.rv-again:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 599px) { .rv-again { width: 52px; height: 52px; } }
+/* 처음 10장만: 버튼 아래 낱말 40% */
+.rv-word { font-size: 11px; line-height: 1; color: var(--text-2); opacity: .4; white-space: nowrap; pointer-events: none; }
+.rv-key { position: absolute; top: -4px; right: -10px; font-size: 10px; color: var(--text-3); pointer-events: none; }
+.rv-check { touch-action: none; -webkit-touch-callout: none; user-select: none; }
+
+/* ✓ 길게: 세 단계가 ✓ 오른쪽으로 펼쳐진다(카드 글을 가리지 않게 같은 높이 한 줄) */
+.rv-fan { position: absolute; left: 50%; top: 24px; width: 0; height: 0; z-index: 4; }
+@media (max-width: 599px) { .rv-fan { top: 26px; } }
+.rv-fan-item {
+  position: absolute; left: 0; top: 0; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%;
+  display: grid; place-content: center; justify-items: center; gap: 1px;
+  background: color-mix(in srgb, var(--surface-2) 96%, transparent); border: 1px solid var(--border-strong); box-shadow: var(--shadow-2);
+  color: var(--text-1); font-size: 12px; font-weight: 500; white-space: nowrap;
+  animation: rv-fan-in 140ms var(--ease-out) both;
+}
+.rv-fan-item small { font-size: 10px; color: var(--text-3); font-weight: 400; }
+.rv-fan-0 { translate: 66px 0; }
+.rv-fan-1 { translate: 126px 0; animation-delay: 20ms; }
+.rv-fan-2 { translate: 186px 0; animation-delay: 40ms; }
+.rv-fan-item:hover, .rv-fan-item.is-hover, .rv-fan-item:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.rv-fan-item:active { scale: .94; }
+@keyframes rv-fan-in { from { opacity: 0; scale: .6; margin-left: -48px; } }
+:root[data-motion="off"] .rv-fan-item { animation: none; }
+.rv-quiet .flash { position: relative; }

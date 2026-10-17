@@ -12,10 +12,10 @@ import { useFocusToday, useNow, useSubjects } from '@/db/hooks'
 import { db } from '@/db/schema'
 import { remainingMs, useFocusTimer } from '@/stores/focus'
 import { useUi } from '@/stores/ui'
-import { IconPause } from '@/shell/icons'
+import { IconPause, IconPlay, IconRepeat, IconRest, IconStop } from '@/shell/icons'
 import { spaceOf } from '@/shell/spaces'
+import { tip } from '@/shell/Tip'
 import { FocusBezel } from './FocusBezel'
-import { PrimaryButton, QuietButton } from './parts'
 
 const SKY = spaceOf('/focus')
 
@@ -175,13 +175,13 @@ export function FocusScreen() {
         data={{ rings: today?.sets ?? 0, pressure: 0, load: 0.2 }}
         stars={today ? { today: today.list.map((s) => ({ id: s.id, at: s.startedAt, kind: 'set' as const })) } : undefined}
       />
-      <section ref={stageRef} className={`focus-stage${running ? ' is-running' : ''}`} aria-label="집중">
+      <section ref={stageRef} className={`focus-stage${running ? ' is-running' : ''}${timer.phase === 'paused' ? ' is-paused' : ''}`} aria-label="집중">
         <FocusBezel active={active} progress={progress} state={timer.phase} stageRef={stageRef} />
         {/* 글 블록: 가로 = 링 왼쪽 글 구역 세로 가운데, 세로·폰 = 링 아래 바깥(링 중심과 같은 x). 링 안에는 넣지 않는다 */}
         <div className="focus-block">
-          <button type="button" className="focus-subject" onClick={cycleSubject} disabled={live} aria-label={`과목: ${subject?.name ?? '자유'} (눌러서 바꾸기)`}>
-            {subject && <i style={{ background: `var(--s-${subject.color})` }} aria-hidden="true" />}
-            <span>{subject?.name ?? '자유'}</span>
+          <h1 className="sr-only">집중</h1>
+          <button type="button" className="ibtn focus-subject" onClick={cycleSubject} disabled={live} {...tip(subject?.name ?? '자유')} aria-label={`과목 ${subject?.name ?? '자유'}, 눌러서 바꾸기`}>
+            <i className={`sdot is-lg${subject ? '' : ' is-none'}`} style={subject ? { ['--c' as string]: `var(--s-${subject.color})` } : undefined} aria-hidden="true" />
           </button>
 
           <div className="timer" ref={knotRef}>
@@ -189,26 +189,40 @@ export function FocusScreen() {
               {fmtClock(remain)}
             </span>
             <span className="sr-only" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)} aria-label="진행" />
-            {timer.phase === 'paused' && <span className="meta timer-meta" aria-live="polite">멈춤</span>}
+            {timer.phase === 'paused' && <span className="sr-only" aria-live="polite">멈춤</span>}
           </div>
 
           <div className="actions focus-actions">
-            {timer.phase === 'idle' && <PrimaryButton onClick={() => start()}>시작</PrimaryButton>}
+            {timer.phase === 'idle' && (
+              <span className="hint-host">
+                <button type="button" className="gold-btn" {...tip('시작')} onClick={() => start()}>
+                  <IconPlay size={24} />
+                </button>
+              </span>
+            )}
             {timer.phase === 'running' && (
-              <button type="button" className="icon-btn ghost big" aria-label="일시정지" onClick={() => timer.pause()}>
+              <button type="button" className="icon-btn ghost big" {...tip('일시정지')} onClick={() => timer.pause()}>
                 <IconPause size={20} />
               </button>
             )}
             {timer.phase === 'paused' && (
               <>
-                <PrimaryButton onClick={() => timer.resume()} arrow={false}>이어서</PrimaryButton>
-                <QuietButton onClick={() => void stop()}>끝내기</QuietButton>
+                <button type="button" className="gold-btn" {...tip('이어서')} onClick={() => timer.resume()}>
+                  <IconPlay size={24} />
+                </button>
+                <button type="button" className="ibtn" {...tip('끝내기')} onClick={() => void stop()}>
+                  <IconStop size={22} />
+                </button>
               </>
             )}
             {timer.phase === 'done' && (
               <>
-                <PrimaryButton onClick={() => { timer.reset(); start() }}>한 번 더</PrimaryButton>
-                <QuietButton onClick={() => timer.reset()}>쉬기</QuietButton>
+                <button type="button" className="gold-btn" {...tip('한 번 더')} onClick={() => { timer.reset(); start() }}>
+                  <IconRepeat size={24} />
+                </button>
+                <button type="button" className="ibtn" {...tip('쉬기')} onClick={() => timer.reset()}>
+                  <IconRest size={22} />
+                </button>
               </>
             )}
           </div>

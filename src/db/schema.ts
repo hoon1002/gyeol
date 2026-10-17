@@ -159,6 +159,16 @@ export interface Memo {
   state: MemoState
   /** 나눈 곳 */
   filedTo?: { type: 'note' | 'task' | 'card'; id: string } | null
+  /** M3: 메모 종류 (없으면 'text'). 손글씨 메모는 pageId의 쪽에 획이 있다 */
+  kind?: 'text' | 'check' | 'photo' | 'voice' | 'ink'
+  /** M3: 체크리스트 줄 */
+  items?: Array<{ id: string; text: string; done: boolean }> | null
+  /** M3: 고정 (색인 없음 — 메모 수가 적어 메모리에서 정렬) */
+  pinned?: boolean
+  /** M3: 손글씨 메모의 쪽 (pages.noteId = 'memo:' + 메모 id) */
+  pageId?: string | null
+  /** M3: 음성 메모 길이(ms), 소리는 assetId */
+  durationMs?: number | null
   createdAt: number
   updatedAt: number
 }
@@ -236,6 +246,8 @@ export interface PageItem {
   text?: string | null
   /** 테이프: 가려진 상태인지 */
   hidden?: boolean
+  /** 테이프: '헷갈림' 표시 (M4에서 복습 카드 후보로) */
+  flag?: boolean
   z: number
   createdAt: number
   updatedAt: number

@@ -8,6 +8,8 @@ import type { CourseSlot, Subject, SubjectColor } from '@/db/schema'
 import { addDays, hm, minutesOfDay, startOfWeek, weekdayShort } from '@/lib/time'
 import { useIsPhone } from '@/shell/hooks'
 import { COLORS, nextColor, type TimetableStore } from './slots'
+import { tip } from '@/shell/Tip'
+import { IconCheck, IconChevron, IconClose, IconRepeat, IconRoom, IconTrash, IconUndo } from '@/shell/icons'
 import '@/styles/capture.css'
 
 const STEP = 30
@@ -141,13 +143,13 @@ export function Timetable({ store, now, knotRef, className = '' }: { store: Time
     <div className={`tt ${className}`}>
       <div className="tt-tools">
         {phone && (
-          <button type="button" className={`tt-toggle mono${showWeekend ? ' is-on' : ''}`} aria-pressed={showWeekend} onClick={() => setWeekend((v) => !v)}>
-            주말
+          <button type="button" className={`ibtn tt-toggle${showWeekend ? ' is-on' : ''}`} aria-pressed={showWeekend} {...tip('주말')} onClick={() => setWeekend((v) => !v)}>
+            <IconChevron size={18} style={{ rotate: showWeekend ? '90deg' : '-90deg' }} />
           </button>
         )}
         {undo && (
-          <button type="button" className="tt-undo mono" onClick={() => { void store.restoreSlot(undo); setUndo(null) }}>
-            되돌리기
+          <button type="button" className="ibtn tt-undo" {...tip('되돌리기')} onClick={() => { void store.restoreSlot(undo); setUndo(null) }}>
+            <IconUndo size={18} />
           </button>
         )}
       </div>
@@ -180,10 +182,11 @@ export function Timetable({ store, now, knotRef, className = '' }: { store: Time
                       className="wg-slot tt-slot"
                       style={{ top: `${((hm(s.start) - startH * 60) / span) * 100}%`, height: `${((hm(s.end) - hm(s.start)) / span) * 100}%`, ['--c' as string]: subj ? `var(--s-${subj.color})` : 'var(--text-3)' }}
                       aria-label={`${subj?.name ?? '과목'} ${s.start}–${s.end} ${s.room}, 고치기`}
+                      data-tip={[s.room, `${s.start}–${s.end}`].filter(Boolean)[0]}
                       onClick={() => edit(s)}
                     >
+                      {/* 과목 이름 = 데이터(남김), 강의실·시각 = 길게(툴팁) — design-quiet 1-7 */}
                       <b>{phone ? subj?.short : subj?.name}</b>
-                      {!phone && <small>{s.room || s.start}</small>}
                     </button>
                   )
                 })}
@@ -259,7 +262,10 @@ function SlotForm({ draft, subjects, side, style, onChange, onSave, onCancel, on
   return (
     <div className={`tt-pop is-${side}`} style={style} role="dialog" aria-label="수업" onKeyDown={onKey} onPointerDown={(e) => e.stopPropagation()}>
       <p className="tt-pop-meta mono">{weekdayShort(draft.weekday)} {toHM(draft.a)}–{toHM(draft.b)}</p>
-      <input ref={nameRef} className="tt-in" placeholder="과목" aria-label="과목" value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} autoComplete="off" enterKeyHint="next" />
+      <label className="tt-field">
+        <i className="sdot is-lg" style={{ ['--c' as string]: `var(--s-${exist?.color ?? draft.color})` }} aria-hidden="true" />
+        <input ref={nameRef} className="tt-in" aria-label="과목" value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} autoComplete="off" enterKeyHint="next" />
+      </label>
       {matches.length > 0 && !exist && (
         <div className="tt-sugg">
           {matches.map((s) => (
@@ -276,12 +282,16 @@ function SlotForm({ draft, subjects, side, style, onChange, onSave, onCancel, on
           ))}
         </div>
       )}
-      <input className="tt-in" placeholder="강의실" aria-label="강의실" value={draft.room} onChange={(e) => onChange({ ...draft, room: e.target.value })} autoComplete="off" enterKeyHint="done" />
-      <label className="tt-weekly mono"><input type="checkbox" checked readOnly /> 매주</label>
+      <label className="tt-field">
+        <IconRoom size={16} />
+        <input className="tt-in" aria-label="강의실" value={draft.room} onChange={(e) => onChange({ ...draft, room: e.target.value })} autoComplete="off" enterKeyHint="done" />
+      </label>
       <div className="tt-acts">
-        {draft.id && <button type="button" className="tt-del" onClick={() => void onDelete(draft)}>지우기</button>}
-        <button type="button" className="btn-ghost small" onClick={onCancel}>취소</button>
-        <button type="button" className="btn-primary small" disabled={!draft.name.trim()} onClick={() => void onSave(draft)}>저장</button>
+        {/* 매주: 수업 칸은 늘 매주 반복(한 번만은 스키마에 없음) — 켜진 토글로 보인다 */}
+        <span className="ibtn tt-weekly is-on" role="img" {...tip('매주')}><IconRepeat size={18} /></span>
+        {draft.id && <button type="button" className="ibtn is-danger tt-del" {...tip('지우기')} onClick={() => void onDelete(draft)}><IconTrash size={18} /></button>}
+        <button type="button" className="ibtn" {...tip('취소', { kbd: 'esc' })} onClick={onCancel}><IconClose size={18} /></button>
+        <button type="button" className="gold-btn is-sm" {...tip('저장', { kbd: '↵' })} disabled={!draft.name.trim()} onClick={() => void onSave(draft)}><IconCheck size={20} /></button>
       </div>
     </div>
   )

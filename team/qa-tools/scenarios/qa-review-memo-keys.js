@@ -1,0 +1,18 @@
+// 복습 카드 중 메모(n)를 열고 띄어쓰기·Enter·숫자·Esc를 친다 → 메모 글에만 들어가야 한다
+await size(1440, 900); setMode('mouse'); await nav('/review', 3000)
+const b = await find('button', '시작|복습')
+print('review buttons', b.map(x => x.t))
+if (b[0]) { await tap(b[0].x, b[0].y); await sleep(1200) }
+const before = await ev(`document.querySelector('main, #stage')?.innerText.slice(0, 160)`)
+await key('n'); await sleep(300)
+print('after n', await st())
+await type('a b', 30); await sleep(200)
+const ta = await ev(`(() => { const a = document.activeElement; return a && (a.value ?? a.innerText) })()`)
+await key('2'); await sleep(300)
+const after = await ev(`document.querySelector('main, #stage')?.innerText.slice(0, 160)`)
+await key('Escape'); await sleep(600)
+print({ memoText: ta, st: await st() })
+print('before:', before.replace(/\n/g, ' / '))
+print('after :', after.replace(/\n/g, ' / '))
+await shot('review-memo-keys_1440x900', { clip: { x: 0, y: 0, width: 1440, height: 900 }, scale: 0.5 })
+print(logs())

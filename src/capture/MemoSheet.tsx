@@ -10,6 +10,10 @@ import { isTypingTarget, useIsPhone } from '@/shell/hooks'
 import { useUi } from '@/stores/ui'
 import { guessSubject, saveMemo } from './api'
 import { closeMemoSheet, memoTimings, registerMemoSheet } from './open'
+import { fmtSec, useVoice } from './voice'
+import { tip } from '@/shell/Tip'
+import { useHintCount } from '@/shell/hints'
+import { IconChecklist, IconMic, IconPen, IconPlus, IconStop } from '@/shell/icons'
 import { SubjectPicker } from './SubjectPicker'
 import '@/styles/capture.css'
 
@@ -41,6 +45,17 @@ export function MemoSheet() {
   const [text, setText] = useState('')
   const [override, setOverride] = useState<string | null | undefined>(undefined)
   const [photo, setPhoto] = useState<Blob | null>(null)
+  const [audio, setAudio] = useState<{ blob: Blob; ms: number } | null>(null)
+  const [check, setCheck] = useState(false)
+  /** ＋ 하나에서 펼쳐지는 종류 칸 (design-ink 8-2) */
+  const [fan, setFan] = useState(false)
+  /** 펜으로 ＋를 눌렀다: 포커스를 주지 않는다(키보드 없음). 키를 치면 바로 글 상태 (design-ink 8-1) */
+  const [penWait, setPenWait] = useState(false)
+  const voice = useVoice()
+  const ph = useHintCount('memo-ph', 3)
+  const enterHint = useHintCount('memo-enter', 3)
+  const phBump = useRef(ph.bump)
+  phBump.current = ph.bump
   const [picker, setPicker] = useState(false)
   const phone = useIsPhone()
   const subjects = useSubjects() ?? []
@@ -55,19 +70,26 @@ export function MemoSheet() {
   useLayoutEffect(() => {
     const layer = layerRef.current!
     layer.inert = true
-    const doOpen = (initial: string | undefined, origin: Element | null) => {
+    const doOpen = (initial: string | undefined, origin: Element | null, pen = false) => {
       const ta = taRef.current!
       layer.inert = false
       layer.classList.add('is-open')
       layer.removeAttribute('aria-hidden')
+      setPenWait(pen)
       if (initial !== undefined && initial !== '') {
         ta.value = initial
         setText(initial)
       }
-      ta.focus({ preventScroll: true })
-      const end = ta.value.length
-      ta.setSelectionRange(end, end)
-      if (!openRef.current) originRef.current = origin ?? document.activeElement
+      // 펜으로 열면 포커스를 주지 않는다(키보드가 올라오지 않게)
+      if (!pen) {
+        ta.focus({ preventScroll: true })
+        const end = ta.value.length
+        ta.setSelectionRange(end, end)
+      } else (layer.querySelector('.memo-box') as HTMLElement | null)?.focus?.({ preventScroll: true })
+      if (!openRef.current) {
+        originRef.current = origin ?? document.activeElement
+        phBump.current()
+      }
       openRef.current = true
       setOpen(true)
     }
@@ -103,9 +125,9 @@ export function MemoSheet() {
       record('key', e.timeStamp, performance.now())
     }
     window.addEventListener('keydown', onKey)
-    ;(layer as HTMLDivElement & { __open?: (via: Via, origin: Element | null) => void }).__open = (via, origin) => {
+    ;(layer as HTMLDivElement & { __open?: (via: Via, origin: Element | null, pen?: boolean) => void }).__open = (via, origin, pen) => {
       const t0 = performance.now()
-      doOpen(undefined, origin)
+      doOpen(undefined, origin, !!pen)
       record(via, t0, performance.now())
     }
     return () => {
@@ -113,6 +135,25 @@ export function MemoSheet() {
       registerMemoSheet(null)
     }
   }, [])
+
+  // 음성 10분 상한: 저절로 멈춘다(저장은 사용자가)
+  useEffect(() => {
+    if (voice.state !== 'rec' || voice.ms < 600_000) return
+    void voice.stop().then((a) => a && setAudio(a))
+  }, [voice])
+
+  // 펜 대기 중 키를 치면 글 상태로
+  useEffect(() => {
+    if (!penWait) return
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+        setPenWait(false)
+        taRef.current?.focus({ preventScroll: true })
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [penWait])
 
   // 폰: 키보드 바로 위 (visualViewport)
   useEffect(() => {
@@ -139,19 +180,36 @@ export function MemoSheet() {
     ta.style.height = `${Math.min(ta.scrollHeight, 4 * 17 * 1.5 + 4)}px`
   }, [text])
 
-  const submit = () => {
-    const t = text
+  const submit = async () => {
+    let a = audio
+    if (voice.state === 'rec') a = await voice.stop()
+    const raw = check ? text.split('\n').map((l) => l.replace(/^☐\s?/, '')).join('\n') : text
     const p = photo
-    if (!t.trim() && !p) {
+    if (!raw.trim() && !p && !a) {
       closeNow()
       return
     }
-    void saveMemo(t, { subjectId, photo: p })
+    void saveMemo(raw, { subjectId, photo: a ? null : p, audio: a, checklist: check && !!raw.trim() })
+    if (!phone) enterHint.bump()
     setText('')
     setPhoto(null)
+    setAudio(null)
+    setCheck(false)
+    setFan(false)
+    setPenWait(false)
     setOverride(undefined)
     if (taRef.current) taRef.current.value = ''
     closeNow()
+  }
+
+  /** 체크리스트: 줄마다 ☐ (저장할 때 '[ ] '로) */
+  const toggleCheck = () => {
+    setCheck((on) => {
+      const next = !on
+      setText((t) => (next ? (t ? t.split('\n').map((l) => (l.startsWith('☐') ? l : `☐ ${l}`)).join('\n') : '☐ ') : t.split('\n').map((l) => l.replace(/^☐\s?/, '')).join('\n')))
+      return next
+    })
+    taRef.current?.focus({ preventScroll: true })
   }
 
   const closeNow = () => closeMemoSheet()
@@ -159,13 +217,47 @@ export function MemoSheet() {
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // IME 조합 중(한글)에는 Enter·Esc를 무시한다
     if (e.nativeEvent.isComposing || e.keyCode === 229) return
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      void submit()
+      return
+    }
+    if (check && e.key === 'Backspace') {
+      const ta = e.currentTarget
+      const before = ta.value.slice(0, ta.selectionStart)
+      const lineStart = before.lastIndexOf('\n') + 1
+      const line = ta.value.slice(lineStart).split('\n')[0] ?? ''
+      // 빈 항목에서 Backspace = 그 항목을 지우고 윗줄 끝으로
+      if (ta.selectionStart === ta.selectionEnd && !line.replace(/^☐\s?/, '').trim() && lineStart > 0) {
+        e.preventDefault()
+        const v = ta.value.slice(0, lineStart - 1) + ta.value.slice(lineStart + line.length)
+        setText(v)
+        requestAnimationFrame(() => ta.setSelectionRange(lineStart - 1, lineStart - 1))
+        return
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      submit()
+      // 체크리스트: Enter = 새 항목, 빈 항목에서 Enter = 저장
+      if (check) {
+        const ta = e.currentTarget
+        const before = ta.value.slice(0, ta.selectionStart)
+        const lastLine = before.split('\n').pop() ?? ''
+        if (lastLine.replace(/^☐\s?/, '').trim()) {
+          const v = `${before}\n☐ ${ta.value.slice(ta.selectionEnd)}`
+          setText(v)
+          const pos = before.length + 3
+          requestAnimationFrame(() => ta.setSelectionRange(pos, pos))
+          return
+        }
+        setText(ta.value.split('\n').filter((l) => l.replace(/^☐\s?/, '').trim()).join('\n'))
+      }
+      void submit()
     } else if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation()
       if (picker) setPicker(false)
+      else if (voice.state === 'rec') voice.cancel()
       else closeNow()
     }
   }
@@ -174,6 +266,7 @@ export function MemoSheet() {
     const f = files ? Array.from(files).find((x) => x.type.startsWith('image/')) : undefined
     if (!f) return false
     setPhoto(f)
+    setAudio(null)
     return true
   }
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -186,13 +279,15 @@ export function MemoSheet() {
   // 폰: 아래로 쓸어 닫기 (손잡이·머리에서)
   const swipe = useRef<{ y: number; id: number } | null>(null)
 
-  const canSave = !!text.trim() || !!photo
+  const canSave = !!text.replace(/☐/g, '').trim() || !!photo || !!audio || voice.state === 'rec'
 
   return (
     <div ref={layerRef} className="memo-layer" aria-hidden="true">
       <div className="memo-catch" onPointerDown={closeNow} />
       <div
         className="memo-box"
+        tabIndex={-1}
+        data-hand={penWait ? 'pen' : undefined}
         role="dialog"
         aria-label="메모"
         onDragOver={(e) => e.preventDefault()}
@@ -210,48 +305,46 @@ export function MemoSheet() {
       >
         {phone && <span className="memo-grip" aria-hidden="true" />}
         <div className="memo-row">
-          {thumb && (
+          {thumb && !audio && (
             <span className="memo-thumb">
               <img src={thumb} alt="" />
               <button type="button" aria-label="사진 빼기" onClick={() => setPhoto(null)}>×</button>
             </span>
           )}
+          {audio && voice.state !== 'rec' && (
+            <span className="memo-voice inum" aria-label={`음성 ${fmtSec(audio.ms)}`}>
+              <IconMic size={16} />
+              {fmtSec(audio.ms)}
+              <button type="button" aria-label="음성 빼기" onClick={() => setAudio(null)}>×</button>
+            </span>
+          )}
+          {penWait && <span className="memo-pen" aria-hidden="true"><IconPen size={16} /></span>}
           <textarea
             ref={taRef}
-            className="memo-input"
+            className={`memo-input${check ? ' is-check' : ''}`}
             rows={1}
-            placeholder="생각 하나"
+            placeholder={ph.fresh || (phone && !text) ? '생각 하나' : undefined}
             aria-label="메모"
-            enterKeyHint="done"
+            enterKeyHint={check ? 'enter' : 'done'}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
           />
-          <button type="button" className="memo-photo" aria-label="사진" onClick={() => fileRef.current?.click()}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z" />
-              <circle cx="12" cy="13" r="3.5" />
-            </svg>
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            {...(phone ? { capture: 'environment' as const } : {})}
-            hidden
-            onChange={(e) => {
-              takeImage(e.target.files)
-              e.target.value = ''
-              taRef.current?.focus({ preventScroll: true })
-            }}
-          />
+          {/* 손글씨 메모 자리(M3): 펜을 대면 이 칸이 작은 잉크 칸이 된다 — 손글씨 엔진(src/ink)이 나오면 붙인다 */}
+          <div className="memo-ink-slot" data-ink-slot="memo" hidden />
         </div>
         <div className="memo-foot">
           <div className="memo-chip-wrap">
-            <button type="button" className={`memo-chip${subject ? '' : ' is-none'}`} aria-haspopup="listbox" aria-expanded={picker} onClick={() => setPicker((v) => !v)}>
-              {subject && <i style={{ background: `var(--s-${subject.color})` }} aria-hidden="true" />}
-              {subject ? subject.short || subject.name : '과목 없음'}
+            <button
+              type="button"
+              className="ibtn memo-dot"
+              aria-haspopup="listbox"
+              aria-expanded={picker}
+              {...tip(subject ? subject.name : '과목 없음')}
+              onClick={() => setPicker((v) => !v)}
+            >
+              <i className={`sdot is-lg${subject ? '' : ' is-none'}`} style={subject ? { ['--c' as string]: `var(--s-${subject.color})` } : undefined} />
             </button>
             {picker && (
               <SubjectPicker
@@ -266,13 +359,55 @@ export function MemoSheet() {
               />
             )}
           </div>
-          {phone ? (
-            canSave && (
-              <button type="button" className="memo-send" aria-label="저장" onPointerDown={(e) => e.preventDefault()} onClick={submit}>↑</button>
-            )
-          ) : (
-            <span className="memo-hint mono" aria-hidden="true">Enter 저장</span>
-          )}
+          <div className="memo-tools">
+            {voice.state === 'rec' && (
+              <button type="button" className={`ibtn memo-mic is-rec${voice.ms >= 570_000 ? ' is-late' : ''}`} {...tip('녹음 멈춤')} onPointerDown={(e) => e.preventDefault()} onClick={async () => { const a = await voice.stop(); if (a) { setAudio(a); setPhoto(null) } }}>
+                <IconStop size={18} />
+                <span className="ibadge">{fmtSec(voice.ms)}</span>
+              </button>
+            )}
+            {fan && (
+              <span className="memo-fan" role="group" aria-label="메모 종류">
+                <button type="button" className={`ibtn${check ? ' is-on' : ''}`} aria-pressed={check} {...tip('체크리스트')} onPointerDown={(e) => e.preventDefault()} onClick={() => { toggleCheck(); setFan(false) }}>
+                  <IconChecklist size={20} />
+                </button>
+                <button type="button" className="ibtn memo-photo" {...tip('사진')} onPointerDown={(e) => e.preventDefault()} onClick={() => { setFan(false); fileRef.current?.click() }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z" />
+                    <circle cx="12" cy="13" r="3.5" />
+                  </svg>
+                </button>
+                {/* 음성: 보안 주소가 아니거나 녹음기가 없으면 숨긴다(흐리게 두지 않는다) */}
+                {voice.state === 'idle' && (
+                  <button type="button" className="ibtn" {...tip('음성')} onPointerDown={(e) => e.preventDefault()} onClick={() => { setFan(false); void voice.start() }}>
+                    <IconMic size={20} />
+                  </button>
+                )}
+              </span>
+            )}
+            <button type="button" className={`ibtn memo-plus${fan ? ' is-open' : ''}`} aria-expanded={fan} {...tip(fan ? '접기' : '메모 종류')} onPointerDown={(e) => e.preventDefault()} onClick={() => setFan((v) => !v)}>
+              <IconPlus size={20} />
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              {...(phone ? { capture: 'environment' as const } : {})}
+              hidden
+              onChange={(e) => {
+                takeImage(e.target.files)
+                e.target.value = ''
+                taRef.current?.focus({ preventScroll: true })
+              }}
+            />
+            {phone ? (
+              canSave && (
+                <button type="button" className="memo-send" {...tip('저장')} onPointerDown={(e) => e.preventDefault()} onClick={() => void submit()}>↑</button>
+              )
+            ) : (
+              enterHint.fresh && <kbd className="memo-hint" aria-hidden="true">↵</kbd>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -280,7 +415,8 @@ export function MemoSheet() {
 }
 
 /** 레일·독 ＋ 버튼: 클릭(사용자 제스처) 안에서 같은 틱에 연다 */
-export function openMemoFromButton(origin: Element | null): void {
-  const layer = document.querySelector('.memo-layer') as (HTMLDivElement & { __open?: (via: Via, origin: Element | null) => void }) | null
-  layer?.__open?.('button', origin)
+export function openMemoFromButton(origin: Element | null, pointerType?: string): void {
+  const layer = document.querySelector('.memo-layer') as (HTMLDivElement & { __open?: (via: Via, origin: Element | null, pen?: boolean) => void }) | null
+  // 입력한 손이 정한다(리더 결정 4): 펜으로 누르면 펜 대기(손글씨 메모 자리), 손가락·마우스·키보드면 글
+  layer?.__open?.('button', origin, pointerType === 'pen')
 }

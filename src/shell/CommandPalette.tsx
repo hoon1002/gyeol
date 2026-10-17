@@ -22,55 +22,36 @@ import { isIndexReady, scheduleIndexBuild, searchAll, useSearchVersion, type Hit
 import { matchText } from '@/lib/hangul'
 import { parseCommand, resolveDue, type ParseResult } from '@/lib/parser'
 import { switchTheme } from '@/lib/theme'
-import { ddayOf, fmtDday, fmtMD, weekdayShort, fmtHM } from '@/lib/time'
+import { fmtMD } from '@/lib/time'
 import { useSettings, type ThemePref } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import type { MotionLevel } from '@/fx'
 import { useEffectiveMotion, useGo, useIsPhone } from './hooks'
-import { IconArrow, IconDeck, IconDoc, IconFocus, IconMore, IconMotion, IconPdf, IconPen, IconPlan, IconPlus, IconReview, IconSearch, IconTheme } from './icons'
+import { IconDeck, IconDoc, IconDust, IconFlag, IconFocus, IconMore, IconMotion, IconPdf, IconPen, IconPlan, IconReview, IconSearch, IconTheme } from './icons'
+import { tip } from './Tip'
+import { useHintCount } from './hints'
 import '@/styles/search.css'
-import { SPACES, type SpacePath } from './spaces'
-
-type Preview =
-  | { kind: 'go'; path: SpacePath }
-  | { kind: 'settings' }
-  | { kind: 'focus'; minutes: number; subject: Subject | null; note: Note | null }
-  | { kind: 'review'; subject: Subject | null }
-  | { kind: 'task'; subject: Subject | null; due: Date | null }
-  | { kind: 'theme'; pref: ThemePref }
-  | { kind: 'motion'; level: MotionLevel }
-  | { kind: 'lens'; subject: Subject | null }
-  | { kind: 'note'; note: Note; subject: Subject | null }
-  | { kind: 'new'; subject: Subject | null }
-  | { kind: 'memo'; text: string; subject: Subject | null }
-  | { kind: 'save'; text: string }
-  | { kind: 'dust' }
+import { SPACES } from './spaces'
 
 interface Item {
   id: string
   group: string
   label: string
-  sub?: string
   icon: ReactNode
   color?: string
   keywords?: string[]
   range?: [number, number] | null
-  /** 오른쪽 모노 11px "물리 · 10.12" */
-  meta?: string
-  /** 본문 일치: 둘째 줄 앞뒤 16자 발췌 */
+  /** 오른쪽 숫자 메타: 과목 점(색 · null = 빈 고리) + 날짜 "10.12" */
+  meta?: { dot?: string | null; text: string }
+  /** 본문 일치: 둘째 줄 앞뒤 16자 발췌(데이터) */
   snippet?: { text: string; range: [number, number] } | null
-  preview: Preview
+  /** 노트 줄이면 그 노트(미리보기 칸 = 본문 앞 3줄) */
+  note?: Note
+  /** 툴팁 · 읽기용 이름(줄 글과 다를 때, 예: '메모로 저장') */
+  tipLabel?: string
   run: (el: Element | null) => void
 }
 
-const SPACE_DESC: Record<SpacePath, string> = {
-  '/': '지금 무엇을 하면 되는지 한 문장으로',
-  '/notes': '이어서 쓰기 · 과목 책등 · 최근 노트',
-  '/map': '노트와 개념이 이어진 별자리',
-  '/review': '오늘 복습할 카드',
-  '/plan': '이번 주 시간표 · 과제 · 시험',
-  '/focus': '25분 집중 · 은하 시계',
-}
 
 const THEME_LABEL: Record<ThemePref, string> = { dark: '밤', light: '낮', system: '시스템' }
 const MOTION_LABEL: Record<MotionLevel, string> = { rich: '풍부', calm: '절제', off: '정지' }
@@ -182,39 +163,33 @@ function Palette() {
   const items = useMemo<Item[]>(() => {
     const list: Item[] = []
     const q = query.trim()
-    const recentFor = (s: Subject | null) => (s ? notes.find((n) => n.subjectId === s.id) ?? null : null)
 
     // ---- 해석된 동작 ----
     const p = parsed
     const sb = p.subject
     if (q && p.intent === 'focus') {
       const mn = p.minutes ?? 25
-      const note = recentFor(sb)
       list.push({
         id: 'act-focus', group: '동작', label: `${sb ? sb.name + ' ' : ''}${mn}분 집중 시작`,
-        sub: sb && note ? `‘${note.title}’ 곁에서 숨 고르기 → ${mn}분` : `${mn}분 집중 → 휴식 5분${sb ? '' : ' · 과목 없이'}`,
         icon: <IconFocus size={17} />, color: colorOf(sb) ?? 'var(--accent)',
-        preview: { kind: 'focus', minutes: mn, subject: sb, note },
         run: (el) => after(() => { ui().setFocusIntent({ minutes: mn, subjectId: sb?.id ?? null, autostart: true }); void go('/focus', el) }),
       })
     } else if (q && p.intent === 'review') {
       list.push({
-        id: 'act-review', group: '동작', label: sb ? `${sb.name} 복습 시작` : '오늘 복습 시작', sub: 'FSRS 순서대로 한 장씩',
-        icon: <IconReview size={17} />, color: colorOf(sb) ?? 'var(--accent)', preview: { kind: 'review', subject: sb },
+        id: 'act-review', group: '동작', label: sb ? `${sb.name} 복습 시작` : '오늘 복습 시작',
+        icon: <IconReview size={17} />, color: colorOf(sb) ?? 'var(--accent)',
         run: (el) => after(() => { ui().setReviewIntent(true); void go('/review', el) }),
       })
     } else if (q && p.intent === 'task') {
       const due = resolveDue(p.due, now)
-      const d = due ? ddayOf(now, due) : null
       list.push({
         id: 'act-task', group: '동작', label: `과제 추가 · ${sb ? sb.name : '과목 미정'}`,
-        sub: `마감 ${due ? `${weekdayShort(due.getDay())}요일 ${fmtHM(due)}` : '날짜 미정'}${d !== null ? ' · ' + fmtDday(d) : ''}`,
-        icon: <IconPlan size={17} />, color: colorOf(sb) ?? 'var(--warning)', preview: { kind: 'task', subject: sb, due },
+        icon: <IconPlan size={17} />, color: colorOf(sb) ?? 'var(--warning)',
         run: () => after(async () => {
           const t = Date.now()
           try {
             await db.tasks.add({ id: uid('task-'), subjectId: sb?.id ?? null, kind: 'assignment', title: `${sb ? sb.name + ' ' : ''}과제`, dueAt: (due ?? new Date(t + 7 * 86_400_000)).getTime(), done: 0, createdAt: t, updatedAt: t })
-            ui().showToast('과제 추가 · 계획', colorOf(sb))
+            ui().showToast('과제 추가')
           } catch {
             ui().showToast('과제 저장 실패')
           }
@@ -222,29 +197,28 @@ function Palette() {
       })
     } else if (q && p.intent === 'new') {
       list.push({
-        id: 'act-new', group: '동작', label: `새 노트${sb ? ' · ' + sb.name : ''}`, sub: '문서 · / 블록 · [[ 링크',
-        icon: <IconDoc size={17} />, color: colorOf(sb), preview: { kind: 'new', subject: sb },
+        id: 'act-new', group: '동작', label: `새 노트${sb ? ' · ' + sb.name : ''}`,
+        icon: <IconDoc size={17} />, color: colorOf(sb),
         run: (el) => after(() => void newNoteAndOpen(sb?.id ?? null, el)),
       })
     } else if (q && p.intent === 'theme' && p.theme) {
       const pref = p.theme
       list.push({
-        id: 'act-theme', group: '동작', label: `테마: ${THEME_LABEL[pref]}`, sub: '원형으로 번지며 바뀌어요',
-        icon: <IconTheme size={17} />, preview: { kind: 'theme', pref },
+        id: 'act-theme', group: '동작', label: `테마: ${THEME_LABEL[pref]}`,
+        icon: <IconTheme size={17} />,
         run: (el) => after(() => switchTheme(pref, setTheme, { origin: el, animate: motionLevel !== 'off' })),
       })
     } else if (q && p.intent === 'motion' && p.motion) {
       const lv = p.motion
       list.push({
-        id: 'act-motion', group: '동작', label: `모션: ${MOTION_LABEL[lv]}`, sub: '결 필드와 화면 전환에 바로 적용',
-        icon: <IconMotion size={17} />, preview: { kind: 'motion', level: lv },
+        id: 'act-motion', group: '동작', label: `모션: ${MOTION_LABEL[lv]}`,
+        icon: <IconMotion size={17} />,
         run: () => after(() => { setMotion(lv); ui().showToast(`모션: ${MOTION_LABEL[lv]}`) }),
       })
     } else if (q && sb && !p.intent) {
-      const note = recentFor(sb)
       list.push({
-        id: 'act-subject-focus', group: '동작', label: `${sb.name} 25분 집중`, sub: `숫자를 붙이면 시간이 바뀌어요 · 예: ${sb.short} 50분`,
-        icon: <IconFocus size={17} />, color: colorOf(sb), preview: { kind: 'focus', minutes: 25, subject: sb, note },
+        id: 'act-subject-focus', group: '동작', label: `${sb.name} 25분 집중`,
+        icon: <IconFocus size={17} />, color: colorOf(sb),
         run: (el) => after(() => { ui().setFocusIntent({ minutes: 25, subjectId: sb.id, autostart: true }); void go('/focus', el) }),
       })
     }
@@ -253,14 +227,14 @@ function Palette() {
     SPACES.forEach((s) => {
       const Icon = s.icon
       list.push({
-        id: 'go-' + s.path, group: '이동', label: s.name, sub: SPACE_DESC[s.path], keywords: s.keywords,
-        icon: <Icon size={17} />, preview: { kind: 'go', path: s.path },
+        id: 'go-' + s.path, group: '이동', label: s.name, keywords: s.keywords,
+        icon: <Icon size={17} />,
         run: (el) => after(() => void go(s.path, el)),
       })
     })
     list.push({
-      id: 'go-settings', group: '이동', label: '설정', sub: '지금 장소 위에 시트로 · ⌘,', keywords: ['settings', '설정', '테마', '모션', '환경', '회전'],
-      icon: <IconMore size={17} />, preview: { kind: 'settings' },
+      id: 'go-settings', group: '이동', label: '설정', keywords: ['settings', '설정', '테마', '모션', '환경', '회전'],
+      icon: <IconMore size={17} />,
       // 팔레트가 다 물러난 뒤(닫힘 연출 260ms + 포커스 복귀) 연다 — 시트가 포커스를 받게
       run: () => { close(); setTimeout(() => ui().openSettings(origin), motionLevel === 'off' ? 0 : 320) },
     })
@@ -268,72 +242,72 @@ function Palette() {
     // ---- 명령 ----
     ;(['dark', 'light', 'system'] as ThemePref[]).forEach((pref) =>
       list.push({
-        id: 'theme-' + pref, group: '명령', label: `테마: ${THEME_LABEL[pref]}`, sub: pref === themePref ? '지금 쓰는 테마' : '원형으로 번지며 바뀌어요',
+        id: 'theme-' + pref, group: '명령', label: `테마: ${THEME_LABEL[pref]}`,
         keywords: ['테마', 'theme', pref === 'dark' ? '어둡게' : pref === 'light' ? '밝게' : 'os'],
-        icon: <IconTheme size={17} />, preview: { kind: 'theme', pref },
+        icon: <IconTheme size={17} />,
         run: (el) => after(() => switchTheme(pref, setTheme, { origin: el, animate: motionLevel !== 'off' })),
       }),
     )
     ;(['rich', 'calm', 'off'] as MotionLevel[]).forEach((lv) =>
       list.push({
-        id: 'motion-' + lv, group: '명령', label: `모션: ${MOTION_LABEL[lv]}`, sub: lv === 'rich' ? '결이 살아 움직여요 (기본)' : lv === 'calm' ? '느리게, 위치 이동 없이' : '정지 화면 · 즉시 전환',
+        id: 'motion-' + lv, group: '명령', label: `모션: ${MOTION_LABEL[lv]}`,
         keywords: ['모션', 'motion', '움직임', '애니메이션'],
-        icon: <IconMotion size={17} />, preview: { kind: 'motion', level: lv },
+        icon: <IconMotion size={17} />,
         run: () => after(() => { setMotion(lv); ui().showToast(`모션: ${MOTION_LABEL[lv]}`) }),
       }),
     )
     ;(['fly', 'short', 'off'] as const).forEach((tv) =>
       list.push({
         id: 'travel-' + tv, group: '명령', label: `공간 이동 ${{ fly: '비행', short: '짧게', off: '끔' }[tv]}`, keywords: ['공간 이동', '비행', '카메라', 'travel'],
-        icon: <IconMotion size={17} />, preview: { kind: 'motion', level: tv === 'off' ? 'off' : 'rich' },
+        icon: <IconMotion size={17} />,
         run: () => after(() => { setTravel(tv); ui().showToast(`공간 이동 ${{ fly: '비행', short: '짧게', off: '끔' }[tv]}`) }),
       }),
     )
     ;(['on', 'slow', 'off'] as const).forEach((rv) =>
       list.push({
         id: 'rotation-' + rv, group: '명령', label: `은하 회전 ${{ on: '켬', slow: '느리게', off: '끔' }[rv]}`, keywords: ['은하 회전', '회전', '공전', 'rotation'],
-        icon: <IconMotion size={17} />, preview: { kind: 'motion', level: rv === 'off' ? 'off' : rv === 'slow' ? 'calm' : 'rich' },
+        icon: <IconMotion size={17} />,
         run: () => after(() => { setRotation(rv); ui().showToast(`은하 회전 ${{ on: '켬', slow: '느리게', off: '끔' }[rv]}`) }),
       }),
     )
     list.push({
-      id: 'cmd-focus25', group: '명령', label: '25분 집중', sub: '과목 없이 바로 시작', keywords: ['집중', '뽀모도로', 'pomodoro', '타이머'],
-      icon: <IconFocus size={17} />, color: 'var(--accent)', preview: { kind: 'focus', minutes: 25, subject: null, note: null },
+      id: 'cmd-focus25', group: '명령', label: '25분 집중', keywords: ['집중', '뽀모도로', 'pomodoro', '타이머'],
+      icon: <IconFocus size={17} />, color: 'var(--accent)',
       run: (el) => after(() => { ui().setFocusIntent({ minutes: 25, subjectId: null, autostart: true }); void go('/focus', el) }),
     })
 
     // ---- 과목 렌즈 ----
     list.push({
-      id: 'lens-all', group: '과목 렌즈', label: '전체', sub: '렌즈 끄기', keywords: ['렌즈', 'lens', '모든 과목'],
-      icon: <span className="pal-dot" style={{ background: 'var(--text-3)' }} />, preview: { kind: 'lens', subject: null },
-      run: () => after(() => { setLens(null); ui().showToast('렌즈를 껐어요 · 모든 과목') }),
+      id: 'lens-all', group: '과목 렌즈', label: '전체', tipLabel: '과목 렌즈', keywords: ['렌즈', 'lens', '모든 과목'],
+      icon: <i className="sdot is-lg is-none" />,
+      run: () => after(() => { setLens(null); ui().showToast('렌즈 끔') }),
     })
     subjects.forEach((s) =>
       list.push({
-        id: 'lens-' + s.id, group: '과목 렌즈', label: s.name, sub: '앱 전체를 이 과목으로 좁혀요', keywords: ['렌즈', 'lens', ...s.aliases],
-        icon: <span className="pal-dot" style={{ background: `var(--s-${s.color})` }} />, color: `var(--s-${s.color})`, preview: { kind: 'lens', subject: s },
-        run: () => after(() => { setLens(s.id); ui().showToast(`${s.name} 렌즈 · 필드가 이 과목 색으로 물들어요`, `var(--s-${s.color})`) }),
+        id: 'lens-' + s.id, group: '과목 렌즈', label: s.name, tipLabel: '과목 렌즈', keywords: ['렌즈', 'lens', ...s.aliases],
+        icon: <i className="sdot is-lg" style={{ ['--c' as string]: `var(--s-${s.color})` }} />, color: `var(--s-${s.color})`,
+        run: () => after(() => { setLens(s.id); ui().showToast(`렌즈 ${s.name}`) }),
       }),
     )
 
     // ---- 노트 · 별가루 명령 ----
     list.push({
-      id: 'cmd-new-note', group: '명령', label: '새 노트', sub: '문서 · / 블록 · [[ 링크', keywords: ['새 노트', '노트 만들기', 'new note', '문서'],
-      icon: <IconDoc size={17} />, preview: { kind: 'new', subject: null },
+      id: 'cmd-new-note', group: '명령', label: '새 노트', keywords: ['새 노트', '노트 만들기', 'new note', '문서'],
+      icon: <IconDoc size={17} />,
       run: (el) => after(() => void newNoteAndOpen(null, el)),
     })
     list.push({
-      id: 'cmd-dust', group: '이동', label: '별가루', sub: '1초 메모 모음 · 노트로 · 할 일로 · 보관', keywords: ['별가루', '메모', '메모함', 'inbox', 'dust', '별가루함'],
-      icon: <span className="pal-dot pal-dust" />, preview: { kind: 'dust' },
+      id: 'cmd-dust', group: '이동', label: '별가루', keywords: ['별가루', '메모', '메모함', 'inbox', 'dust', '별가루함'],
+      icon: <IconDust size={17} />,
       run: (el) => after(() => openDust(el)),
     })
 
     const noteRow = (n: Note, hit?: Hit): Item => {
       const s = subjOf(n.subjectId)
       return {
-        id: 'note-' + n.id, group: '노트', label: n.title || '제목 없음', range: hit?.titleRange ?? null,
-        meta: `${s?.short ?? '과목 없음'} · ${fmtMD(n.updatedAt)}`, snippet: hit?.field === 'body' ? hit.snippet : null,
-        icon: <NoteIcon kind={n.kind} />, color: colorOf(s), preview: { kind: 'note', note: n, subject: s },
+        id: 'note-' + n.id, group: '노트', label: n.title.trim() || fmtMD(n.createdAt), range: n.title.trim() ? (hit?.titleRange ?? null) : null,
+        meta: { dot: s ? `var(--s-${s.color})` : null, text: fmtMD(n.updatedAt) }, snippet: hit?.field === 'body' ? hit.snippet : null,
+        icon: <NoteIcon kind={n.kind} />, color: colorOf(s), note: n,
         run: (el) => after(() => { ui().setNoteFocusId(n.id); sky.glintNotes([n.id]); void go('/notes', el) }),
       }
     }
@@ -383,16 +357,16 @@ function Palette() {
       const s = subjOf(h.subjectId)
       return {
         id: 'memo-' + h.id, group: '메모', label: h.title, range: h.titleRange,
-        meta: `${s?.short ? s.short + ' · ' : ''}${fmtMD(h.updatedAt)}`, snippet: h.field === 'body' ? h.snippet : null,
-        icon: <span className="pal-dot pal-dust" />, color: colorOf(s), preview: { kind: 'memo', text: h.title, subject: s },
+        meta: { dot: s ? `var(--s-${s.color})` : null, text: fmtMD(h.updatedAt) }, snippet: h.field === 'body' ? h.snippet : null,
+        icon: <IconDust size={17} />, color: colorOf(s),
         run: (el) => after(() => openDust(el)),
       }
     })
 
     // ④ 늘 마지막: 메모로 저장
     const save: Item = {
-      id: 'save-memo', group: '메모', label: `메모로 저장 · ‘${q}’`,
-      icon: <IconPlus size={17} />, color: 'var(--accent)', preview: { kind: 'save', text: q },
+      id: 'save-memo', group: '메모', label: `‘${q}’`, tipLabel: '메모로 저장',
+      icon: <IconDust size={17} />, color: 'var(--accent)',
       run: () => {
         close()
         void saveMemo(q)
@@ -400,7 +374,7 @@ function Palette() {
     }
     // 노트 제목과 정확히(없으면 앞부분이) 맞으면 그 노트가 늘 첫 줄
     const ql = q.toLowerCase()
-    const titleOf = (it: Item) => (it.preview.kind === 'note' ? it.preview.note.title : it.label).trim().toLowerCase()
+    const titleOf = (it: Item) => (it.note ? it.note.title : it.label).trim().toLowerCase()
     const lead = noteHits.find((it) => titleOf(it) === ql) ?? noteHits.find((it) => titleOf(it).startsWith(ql))
     const rows = [...(lead ? [lead] : []), ...strongHead, ...noteHits.filter((it) => it !== lead), ...memoHits, ...weakHead]
     // 8줄 고정: 마지막 줄은 늘 '메모로 저장'
@@ -408,22 +382,27 @@ function Palette() {
   }, [query, parsed, subjects, notes, now, themePref, motionLevel, indexVer, sky])
 
   const selected = items.find((it) => it.id === value) ?? items[0]
-  // 노트 미리보기 = 본문 앞 2줄. 본문이 없으면 미리보기 칸을 숨긴다
-  const selNoteId = selected?.preview.kind === 'note' ? selected.preview.note.id : null
+  // 미리보기 칸 = 노트를 고를 때만, 본문 앞 3줄(데이터). 본문이 없거나 노트가 아니면 칸이 없다(리더 결정 5)
+  const selNoteId = selected?.note?.id ?? null
   const pvText = useLiveQuery(async () => (selNoteId ? ((await db.noteBodies.get(selNoteId))?.text ?? '') : null), [selNoteId])
-  const pvLines = pvText ? pvText.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 2) : []
-  const showPv = !phone && !!selected && (!selNoteId || pvLines.length > 0)
+  const pvLines = pvText ? pvText.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 3) : []
+  const showPv = !phone && !!selected?.note && pvLines.length > 0
 
-  const chips: Array<{ k: string; v: string; c?: string }> = []
+  // 해석 칩 = 아이콘 + 값(머리말 없음): 과목 점 물리 · ◷ 25 · ⚑ 금 18:00
+  const chips: Array<{ k: string; icon: ReactNode; v: string }> = []
   if (query.trim()) {
-    if (parsed.cho) chips.push({ k: '초성', v: parsed.text, c: 'var(--info)' })
-    if (parsed.subject) chips.push({ k: '과목', v: parsed.subject.name, c: `var(--s-${parsed.subject.color})` })
-    if (parsed.minutes !== null && parsed.intent === 'focus') chips.push({ k: '시간', v: `${parsed.minutes}분`, c: 'var(--accent)' })
-    if (parsed.due && (parsed.due.day || parsed.due.time))
-      chips.push({ k: '마감', v: `${parsed.due.day ? (parsed.due.day.length === 1 ? parsed.due.day + '요일' : parsed.due.day) : ''} ${parsed.due.time ?? ''}`.trim(), c: 'var(--warning)' })
-    const intentName = parsed.intent ? { focus: '집중 시작', review: '복습', task: '과제 추가', new: '새 노트', theme: '테마', motion: '모션' }[parsed.intent] : null
-    if (intentName) chips.push({ k: '동작', v: intentName })
+    if (parsed.subject) chips.push({ k: '과목', icon: <i className="sdot" style={{ ['--c' as string]: `var(--s-${parsed.subject.color})` }} />, v: parsed.subject.name })
+    if (parsed.minutes !== null && parsed.intent === 'focus') chips.push({ k: '시간', icon: <IconFocus size={14} />, v: String(parsed.minutes) })
+    if (parsed.due && (parsed.due.day || parsed.due.time)) chips.push({ k: '마감', icon: <IconFlag size={14} />, v: `${parsed.due.day ?? ''} ${parsed.due.time ?? ''}`.trim() })
   }
+
+  // 처음 3번만: 자리표시 예시 '물리 25분' + 아래 키 안내(design-quiet 1-9 · H8). 그 뒤엔 빈 칸 + ⌕, esc 하나
+  const example = useHintCount('cmdk-example', 3)
+  const [showExample] = useState(example.fresh)
+  const bumpExample = example.bump
+  useEffect(() => {
+    if (showExample) bumpExample()
+  }, [showExample, bumpExample])
 
   const runSelected = (id: string) => {
     const it = items.find((x) => x.id === id)
@@ -479,20 +458,19 @@ function Palette() {
               ref={inputRef}
               value={query}
               onValueChange={setQuery}
-              placeholder="무엇을 할까요? 예: 물리 25분"
+              placeholder={showExample ? '물리 25분' : undefined}
               onKeyDown={(e) => {
                 // 한글 조합 중 Enter는 무시 (IME 보호)
                 if (e.key === 'Enter' && (e.nativeEvent.isComposing || e.keyCode === 229)) e.stopPropagation()
               }}
             />
-            <button type="button" className="kbd pal-esc" onClick={close} aria-label="닫기">esc</button>
+            <button type="button" className="kbd pal-esc" onClick={close} {...tip('닫기')}>esc</button>
           </div>
           {chips.length > 0 && (
             <div className="pal-parse" aria-live="polite">
-              <span className="pal-parse-k">이렇게 읽었어요</span>
               {chips.map((c, i) => (
-                <span key={c.k + i} className="tok" style={{ ['--c' as string]: c.c ?? 'var(--text-2)' }}>
-                  <em>{c.k}</em>
+                <span key={c.k + i} className="tok" aria-label={`${c.k} ${c.v}`}>
+                  {c.icon}
                   {c.v}
                 </span>
               ))}
@@ -500,33 +478,41 @@ function Palette() {
           )}
           <div className={`pal-body${showPv ? '' : ' no-pv'}`}>
             <Command.List className="pal-list" label="결과">
-              {items.length === 0 && (
-                <div className="pal-empty" role="status">
-                  결과 없음 · 예: 물리 25분
-                </div>
-              )}
               {items.map((it) => (
-                <Command.Item key={it.id} value={it.id} data-id={it.id} onSelect={runSelected} className={`pal-item pal-k-${it.group === '최근' ? 'note' : it.id.split('-')[0]}`} style={{ ['--c' as string]: it.color ?? 'var(--text-2)' }}>
+                <Command.Item
+                  key={it.id}
+                  value={it.id}
+                  data-id={it.id}
+                  onSelect={runSelected}
+                  className={`pal-item pal-k-${it.group === '최근' ? 'note' : it.id.split('-')[0]}`}
+                  style={{ ['--c' as string]: it.color ?? 'var(--text-2)' }}
+                  {...(it.tipLabel ? { 'aria-label': `${it.tipLabel} ${it.label}`, 'data-tip': it.tipLabel } : {})}
+                >
                   <span className="pal-ic">{it.icon}</span>
                   <span className="pal-txt">
                     <span className="pal-label">
                       <Highlight text={it.label} range={it.range} />
                     </span>
-                    {it.snippet ? (
+                    {it.snippet && (
                       <small className="pal-snip">
                         <Highlight text={it.snippet.text} range={it.snippet.range} />
                       </small>
-                    ) : it.sub && !it.meta ? (
-                      <small>{it.sub}</small>
-                    ) : null}
+                    )}
                   </span>
-                  {it.meta ? <span className="pal-meta">{it.meta}</span> : <span className="pal-hint" aria-hidden="true">↵</span>}
+                  {it.meta ? (
+                    <span className="pal-meta">
+                      <i className={`sdot${it.meta.dot ? '' : ' is-none'}`} style={it.meta.dot ? { ['--c' as string]: it.meta.dot } : undefined} aria-hidden="true" />
+                      {it.meta.text}
+                    </span>
+                  ) : (
+                    <span className="pal-hint" aria-hidden="true">↵</span>
+                  )}
                 </Command.Item>
               ))}
             </Command.List>
-            {showPv && selected && <PreviewPane key={selected.id} p={selected.preview} lines={pvLines} />}
+            {showPv && selected?.note && <NotePreview key={selected.id} note={selected.note} color={selected.meta?.dot ?? null} lines={pvLines} />}
           </div>
-          {!phone && (
+          {!phone && showExample && (
             <div className="pal-foot" aria-hidden="true">
               <span><span className="kbd">↑</span><span className="kbd">↓</span> 이동</span>
               <span><span className="kbd">↵</span> 실행</span>
@@ -540,137 +526,20 @@ function Palette() {
   )
 }
 
-function PreviewPane({ p, lines = [] }: { p: Preview; lines?: string[] }) {
-  let body: ReactNode = null
-  if (p.kind === 'go') {
-    const s = SPACES.find((x) => x.path === p.path)!
-    const Icon = s.icon
-    body = (
-      <>
-        <p className="pv-k">미리보기 · 이동</p>
-        <div className="pv-space"><Icon size={28} /></div>
-        <p className="pv-title">{s.name}</p>
-        <p className="pv-tag">{SPACE_DESC[p.path]}</p>
-        <p className="pv-tag">은하 속 그 장소로 날아가요</p>
-      </>
-    )
-  } else if (p.kind === 'settings') {
-    body = (
-      <>
-        <p className="pv-k">미리보기 · 설정</p>
-        <div className="pv-space"><IconMore size={28} /></div>
-        <p className="pv-title">설정</p>
-        <p className="pv-tag">테마 · 움직임 · 은하 회전 · 데이터</p>
-        <p className="pv-tag">은하는 날지 않고 어두워져요</p>
-      </>
-    )
-  } else if (p.kind === 'focus') {
-    const c = p.subject ? `var(--s-${p.subject.color})` : 'var(--accent)'
-    body = (
-      <>
-        <p className="pv-k">미리보기 · 집중</p>
-        <div className="pv-ring">
-          <svg viewBox="0 0 100 100" width="84" height="84" aria-hidden="true">
-            <circle cx="50" cy="50" r="44" fill="none" stroke="var(--surface-3)" strokeWidth="3" />
-            <circle cx="50" cy="50" r="44" fill="none" stroke={c} strokeWidth="3" strokeLinecap="round" strokeDasharray="276.5" strokeDashoffset="0" transform="rotate(-90 50 50)" />
-          </svg>
-          <span className="mono">{String(p.minutes).padStart(2, '0')}:00</span>
-        </div>
-        <p className="pv-title">{p.subject ? p.subject.name : '자유 집중'}</p>
-        <ol className="pv-steps">
-          <li>{p.note ? `‘${p.note.title}’ 곁에서` : '빈 집중 화면'}</li>
-          <li>숨 고르기 — 화면이 한 번 어두워짐</li>
-          <li>{p.minutes}분 뒤 휴식 5분</li>
-        </ol>
-      </>
-    )
-  } else if (p.kind === 'review') {
-    body = (
-      <>
-        <p className="pv-k">미리보기 · 복습</p>
-        <p className="pv-title">{p.subject ? `${p.subject.name} 카드` : '오늘 복습 카드'}</p>
-        <div className="pv-seg"><i style={{ background: 'var(--s-phys)', flex: 6 }} /><i style={{ background: 'var(--s-math)', flex: 4 }} /><i style={{ background: 'var(--s-eng)', flex: 3 }} /></div>
-        <ol className="pv-steps"><li>한 장씩 떠올리고 뒤집기</li><li>기억한 만큼 평가 → 다음 날짜가 정해져요</li></ol>
-      </>
-    )
-  } else if (p.kind === 'task') {
-    const d = p.due ? ddayOf(new Date(), p.due) : null
-    body = (
-      <>
-        <p className="pv-k">미리보기 · 계획</p>
-        <p className="pv-title">{p.subject ? p.subject.name : '과목 미정'} 과제</p>
-        <p className="pv-dday">{d !== null ? fmtDday(d) : 'D-?'}</p>
-        <ol className="pv-steps"><li>계획의 시간 띠에 놓여요</li><li>오늘 화면에 D-day가 나타나요</li></ol>
-      </>
-    )
-  } else if (p.kind === 'theme') {
-    body = (
-      <>
-        <p className="pv-k">미리보기 · 테마</p>
-        <p className="pv-title">{THEME_LABEL[p.pref]}</p>
-        <div className="pv-swatch">
-          <i style={{ background: '#0B0C0E', borderColor: '#3A3F47', opacity: p.pref === 'light' ? 0.4 : 1 }} />
-          <i style={{ background: '#F6F4EF', borderColor: '#C7C1B5', opacity: p.pref === 'dark' ? 0.4 : 1 }} />
-        </div>
-        <p className="pv-tag">{p.pref === 'system' ? '기기 설정을 따라가요' : '누른 자리에서 원형으로 번져요'}</p>
-      </>
-    )
-  } else if (p.kind === 'motion') {
-    body = (
-      <>
-        <p className="pv-k">미리보기 · 움직임</p>
-        <p className="pv-title">{MOTION_LABEL[p.level]}</p>
-        <p className="pv-tag">{p.level === 'rich' ? '물결·와이프·숨 쉬는 대기까지 모두' : p.level === 'calm' ? '속도 0.3배, opacity만 200ms 이하' : '정지 프레임 한 장, 모든 전환 즉시'}</p>
-      </>
-    )
-  } else if (p.kind === 'lens') {
-    body = (
-      <>
-        <p className="pv-k">미리보기 · 과목 렌즈</p>
-        <p className="pv-title" style={{ color: p.subject ? `var(--s-${p.subject.color})` : undefined }}>{p.subject ? p.subject.name : '전체'}</p>
-        <p className="pv-tag">{p.subject ? '노트 · 카드 · 마감이 이 과목으로 좁혀지고, 옹이 주변이 과목색으로 물들어요' : '모든 과목을 다시 보여 줘요'}</p>
-      </>
-    )
-  } else if (p.kind === 'note') {
-    body = (
-      <>
-        <p className="pv-k">미리보기 · 노트</p>
-        <p className="pv-title">{p.note.title}</p>
-        <p className="pv-tag"><i className="pal-dot" style={{ background: p.subject ? `var(--s-${p.subject.color})` : 'var(--text-3)' }} /> {p.subject?.name ?? '과목 없음'}</p>
-        {lines.map((l, i) => (
-          <p key={i} className="pv-body">{l}</p>
-        ))}
-      </>
-    )
-  } else if (p.kind === 'new') {
-    body = (
-      <>
-        <p className="pv-k">미리보기 · 새 노트</p>
-        <p className="pv-title">새 노트{p.subject ? ` · ${p.subject.name}` : ''}</p>
-        <p className="pv-tag">/ 블록 · [[ 링크</p>
-      </>
-    )
-  } else if (p.kind === 'memo' || p.kind === 'save') {
-    body = (
-      <>
-        <p className="pv-k">{p.kind === 'memo' ? '미리보기 · 별가루' : '메모로 저장'}</p>
-        <p className="pv-title pv-memo">{p.text}</p>
-        <p className="pv-tag">{p.kind === 'memo' ? '별가루함에서 노트로 · 할 일로 · 보관' : 'Enter · 하늘에 별가루 한 점'}</p>
-      </>
-    )
-  } else if (p.kind === 'dust') {
-    body = (
-      <>
-        <p className="pv-k">미리보기 · 별가루</p>
-        <p className="pv-title">별가루</p>
-        <p className="pv-tag">1초 메모 모음</p>
-      </>
-    )
-  }
+/** 미리보기 칸: 노트 제목 + 과목 점 + 본문 앞 3줄(데이터만) */
+function NotePreview({ note, color, lines }: { note: Note; color: string | null; lines: string[] }) {
   return (
     <aside className="pal-preview" aria-label="미리보기">
-      <div className="pv-anim">{body}</div>
-      <IconArrow size={16} className="pv-arrow" />
+      <div className="pv-anim">
+        <p className="pv-title">
+          <i className={`sdot${color ? '' : ' is-none'}`} style={color ? { ['--c' as string]: color } : undefined} aria-hidden="true" /> {note.title.trim() || fmtMD(note.createdAt)}
+        </p>
+        {lines.map((l, i) => (
+          <p key={i} className="pv-body">
+            {l}
+          </p>
+        ))}
+      </div>
     </aside>
   )
 }

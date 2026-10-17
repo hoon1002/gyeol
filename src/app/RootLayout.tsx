@@ -26,6 +26,7 @@ import { PlanScreen } from '@/screens/Plan'
 import { FocusScreen } from '@/screens/Focus'
 import { useUi } from '@/stores/ui'
 import { MemoSheet } from '@/capture/MemoSheet'
+import { TipLayer } from '@/shell/Tip'
 import { DustSheet } from '@/capture/DustBox'
 import { CaptureSky } from '@/capture/CaptureSky'
 import { Onboarding } from '@/onboarding/Onboarding'
@@ -200,6 +201,7 @@ export function RootLayout() {
           <SettingsSheet />
           <CommandPalette />
           <Toaster />
+          <TipLayer />
         </div>
       </MotionConfig>
     </FieldProvider>

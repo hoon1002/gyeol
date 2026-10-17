@@ -10,8 +10,13 @@ import { useSubjects } from '@/db/hooks'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import { useEffectiveMotion, useGo, useIsPhone, useIsRail, isTypingTarget } from './hooks'
-import { IconChevron, IconCmd, IconMore, IconPlus, IconSearch, Symbol } from './icons'
+import { IconCmd, IconMore, IconPlus, IconSearch, Symbol } from './icons'
 import { openMemoFromButton } from '@/capture/MemoSheet'
+import { tip } from './Tip'
+import { Hint, HINT_ART } from './Hint'
+
+/** H7: 데스크톱(pointer: fine)은 N 키 그림, 터치는 ＋ 톡 그림 */
+const plusArt = HINT_ART.H7
 import { SPACES, spaceOf, type SpacePath } from './spaces'
 
 function usePath(): string {
@@ -51,18 +56,13 @@ export function TopBar() {
       </div>
       <LensPill />
       <div className="topbar-right">
-        <button type="button" className="cmdk-wide" onClick={(e) => openPalette('', e.currentTarget)}>
-          <IconSearch size={16} />
-          <span className="sr-only">검색·명령</span>
-          <span className="kbd-pair" aria-hidden="true"><span className="kbd">⌘</span><span className="kbd">K</span></span>
-        </button>
-        <button type="button" className="icon-btn cmdk-small" aria-label="검색·명령 열기 (⌘K)" onClick={(e) => openPalette('', e.currentTarget)}>
-          <IconCmd size={19} />
+        <button type="button" className="icon-btn cmdk-one" {...tip('검색', { kbd: '⌘K' })} onClick={(e) => openPalette('', e.currentTarget)}>
+          <IconSearch size={19} />
         </button>
         <button
           type="button"
           className="icon-btn more-btn"
-          aria-label="설정 (⌘,)"
+          {...tip('설정', { kbd: '⌘,' })}
           aria-haspopup="dialog"
           aria-expanded={settingsOpen}
           onClick={(e) => openSettings(e.currentTarget)}
@@ -143,12 +143,11 @@ function LensPill() {
         className="lens-pill"
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`과목 렌즈: ${current?.name ?? '전체'}`}
+        {...tip(`과목 렌즈 · ${current?.short ?? '전체'}`)}
         onClick={() => setOpen(!open)}
       >
-        <i style={{ background: current ? `var(--s-${current.color})` : 'var(--text-3)' }} />
-        <span>{current?.short ?? '전체'}</span>
-        <IconChevron size={14} />
+        <i className={`sdot is-lg${current ? '' : ' is-none'}`} style={current ? { ['--c' as string]: `var(--s-${current.color})` } : undefined} />
+        <Hint id="H9" side="bottom" />
       </button>
       <AnimatePresence>
         {open &&
@@ -165,7 +164,6 @@ function LensPill() {
                 transition={{ duration: off ? 0 : 0.32, ease: [0.22, 1, 0.36, 1] }}
               >
                 <span className="sheet-grip" aria-hidden="true" />
-                <p className="sheet-title">과목 렌즈</p>
                 {list}
               </motion.div>
             </motion.div>
@@ -199,9 +197,9 @@ export function Dock() {
   const nav = useLinkNav()
   const here = rail ? path : (PHONE_HOME[path] ?? path)
   const plus = (
-    <button key="plus" type="button" className="dock-item dock-plus" aria-label="메모 (N)" onClick={(e) => openMemoFromButton(e.currentTarget)}>
+    <button key="plus" type="button" className="dock-item dock-plus" {...tip('메모', { kbd: 'N' })} onClick={(e) => openMemoFromButton(e.currentTarget, (e.nativeEvent as PointerEvent).pointerType)}>
       <IconPlus size={22} />
-      <span className="dock-label" aria-hidden="true">메모 <span className="kbd">N</span></span>
+      <Hint id="H7" art={plusArt} />
     </button>
   )
   // 폰 독: 오늘 · 노트 · ＋ · 복습 · 집중 (＋가 가운데), 레일: 장소 6 아래 맨 끝에 ＋
@@ -214,11 +212,10 @@ export function Dock() {
             href={s.path}
             className={`dock-item${s.phoneDock ? '' : ' dock-rail-only'}`}
             aria-current={on ? 'page' : undefined}
-            aria-label={s.name}
+            {...tip(s.name)}
             onClick={nav(s.path)}
           >
             <Icon size={22} />
-            <span className="dock-label" aria-hidden="true">{s.name}</span>
           </a>
         )
       })
@@ -228,43 +225,27 @@ export function Dock() {
     <nav className={`dock${hidden ? ' is-hidden' : ''}`} aria-label="장소" inert={hidden ? true : undefined}>
       {list}
       <span className="dock-sep dock-phone-only" aria-hidden="true" />
-      <button type="button" className="dock-item dock-phone-only" aria-label="검색·명령 (⌘K)" onClick={(e) => openPalette('', e.currentTarget)}>
+      <button type="button" className="dock-item dock-phone-only" {...tip('검색', { kbd: '⌘K' })} onClick={(e) => openPalette('', e.currentTarget)}>
         <IconCmd size={22} />
-        <span className="dock-label" aria-hidden="true">검색·명령 <span className="kbd">⌘K</span></span>
       </button>
     </nav>
   )
 }
 
-/* ---------- 토스트 ---------- */
+/* ---------- 토스트 → 스크린리더 알림 (design-quiet 0장: 토스트는 모두 뺀다) ---------- */
 
+/** useUi.showToast(…)는 그대로 부를 수 있다. 화면에는 보이지 않고 aria-live로 같은 말을 읽어 준다 */
 export function Toaster() {
   const toast = useUi((s) => s.toast)
   const clear = useUi((s) => s.clearToast)
-  const level = useEffectiveMotion()
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(clear, 2800)
     return () => clearTimeout(t)
   }, [toast, clear])
-  const off = level === 'off'
   return (
-    <div className="toast-wrap" role="status" aria-live="polite">
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            key={toast.id}
-            className="toast"
-            initial={{ opacity: 0, y: off ? 0 : -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: off ? 0 : -6 }}
-            transition={{ duration: off ? 0 : 0.26, ease: [0.22, 1, 0.36, 1] }}
-          >
-            {toast.color && <i style={{ background: toast.color }} aria-hidden="true" />}
-            {toast.text}
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div className="sr-only" role="status" aria-live="polite">
+      {toast?.text ?? ''}
     </div>
   )
 }

@@ -1,7 +1,8 @@
 /**
- * 노트 (design-m1 2-1 → design-m2 3·5·6장): 노트 / 38개 · 물리 12 / [새 노트] + 찾기 칸 + 오늘 수업 노트 + 목록,
- * 고른 노트는 종이(편집기). 가로 = 목록 열(글 구역 첫째) + 종이(둘째), 세로·폰 = 한 칸에서 목록 ↔ 종이(‹ 노트).
- * 편집기는 노트를 열 때 동적 import(첫 화면 번들 밖). 하늘: 노트 별 데이터(책등 위 점), 찾는 동안 glintNotes.
+ * 노트 (design-m2 3·5·6장 → design-quiet 1-5): 앱의 말 없이 [⌕ 찾기 칸 · 금빛 ＋] + 오늘 수업 노트 + 목록(종류 아이콘 · 과목 점 · 제목).
+ * 시간 · 개수 · 이름은 툴팁(길게)으로. 고른 노트는 종이(편집기). 가로 = 목록 열(글 구역 첫째) + 종이(둘째),
+ * 세로·폰 = 한 칸에서 목록 ↔ 종이(‹). 편집기는 노트를 열 때 동적 import(첫 화면 번들 밖).
+ * 하늘: 노트 별 데이터(책등 위 점), 찾는 동안 glintNotes.
  */
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -12,18 +13,35 @@ import { db, type CourseSlot, type Note, type Subject } from '@/db/schema'
 import { classKeyFor, createNote, findNoteByClassKey, openOrCreateNote, useNoteStars, useSkySubjects } from '@/db/notes'
 import { isIndexReady, searchAll, useSearchVersion, type Hit } from '@/search'
 import { matchText } from '@/lib/hangul'
-import { fmtAgo, hm, studyDayStart } from '@/lib/time'
+import { fmtAgo, fmtMD, hm, studyDayStart } from '@/lib/time'
 import { useSettings } from '@/stores/settings'
 import { useUi } from '@/stores/ui'
 import { useMediaQuery, isTypingTarget } from '@/shell/hooks'
 import { spaceOf } from '@/shell/spaces'
+import { tip } from '@/shell/Tip'
+import { IconBack, IconDeck, IconDoc, IconPdf, IconPen, IconPlus, IconSearch } from '@/shell/icons'
 import { Backlinks } from '@/editor/Backlinks'
 import { NotesMapToggle } from './Map'
-import { Actions, Block, EmptyState, FocusLines, Hero, PrimaryButton } from './parts'
+import { Hero } from './parts'
 
 const NotePaper = lazy(() => import('@/editor/NotePaper'))
 
 const KIND_NAME = { ink: '필기', doc: '문서', pdf: 'PDF', deck: '카드 덱' } as const
+const KIND_ICON = { ink: IconPen, doc: IconDoc, pdf: IconPdf, deck: IconDeck } as const
+
+/** 제목이 없으면 날짜(design-quiet: '제목 없음' → 10.17) */
+export const noteName = (n: Pick<Note, 'title' | 'createdAt'>) => n.title.trim() || fmtMD(n.createdAt)
+
+/** 종류 아이콘 12px + 과목 점 (목록 줄 머리) */
+function RowMark({ n, s }: { n: Note; s: Subject | undefined }) {
+  const K = KIND_ICON[n.kind]
+  return (
+    <span className="nl-mark" aria-hidden="true">
+      <K size={13} />
+      <i className={`sdot${s ? '' : ' is-none'}`} style={s ? { ['--c' as string]: `var(--s-${s.color})` } : undefined} />
+    </span>
+  )
+}
 const SKY = spaceOf('/notes')
 const LIST_MAX = 80
 
@@ -31,7 +49,6 @@ export function NotesScreen() {
   const notes = useNotes()
   const subjects = useSubjects() ?? []
   const lens = useSettings((s) => s.lens)
-  const setLens = useSettings((s) => s.setLens)
   const focusId = useUi((s) => s.noteFocusId)
   const setFocus = useUi((s) => s.setNoteFocusId)
   const active = useActive()
@@ -59,7 +76,6 @@ export function NotesScreen() {
   const alive = notes ?? []
   const list = alive.filter((n) => !lens || n.subjectId === lens)
   const subj = (id: string | null | undefined): Subject | undefined => subjects.find((s) => s.id === id)
-  const lensSubject = subj(lens)
   const today = useTodayClass(now, forceEmpty)
 
   // ----- 찾기 -----
@@ -114,6 +130,26 @@ export function NotesScreen() {
     return () => window.removeEventListener('keydown', onKey)
   }, [active])
 
+  // 세로·폰에서 노트를 읽는 중 Esc: 글을 쓰는 중이면 먼저 손을 떼고(blur), 한 번 더 누르면 목록으로
+  useEffect(() => {
+    if (!active || land || !focusId) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229) return
+      const ui = useUi.getState()
+      if (ui.paletteOpen || ui.settingsOpen) return
+      // 편집기 안: ProseMirror가 Esc를 늘 막으므로 defaultPrevented 대신 '제안 상자를 닫았나'만 본다
+      if (isTypingTarget(e.target)) {
+        if (!(e as KeyboardEvent & { gyeolHandled?: boolean }).gyeolHandled) (e.target as HTMLElement).blur()
+        return
+      }
+      if (e.defaultPrevented) return
+      e.preventDefault()
+      setFocus(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active, land, focusId, setFocus])
+
   // ----- 고른 노트: 가로는 없으면 맨 위, 세로·폰은 누른 것만 -----
   const focus: Note | undefined = (focusId ? byId.get(focusId) : undefined) ?? (land ? (today?.note ?? list[0]) : undefined)
   const open = (id: string) => {
@@ -138,15 +174,6 @@ export function NotesScreen() {
     const wd = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getDay()
     return planner.slots.find((s) => s.subjectId === sid && s.weekday === wd)?.room || null
   }
-
-  // 머리 메타: 38개 · 물리 12 (렌즈가 켜져 있으면 그 과목 수만)
-  const topSubject = (() => {
-    const m = new Map<string, number>()
-    list.forEach((n) => n.subjectId && m.set(n.subjectId, (m.get(n.subjectId) ?? 0) + 1))
-    const best = [...m.entries()].sort((a, b) => b[1] - a[1])[0]
-    return best ? { s: subj(best[0]), n: best[1] } : null
-  })()
-  const meta = lensSubject ? `${lensSubject.name} ${list.length}` : `${list.length}개${topSubject?.s ? ` · ${topSubject.s.short} ${topSubject.n}` : ''}`
 
   const skyStars = useMemo(() => (stars ? { notes: stars.notes, noteLinks: stars.noteLinks, subjects: skySubjects } : undefined), [stars, skySubjects])
   const mood = <FieldMood preset={SKY.mood} drag={SKY.drag} stars={skyStars} />
@@ -179,35 +206,12 @@ export function NotesScreen() {
     )
   }
 
-  if (notes && !alive.length) {
-    return (
-      <>
-        {mood}
-        <Hero label="노트" className="notes-hero">
-          <NotesMapToggle on="notes" />
-          <EmptyState lines={lensSubject ? [lensSubject.name, '노트 없음'] : ['노트', '비어 있음']} action="새 노트" onAction={() => void newNote()} />
-          {today && <TodayClassRow today={today} onOpen={() => void openToday()} />}
-        </Hero>
-      </>
-    )
-  }
-
-  return (
-    <>
-      {mood}
-      {/* 글 구역: 가로 = 목록 열(왼쪽) + 종이(가운데), 세로·폰 = 한 단. 오른쪽 세로 띠(책등)는 비운다 */}
-      <Hero label="노트" className="notes-hero">
-        <NotesMapToggle on="notes" />
-        <Block>
-          <FocusLines lines={['노트']} />
-        </Block>
-        <Block>
-          <p className="meta enter enter-1">{meta}</p>
-        </Block>
-        <Actions>
-          <PrimaryButton onClick={() => void newNote()}>새 노트</PrimaryButton>
-        </Actions>
-        <div className="notes-find enter enter-2">
+  // 머리: [⌕ 찾기 칸 · 금빛 ＋] 한 줄. 노트가 없으면 금빛 ＋만
+  const head = (
+    <div className="notes-top enter enter-1">
+      {alive.length > 0 && (
+        <label className="notes-find">
+          <IconSearch size={16} />
           <input
             ref={searchRef}
             className="notes-find-in"
@@ -215,8 +219,9 @@ export function NotesScreen() {
             role="searchbox"
             inputMode="search"
             enterKeyHint="search"
-            placeholder="찾기"
             aria-label="노트 찾기"
+            data-tip={`찾기 · ${list.length}`}
+            data-tip-kbd="⌘F"
             value={q}
             spellCheck={false}
             onChange={(e) => setQ(e.target.value)}
@@ -232,14 +237,47 @@ export function NotesScreen() {
               }
             }}
           />
-          {q && <span className="notes-find-n" aria-live="polite">{rows.length}</span>}
-        </div>
-        {lensSubject && !q && (
-          <button type="button" className="notes-lens-off" onClick={() => setLens(null)}>
-            <i style={{ background: `var(--s-${lensSubject.color})` }} aria-hidden="true" />
-            {lensSubject.short} · 전체 보기
-          </button>
-        )}
+          {q && (
+            <span className="notes-find-n mono" aria-live="polite" aria-label={`찾은 노트 ${rows.length}개`}>
+              {rows.length}
+            </span>
+          )}
+        </label>
+      )}
+      <button type="button" className="gold-btn" {...tip('새 노트')} onClick={() => void newNote()}>
+        <IconPlus size={22} />
+      </button>
+    </div>
+  )
+
+  if (notes && !alive.length) {
+    return (
+      <>
+        {mood}
+        <Hero label="노트" className="notes-hero">
+          <h1 className="sr-only">노트</h1>
+          <NotesMapToggle on="notes" />
+          {head}
+          {today && (
+            <ul className="recent notes-list">
+              <li className="notes-today">
+                <TodayClassRow today={today} onOpen={() => void openToday()} />
+              </li>
+            </ul>
+          )}
+        </Hero>
+      </>
+    )
+  }
+
+  return (
+    <>
+      {mood}
+      {/* 글 구역: 가로 = 목록 열(왼쪽) + 종이(가운데), 세로·폰 = 한 단. 오른쪽 세로 띠(책등)는 비운다 */}
+      <Hero label="노트" className="notes-hero">
+        <h1 className="sr-only">노트</h1>
+        <NotesMapToggle on="notes" />
+        {head}
         <ul className="recent notes-list enter enter-2" aria-label={q ? '찾은 노트' : '노트 목록'}>
           {!q && today && (
             <li className="notes-today">
@@ -249,25 +287,29 @@ export function NotesScreen() {
           {rows.slice(0, LIST_MAX).map(({ n, hit }) => {
             const s = subj(n.subjectId)
             const on = n.id === focus?.id
+            const name = noteName(n)
             return (
               <li key={n.id}>
-                <button type="button" aria-current={on || undefined} className={on ? 'is-on' : undefined} onClick={() => open(n.id)}>
-                  <span>{hit?.titleRange ? <Mark text={n.title || '제목 없음'} range={hit.titleRange} /> : n.title || '제목 없음'}</span>
-                  {hit?.snippet ? (
+                <button
+                  type="button"
+                  aria-current={on || undefined}
+                  className={on ? 'is-on' : undefined}
+                  data-tip={`${KIND_NAME[n.kind]} · ${fmtAgo(Date.now(), n.updatedAt)}`}
+                  onClick={() => open(n.id)}
+                >
+                  <span className="nl-line">
+                    <RowMark n={n} s={s} />
+                    <span className="nl-t">{hit?.titleRange && n.title.trim() ? <Mark text={name} range={hit.titleRange} /> : name}</span>
+                  </span>
+                  {hit?.snippet && (
                     <small className="notes-snip">
                       <Mark text={hit.snippet.text} range={hit.snippet.range} />
-                    </small>
-                  ) : (
-                    <small>
-                      {s && <i style={{ background: `var(--s-${s.color})` }} aria-hidden="true" />}
-                      {KIND_NAME[n.kind]} · {fmtAgo(Date.now(), n.updatedAt)}
                     </small>
                   )}
                 </button>
               </li>
             )
           })}
-          {q && !rows.length && <li className="notes-none">결과 없음</li>}
         </ul>
       </Hero>
 
@@ -309,17 +351,17 @@ function PaperSlot(props: {
       <div className="np np-other" style={{ ['--c' as string]: s ? `var(--s-${s.color})` : 'var(--text-3)' }}>
         <div className="np-skel">
           {props.onBack && (
-            <button type="button" className="np-back" onClick={props.onBack}>
-              ‹ 노트
+            <button type="button" className="ibtn np-back" {...tip('노트 목록', { kbd: 'esc' })} onClick={props.onBack}>
+              <IconBack size={20} />
             </button>
           )}
-          <p className="np-o-t">{note.title}</p>
+          <p className="np-o-t">{noteName(note)}</p>
           <p className="np-o-m">
-            {s?.name ?? '과목 없음'} · {KIND_NAME[note.kind]}
-            {note.kind === 'pdf' && note.pages ? ` · p.${note.page ?? 1} / ${note.pages}` : ''}
+            <i className={`sdot${s ? '' : ' is-none'}`} style={s ? { ['--c' as string]: `var(--s-${s.color})` } : undefined} {...tip(s?.name ?? '과목 없음')} />
+            <span {...tip(KIND_NAME[note.kind])}>{(() => { const K = KIND_ICON[note.kind]; return <K size={14} /> })()}</span>
+            {note.kind === 'pdf' && note.pages ? <span className="mono">{note.page ?? 1} / {note.pages}</span> : null}
           </p>
           {note.excerpt && <p className="np-o-x">{note.excerpt}</p>}
-          <p className="np-o-x">필기 · PDF 편집은 M5</p>
           <Backlinks noteId={note.id} title={note.title} onOpen={props.onOpenNote} />
         </div>
       </div>
@@ -375,22 +417,29 @@ function useTodayClass(now: Date, forceEmpty: boolean): TodayClass | null | unde
 function TodayClassRow({ today, current, onOpen }: { today: TodayClass; current?: string; onOpen: () => void }) {
   const s = today.subject
   const name = s?.short ?? s?.name ?? '수업'
+  const dot = <i className={`sdot${s ? '' : ' is-none'}`} style={s ? { ['--c' as string]: `var(--s-${s.color})` } : undefined} aria-hidden="true" />
   if (today.note) {
     const on = today.note.id === current
     return (
-      <button type="button" aria-current={on || undefined} className={`notes-today-row${on ? ' is-on' : ''}`} onClick={onOpen}>
-        <span>{today.note.title || `오늘 ${name} 수업 노트`}</span>
-        <small>
-          {s && <i style={{ background: `var(--s-${s.color})` }} aria-hidden="true" />}
-          오늘
-        </small>
+      <button type="button" aria-current={on || undefined} className={`notes-today-row${on ? ' is-on' : ''}`} data-tip="오늘" onClick={onOpen}>
+        <span className="nl-line">
+          <span className="nl-mark" aria-hidden="true">
+            <IconDoc size={13} />
+            {dot}
+          </span>
+          <span className="nl-t">{noteName(today.note)}</span>
+        </span>
       </button>
     )
   }
+  // 없을 때: 점선 고리 ＋ · 과목 점 · 15:00 (이름은 툴팁)
   return (
-    <button type="button" className="notes-today-row is-new" onClick={onOpen}>
-      <span>오늘 {name} 수업 노트</span>
-      <small className="mono">{today.slot.start}</small>
+    <button type="button" className="notes-today-row is-new" {...tip(`오늘 ${name} 수업 노트`)} onClick={onOpen}>
+      <span className="nt-ring" aria-hidden="true">
+        <IconPlus size={14} />
+      </span>
+      {dot}
+      <span className="mono">{today.slot.start}</span>
     </button>
   )
 }

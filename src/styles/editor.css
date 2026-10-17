@@ -11,18 +11,18 @@
 }
 
 .np-top { display: flex; align-items: center; justify-content: space-between; min-height: 28px; margin: -8px 0 6px; }
-.np-back { font: 400 13px/1 var(--f-mono), var(--f-kr); color: var(--text-2); padding: 8px 0; min-height: 36px; }
-.np-back:hover { color: var(--text-1); }
+.np-back { margin-left: -10px; }
 .np-menu { position: relative; margin-left: auto; }
-.np-more { display: grid; place-items: center; width: 36px; height: 36px; margin-right: -10px; border-radius: 10px; color: var(--text-3); }
-.np-more:hover, .np-more[aria-expanded="true"] { color: var(--text-1); background: color-mix(in srgb, var(--text-1) 6%, transparent); }
+.np-more { margin-right: -10px; color: var(--text-3); }
+.np-more[aria-expanded="true"] { color: var(--text-1); background: color-mix(in srgb, var(--text-1) 6%, transparent); }
 .np-pop {
   position: absolute; right: -10px; top: 40px; z-index: 5; min-width: 176px; padding: 6px; display: grid;
   background: color-mix(in srgb, var(--surface-2) 96%, transparent); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-2);
 }
 .np-pop button { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border-radius: 8px; text-align: left; font-size: 14px; color: var(--text-1); }
 .np-pop button:hover, .np-pop button:focus-visible { background: color-mix(in srgb, var(--text-1) 7%, transparent); }
-.np-pop button i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.np-pop-ic { display: grid; place-items: center; width: 20px; flex: none; color: var(--text-2); }
+.np-pop .is-danger .np-pop-ic { color: var(--danger); }
 .np-pop button[aria-checked="true"] { color: var(--accent); }
 .np-pop .is-danger { color: var(--danger); }
 
@@ -33,8 +33,8 @@
 }
 .np-title::placeholder { color: var(--text-3); }
 @media (max-width: 599px) { .np-title { font-size: 24px; } }
-.np-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 10px 0 28px; font: 400 12px/1.4 var(--f-mono), var(--f-kr); color: var(--text-3); }
-.np-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+.np-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0 28px; font: 400 12px/1.4 var(--f-mono), var(--f-kr); color: var(--text-3); }
+.np-meta .sdot { cursor: default; }
 .np-save { width: 4px; height: 4px; margin-left: 4px; border-radius: 50%; box-sizing: border-box; background: var(--text-3); border: 1px solid var(--text-3); transition: background-color 200ms var(--ease-out); }
 .np-save.is-dirty { background: transparent; }
 .np-save.is-error { background: transparent; border-color: var(--danger); }
@@ -92,10 +92,9 @@
 .np-prose em { font-style: normal; font-family: var(--f-kr-d), var(--f-kr); }
 .np-prose s { text-decoration-thickness: 1px; color: var(--text-2); }
 .np-prose :not(pre) > code { font: 400 .88em var(--f-mono); padding: .1em .35em; border-radius: 4px; background: rgba(220, 228, 255, .07); }
-/* 자리표시 (비어 있을 때만) */
-.np-prose .is-empty::before, .np-prose.is-editor-empty > p:first-child::before {
-  content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: var(--text-3);
-}
+/* 빈 문서: 첫 회만 키 그림(H6), 그 뒤엔 커서만 */
+.np-editor-wrap { position: relative; }
+.np-h6 { position: absolute; left: 0; top: 0; width: 2px; height: 1.75em; pointer-events: none; }
 /* 사진 */
 .np-prose .nb-asset { margin: .8em 0; }
 .np-prose .nb-asset img { display: block; max-width: 100%; max-height: 60svh; border-radius: 8px; }
@@ -125,6 +124,9 @@
 .np-sg-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
 .np-sg-t { flex: 1; min-width: 0; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .np-sg-t b { font-weight: 600; color: var(--text-1); }
-.np-sg-r { flex: none; font: 400 11px var(--f-mono); color: var(--text-3); }
-.np-sg-row.is-new .np-sg-t { color: var(--accent); }
+.np-sg-r { flex: none; display: inline-flex; align-items: center; gap: 3px; font: 400 11px var(--f-mono); color: var(--text-3); }
+.np-sg-lead { display: grid; place-items: center; width: 24px; flex: none; color: var(--text-3); }
+.np-sg-key { font: 400 11px var(--f-mono); color: var(--text-3); white-space: nowrap; }
+.np-sg-row.is-sel .np-sg-lead, .np-sg-row.is-sel .np-sg-key { color: var(--text-2); }
+.np-sg-row.is-new .np-sg-t, .np-sg-row.is-new .np-sg-lead { color: var(--accent); }
 

@@ -208,6 +208,10 @@ export interface DataStar {
   size?: number
   /** 별가루 표류(D2): 지름 0.05u 원을 20초에 한 바퀴 — 위상(라디안). 활동·평소에서만 */
   drift?: number
+  /** 표류가 이 시각(초)부터 1초 램프로 돌아온다 (K6 고정 풀기) */
+  driftAt?: number
+  /** 자리 옮김: from(패턴 좌표)에서 pos로 t0부터 dur초 (K6 고정 → 고리 안쪽 자리) */
+  move?: { from: [number, number, number]; t0: number; dur: number }
   /** 별가루 흘러감(D3): pos → to(패턴 좌표)로 원반 위 +0.4u 2차 곡선, t0부터 dur초 */
   path?: { to: [number, number, number]; t0: number; dur: number }
   /** 성운(D9): 화면 크기를 월드 반지름으로 (u) — 매 프레임 투영 */
@@ -257,7 +261,7 @@ let destroyed = false
 let cleanMode = qs.get('clean') === '1'
 const inputEl: EventTarget = opts.input ?? canvas
 let dragOn = opts.drag ?? true
-const dragOk = (e: Event) => dragOn && (!opts.dragFilter || opts.dragFilter(e))
+const dragOk = (e: Event) => dragOn && !paperOn && (!opts.dragFilter || opts.dragFilter(e))
 powerMonitor.start()
 const hdr = !!gl.getExtension('EXT_color_buffer_float')
 /** GPU 시간 (가능하면): EXT_disjoint_timer_query_webgl2 */
@@ -682,6 +686,7 @@ function startFlight(pl: Place, o: Q, home: boolean) {
 }
 function flyTo(id: string) {
   look = null
+  lookHome = null
   const pl = PLACES.find((p) => p.id === id)
   if (!pl || pl === place) return
   // 목적지 자세: 장소의 기본 구도를 은하 축 둘레로 돌린 것 가운데 지금 자세와 가장 가까운 것 → 비행 회전 최소
@@ -801,8 +806,16 @@ let phaseK = 0
 let tint: [number, number, number, number] = [1, 1, 1, 0]
 /** 별 고르기 다가감 (design-m1 #31): 바라보는 점을 데이터 별로, 거리 d — 자세(롤·방위)는 그대로 */
 let look: { pos: V3; dist: number } | null = null
+/** 별에 다가가기 전 자세 — 닫으면 여기로 */
+let lookHome: Q | null = null
 let eventUntil = 0
 let calm = false
+/* K0 종이 펼침 (design-ink 1-3 · 10장): 띠가 오른쪽 화면 밖으로(자리 x만, 롤·시야 회전 0) + 노출 ×0.5, 520ms ease-in-out → 쉼(rAF 0).
+   펼친 동안은 입력·잉크·키가 하늘을 깨우지 않는다(touch 무시, 끌기 끔). 닫으면 600ms 램프로 깨어나 제자리 */
+let paperOn = false
+let paperP = 0 // 0..1 선형 진행 (이징은 그릴 때)
+const PAPER_MS = 520
+const paperSettled = () => paperOn && paperP >= 1
 let calmK = 0
 let swellT0 = -1e9
 let swellAt: 'core' | 'seat' | 'cluster' = 'core'
@@ -834,6 +847,7 @@ let releasedAt = 0
 let drag: { x: number; y: number; t: number } | null = null
 function powerState(now: number): Power {
   if (forced) return forced
+  if (paperSettled() && !flight) return 'rest' // 종이: 펼침이 끝나면 쉼
   const idle = now - lastInput
   const low = lowPower || powerMonitor.lowPower() || now < thermalUntil
   const moving = !!flight || !!drag || Math.hypot(user.wv[0], user.wv[1], user.wv[2]) > 1e-9 || idle < 2000
@@ -900,6 +914,7 @@ function kick() {
   rafId = requestAnimationFrame(frame)
 }
 function touch(now = performance.now()) {
+  if (paperSettled()) return // 종이를 펼친 동안: 잉크·키·패널 신호로 깨우지 않는다
   if (stopped || restK > 0 || now - lastDraw > 1000) wakeAt = now
   lastInput = now
   kick()
@@ -927,10 +942,27 @@ function applyDrag(dx: number, dy: number, dt: number) {
   user.wv = [(ax[0] * ang) / dt, (ax[1] * ang) / dt, 0]
 }
 let lastTap = { t: 0, x: 0, y: 0 }
+/** 누른 포인터들 — 두 손가락이면 회전을 멈추고 핀치(거리 비율)로 거리만 바꾼다 (M3: 두 손가락이 번갈아 끌기로 읽혀 자세가 튀던 것) */
+const ptrs = new Map<number, { x: number; y: number }>()
+let pinchD = 0
+/** 누름 허용 범위: 넘기 전에는 돌리지 않는다 — 탭의 손떨림이 회전·관성이 되지 않게 (마우스 3px · 터치 6px) */
+let slop: { x: number; y: number; lim: number } | null = null
+const DRAG_STALE_MS = 90 // 손을 멈춘 채 이만큼 지나 떼면 관성 없음
 listen(inputEl, 'pointerdown', (e: PointerEvent) => {
   if (!dragOk(e)) return
   const now = performance.now()
   touch(now)
+  if (e.isPrimary) ptrs.clear() // 창 밖에서 뗀 포인터가 남아 핀치로 오인되지 않게
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY })
+  if (ptrs.size >= 2) {
+    drag = null
+    slop = null
+    user.wv = [0, 0, 0]
+    const [a, b] = [...ptrs.values()]
+    pinchD = Math.hypot(a!.x - b!.x, a!.y - b!.y)
+    lastTap.t = 0
+    return
+  }
   if (e.pointerType !== 'mouse') {
     if (now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
       lastTap.t = 0
@@ -941,12 +973,34 @@ listen(inputEl, 'pointerdown', (e: PointerEvent) => {
   }
   if (flight) return // 비행 중엔 잡지 않는다(비행이 끝나면 그 자세에서 이어서)
   drag = { x: e.clientX, y: e.clientY, t: now }
+  slop = { x: e.clientX, y: e.clientY, lim: e.pointerType === 'touch' ? 6 : 3 }
   user.wv = [0, 0, 0]
   if (inputEl === canvas) canvas.setPointerCapture(e.pointerId)
 })
 listen(inputEl === canvas ? canvas : window, 'pointermove', (e: PointerEvent) => {
+  const pp = ptrs.get(e.pointerId)
+  if (pp) {
+    pp.x = e.clientX
+    pp.y = e.clientY
+  }
+  if (ptrs.size >= 2) {
+    if (!pp) return
+    const [a, b] = [...ptrs.values()]
+    const d = Math.hypot(a!.x - b!.x, a!.y - b!.y)
+    // 핀치: 손가락을 벌리면 다가간다(휠과 같은 0.6–1.6배)
+    if (pinchD > 0 && d > 0) user.zoom = Math.max(0.6, Math.min(1.6, user.zoom * (pinchD / d)))
+    pinchD = d
+    touch()
+    return
+  }
   if (!drag) return
   const now = performance.now()
+  if (slop) {
+    if (Math.hypot(e.clientX - slop.x, e.clientY - slop.y) < slop.lim) return
+    slop = null
+    drag = { x: e.clientX, y: e.clientY, t: now }
+    return
+  }
   applyDrag(e.clientX - drag.x, e.clientY - drag.y, Math.max(1, now - drag.t))
   releasedAt = 0
   touch(now)
@@ -954,7 +1008,9 @@ listen(inputEl === canvas ? canvas : window, 'pointermove', (e: PointerEvent) =>
 })
 const endDrag = () => {
   if (!drag) return
+  if (performance.now() - drag.t > DRAG_STALE_MS) user.wv = [0, 0, 0] // 멈췄다 뗀 손: 묵은 속도로 돌지 않는다
   drag = null
+  slop = null
   anchorDirty = true
   releasedAt = performance.now()
   // 관성 시작 속도 ≤ 90°/s, 동작 줄이기면 0
@@ -963,8 +1019,25 @@ const endDrag = () => {
   if (w > lim) user.wv = w > 0 ? [(user.wv[0] * lim) / w, (user.wv[1] * lim) / w, 0] : [0, 0, 0]
   touch()
 }
-listen(inputEl === canvas ? canvas : window, 'pointerup', endDrag)
-listen(inputEl === canvas ? canvas : window, 'pointercancel', endDrag)
+const endPtr = (e: PointerEvent) => {
+  ptrs.delete(e.pointerId)
+  if (ptrs.size < 2) pinchD = 0
+  if (ptrs.size > 0) {
+    drag = null // 핀치가 끝나며 남은 손가락으로는 돌리지 않는다(다음 누름부터)
+    return
+  }
+  endDrag()
+}
+// 터치: 빈 하늘에서 시작한 손가락은 브라우저 스크롤·확대로 넘기지 않는다 — 넘기면 pointercancel로 끌기·핀치가 몇 px 만에 끊긴다 (M3)
+let skyTouch = false
+listen(inputEl, 'touchstart', (e: TouchEvent) => {
+  if (e.touches.length === 1) skyTouch = dragOk(e)
+}, { passive: true })
+listen(inputEl === canvas ? canvas : window, 'touchmove', (e: TouchEvent) => {
+  if (skyTouch && e.cancelable) e.preventDefault()
+}, { passive: false })
+listen(inputEl === canvas ? canvas : window, 'pointerup', endPtr)
+listen(inputEl === canvas ? canvas : window, 'pointercancel', endPtr)
 listen(inputEl, 'dblclick', (e: MouseEvent) => {
   if (!dragOk(e)) return
   e.preventDefault()
@@ -1063,7 +1136,7 @@ function draw(now: number, opt: DrawOpt = {}) {
   last = now
   lastDraw = performance.now() // 예약 기준은 실제 시각(rAF 타임스탬프는 몇 ms 앞설 수 있다)
   // 쉼 크로스페이드(2s) · 돌아옴(600ms)
-  if (power === 'rest') restK = Math.min(1, restK + dt / 2000)
+  if (power === 'rest') restK = Math.min(1, restK + dt / (paperOn ? 250 : 2000)) // 종이: 펼침 뒤 0.25초 안에 멈춤
   else restK = Math.max(0, restK - dt / 600)
   const ramp = smooth01((now - wakeAt) / 600)
   sheetK += ((sheetOpen ? 1 : 0) - sheetK) * Math.min(1, dt / 450)
@@ -1103,6 +1176,13 @@ function draw(now: number, opt: DrawOpt = {}) {
   const st = curCam(now)
   SEAT[0] = st.c.seat[0]
   SEAT[1] = st.c.seat[1]
+  // 종이 펼침: 자리 x만 화면 밖으로 (노트: 가로·세로 1.10 · 폰 1.15, 다른 장소는 +0.24)
+  paperP = reduced() ? (paperOn ? 1 : 0) : Math.min(1, Math.max(0, paperP + ((paperOn ? 1 : -1) * dt) / PAPER_MS))
+  const paperE = paperP <= 0 ? 0 : paperP >= 1 ? 1 : paperP < 0.5 ? 2 * paperP * paperP : 1 - Math.pow(-2 * paperP + 2, 2) / 2
+  if (paperE > 0) {
+    const px = place.id === 'notes' ? (lay === 'phone' ? 1.15 : 1.1) : SEAT[0] + 0.24
+    SEAT[0] += (px - SEAT[0]) * paperE
+  }
   if (st.flying && prevFlightQ && dt > 0 && !flight?.fade) flightPeak = Math.max(flightPeak, (qAngle(prevFlightQ, st.c.q) / DEG / dt) * 1000)
   prevFlightQ = st.flying ? st.c.q : null
   // 카메라 호흡: 은하 축 둘레 ±3° · 카메라 가로축 ±1.5° · 거리 ±2% — 동작 줄이기·회전 끔이면 없음
@@ -1120,7 +1200,7 @@ function draw(now: number, opt: DrawOpt = {}) {
   const vp = viewProj(eye, qRot(cq, [1, 0, 0]), qRot(cq, [0, 1, 0]), [-back[0], -back[1], -back[2]], FOV * DEG, W / H, 0.02, 3000)
   const entrance = opt.capture ? 1 : Math.min(1, (now - readyAt) / 1400)
   updateRing(vp.m, target, now)
-  const expo = st.c.expo * (0.55 + 0.45 * (1 - Math.pow(1 - entrance, 3))) * (1 - 0.15 * st.c.fx) * (1 - st.c.dim) * (1 - 0.35 * sheetK) * extExpo * (1 + 0.08 * swellK(now)) // 시트: 노출 ×0.65 · V13 원반 부풂 +8%
+  const expo = st.c.expo * (0.55 + 0.45 * (1 - Math.pow(1 - entrance, 3))) * (1 - 0.15 * st.c.fx) * (1 - st.c.dim) * (1 - 0.35 * sheetK) * extExpo * (1 - 0.5 * paperE) * (1 + 0.08 * swellK(now)) // 시트: 노출 ×0.65 · V13 원반 부풂 +8%
 
   // 상태별 해상도: 타깃 안의 일부만 쓴다
   // 비행 중 동적 해상도 ×0.8 (움직임이 가려 준다 — 원반 가까이 채우기 비용 ↓)
@@ -1753,10 +1833,20 @@ function buildDots(t: number): number {
     let px = d.pos[0]
     let py = d.pos[1]
     let pz = d.pos[2]
+    if (d.move) {
+      const k = Math.min(1, Math.max(0, (t - d.move.t0) / d.move.dur))
+      const e = k * k * (3 - 2 * k)
+      px = d.move.from[0] + (px - d.move.from[0]) * e
+      py = d.move.from[1] + (py - d.move.from[1]) * e
+      pz = d.move.from[2] + (pz - d.move.from[2]) * e
+      if (k < 1) animating = true
+    }
     if (d.drift !== undefined && power !== 'deep' && power !== 'rest' && lightK < 0.5) {
       const a = d.drift + (t / 20) * Math.PI * 2
-      px += 0.025 * Math.cos(a)
-      pz += 0.025 * Math.sin(a)
+      const amp = 0.025 * (d.driftAt !== undefined ? Math.min(1, Math.max(0, t - d.driftAt)) : 1)
+      if (d.driftAt !== undefined && t - d.driftAt < 1) animating = true
+      px += amp * Math.cos(a)
+      pz += amp * Math.sin(a)
     }
     if (d.path) {
       const k = Math.min(1, Math.max(0, (t - d.path.t0) / d.path.dur))
@@ -1947,7 +2037,8 @@ function drawEvents(m: Float32Array, now: number) {
   gl.disable(gl.BLEND)
 }
 /* 노트 책등 위 점 (design-m1 #28): 옆모습 원반의 긴 축을 따라, 노트 별의 높이(s ∈ −1..1)에 점 하나 */
-let spine: Array<{ id: string; s: number; level: number; color: [number, number, number] }> = []
+type SpineItem = { id: string; s: number; level: number; color: [number, number, number]; from?: number; to?: number; t0?: number; dur?: number; size?: number }
+let spine: SpineItem[] = []
 function spineDots(): DataStar[] {
   const B = lastBasis
   if (!B || !spine.length) return []
@@ -1958,7 +2049,7 @@ function spineDots(): DataStar[] {
     const w: V3 = [ax[0] * p.s * 11, 0.15, ax[2] * p.s * 11]
     const r = Math.hypot(w[0], w[2])
     const th = Math.atan2(w[2], w[0]) + ang
-    return { id: 'spine:' + p.id, group: 'nebula', pos: [r * Math.cos(th), w[1], r * Math.sin(th)], L: 1, color: p.color, from: p.level, to: p.level, t0: 0, dur: 0, size: 2 }
+    return { id: 'spine:' + p.id, group: 'nebula', pos: [r * Math.cos(th), w[1], r * Math.sin(th)], L: 1, color: p.color, from: p.from ?? p.level, to: p.to ?? p.level, t0: p.t0 ?? 0, dur: p.dur ?? 0, size: p.size ?? 2 }
   })
 }
 function dataWorld(d: DataStar): V3 {
@@ -2146,6 +2237,7 @@ function syncZones() {
 /* ---------- 바깥에서 부르는 것 ---------- */
 function setPlace(id: PlaceId, o: { instant?: boolean } = {}): number {
   look = null
+  lookHome = null
   const pl = PLACES.find((p) => p.id === id)
   if (!pl) return 0
   if (o.instant || !readyAt) {
@@ -2257,11 +2349,19 @@ return {
   /** 계획에서 마감까지 d일 → 시간 띠 위 점 (design-m1 0-1 band) */
   bandPoint: (days: number) => screenToDisk((0.1 + (0.8 * Math.min(Math.max(days, 0), 14)) / 14) * cssW, SEAT[1] * cssH),
   /** 별 고르기 다가감: pos(패턴 좌표)로 거리 d까지 짧게 — 자세 그대로(롤·방위 변화 0). null이면 장소 자리로 물러남. 길이(ms) */
+  /** 지금 회전 속도(°/s): 끌기 중이면 마지막 움직임 속도(멈춘 지 90ms가 넘으면 0), 놓은 뒤면 관성 */
+  spin: (): number => (drag && performance.now() - drag.t > DRAG_STALE_MS ? 0 : (Math.hypot(user.wv[0], user.wv[1], user.wv[2]) / DEG) * 1000),
   approach: (pos: [number, number, number] | null, d = 1.6): number => {
     const same = !!look === !!pos && (!pos || !look || (look.pos[0] === pos[0] && look.pos[2] === pos[2]))
     if (same) return 0
+    // 별에 다가가면 트랙볼 축 = 그 별(카메라가 별을 바라본 채 둘레를 돈다). 닫으면 다가가기 전 자세로 돌아간다 (M3)
+    if (pos && !look) lookHome = flight ? flight.o : orient
+    const o = !pos && lookHome ? lookHome : flight ? flight.o : orient
+    // 집중: 시계가 매 프레임 자세를 정하므로 시계의 기준도 다가가기 전으로 (별 둘레를 끌어 돌린 자세로 튀지 않게)
+    if (!pos && lookHome && place.id === 'focus') focusBase = qMul(qAxis(YAX, focusDisp), lookHome)
+    if (!pos) lookHome = null
     look = pos ? { pos, dist: d } : null
-    startFlight(place, orient, true)
+    startFlight(place, o, true)
     return flight ? flight.dur : 0
   },
   /** 시간대 위상 (design-m1 #40) */
@@ -2274,7 +2374,7 @@ return {
     touch()
   },
   /** 노트 책등 위 점 (#28): s = −1..1 (책등 아래 → 위) */
-  setSpine: (list: Array<{ id: string; s: number; level: number; color: [number, number, number] }>) => {
+  setSpine: (list: SpineItem[]) => {
     spine = list
     if (!stopped) kick()
   },
@@ -2323,6 +2423,7 @@ return {
       return 0
     }
     look = null
+    lookHome = null
     startFlight(today, homeOrient(today), true)
     if (flight) {
       flight.dur = 2600
@@ -2339,6 +2440,19 @@ return {
   setCalm: (on: boolean) => {
     calm = on
     touch()
+  },
+  /** K0 useSkyPaper: 필기 노트를 펼치면 true — 띠가 비켜나고 노출 0.5, 520ms 뒤 쉼(rAF 0). false면 600ms 램프로 깨어나 제자리 */
+  setPaper: (on: boolean) => {
+    if (on === paperOn) return
+    if (on) {
+      touch() // 펼침 520ms 동안은 그린다
+      paperOn = true
+      drag = null
+      user.wv = [0, 0, 0]
+    } else {
+      paperOn = false
+      touch()
+    }
   },
   /** useSkyClock: 집중 시계 (null이면 0.24°/s 공전) */
   setClock: (c: { startedAt: number; durationMs: number; elapsedMs: number; paused: boolean } | null) => {
@@ -2476,11 +2590,19 @@ export class Galaxy3D {
   bandPoint(days: number): [number, number, number] | null {
     return this.api?.bandPoint(days) ?? null
   }
+  /** K0 종이 펼침 (useSkyPaper) */
+  setPaper(on: boolean): void {
+    this.api?.setPaper(on)
+  }
   setCalm(on: boolean): void {
     this.api?.setCalm(on)
   }
   approach(pos: [number, number, number] | null, d?: number): number {
     return this.api?.approach(pos, d) ?? 0
+  }
+  /** 지금 회전 속도(°/s) — 누르기 ↔ 끌기 구분 */
+  spin(): number {
+    return this.api?.spin() ?? 0
   }
   setPhase(p: 'blue' | 'night' | 'dawn'): void {
     this.api?.setPhase(p)
@@ -2491,7 +2613,7 @@ export class Galaxy3D {
   setStage(list: Float32Array | null): void {
     this.api?.setStage(list)
   }
-  setSpine(list: Array<{ id: string; s: number; level: number; color: [number, number, number] }>): void {
+  setSpine(list: Array<{ id: string; s: number; level: number; color: [number, number, number]; from?: number; to?: number; t0?: number; dur?: number; size?: number }>): void {
     this.api?.setSpine(list)
   }
   anchors(name: AnchorName, cb: (a: Anchor) => void): () => void {

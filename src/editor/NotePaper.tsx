@@ -10,17 +10,19 @@ import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type Ref, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref, type RefObject } from 'react'
 import { useFieldPause, useSkyEvent } from '@/fx'
 import { db, type Note, type Subject } from '@/db/schema'
 import { applyTemplateMeta, deleteNote, openOrCreateNote, renameNote, saveBody, setNoteSubject } from '@/db/notes'
 import { matchText } from '@/lib/hangul'
 import { fmtMD } from '@/lib/time'
 import { useGo, useIsPhone } from '@/shell/hooks'
-import { IconMore } from '@/shell/icons'
-import { Asset, Hints, LinkDecor, NoteLink, Trigger, refreshLinkDecor, type LinkAttrs, type LinkResolver, type TriggerState } from './extensions'
+import { IconBack, IconDoc, IconLink, IconMap, IconMore, IconPlus, IconTrash } from '@/shell/icons'
+import { tip } from '@/shell/Tip'
+import { Hint } from '@/shell/Hint'
+import { Asset, LinkDecor, NoteLink, Trigger, refreshLinkDecor, type LinkAttrs, type LinkResolver, type TriggerState } from './extensions'
 import { Backlinks } from './Backlinks'
-import { PLACEHOLDER_BY_HEADING, templateDoc, titlePlaceholder, type PMNode, type TemplateName } from './templates'
+import { templateDoc, type PMNode, type TemplateName } from './templates'
 import '@/styles/editor.css'
 
 export interface NotePaperProps {
@@ -74,7 +76,7 @@ export default function NotePaper(props: NotePaperProps) {
   }, [note.id])
   const subject = props.subjects.find((s) => s.id === note.subjectId) ?? null
   return (
-    <article className="np" style={{ ['--c' as string]: subjColor(subject) ?? 'var(--text-3)' }} aria-label={note.title || '제목 없는 노트'}>
+    <article className="np" style={{ ['--c' as string]: subjColor(subject) ?? 'var(--text-3)' }} aria-label={note.title.trim() || fmtMD(classDate(note.classKey) ?? note.createdAt)}>
       {initial && initial.id === note.id ? <PaperBody key={note.id} {...props} subject={subject} initial={initial} /> : <PaperSkeleton />}
     </article>
   )
@@ -103,6 +105,8 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
   const [save, setSave] = useState<SaveState>('saved')
   const [focused, setFocused] = useState(false)
   const [trigger, setTrigger] = useState<TriggerState | null>(null)
+  // 빈 문서: 첫 노트 한 번만 키 그림(H6 · '/' '[[') — 그 뒤엔 커서만
+  const [empty, setEmpty] = useState(() => !initial.doc.content?.some((b) => (b.content?.length ?? 0) > 0 || (b.type !== 'paragraph')))
   const scrollRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLTextAreaElement>(null)
   useFieldPause(active && focused, 'ink')
@@ -138,47 +142,55 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
   const keyRef = useRef<(e: KeyboardEvent) => boolean>(() => false)
 
   // ----- 자동 저장 -----
-  const st = useRef({ timer: 0, dirty: false, saving: false, again: false, composing: false, version: initial.version, saves: 0, held: 0 })
+  // 문서를 그 자리에서(동기) 찍어 저장 줄에 세운다. 노트를 바꾸거나(언마운트) 화면을 떠나도 찍어 둔 것이 저장된다.
+  const st = useRef({ timer: 0, dirty: false, composing: false, version: initial.version, saves: 0, held: 0, pending: 0, dead: false, chain: Promise.resolve() as Promise<unknown> })
   const editorRef = useRef<Editor | null>(null)
-  const doSave = useCallback(async () => {
-    const s = st.current
-    const ed = editorRef.current
-    window.clearTimeout(s.timer)
-    s.timer = 0
-    if (!ed || ed.isDestroyed) return
-    if (s.composing || ed.view.composing) {
-      s.held++ // 조합이 끝나면 compositionend가 다시 부른다
-      return
-    }
-    if (s.saving) {
-      s.again = true
-      return
-    }
-    if (!s.dirty) return
-    s.dirty = false
-    s.saving = true
-    try {
-      const r = await saveBody(note.id, ed.getJSON())
-      s.version = r.version
-      s.saves++
-      r.added.forEach(([a, b]) => sky.drawLink(a, b, { layer: 'graph', deferIfPaused: true }))
-      setSave(s.dirty ? 'dirty' : 'saved')
-    } catch {
-      s.dirty = true
-      setSave('error')
-    } finally {
-      s.saving = false
-    }
-    if (s.again || s.dirty) {
-      s.again = false
-      schedule()
-    }
-  }, [note.id, sky])
+  const noteId = note.id
   const schedule = useCallback(() => {
     const s = st.current
     window.clearTimeout(s.timer)
-    s.timer = window.setTimeout(() => void doSave(), 600)
-  }, [doSave])
+    s.timer = window.setTimeout(() => commitRef.current(false), 600)
+  }, [])
+  const commit = useCallback(
+    (force: boolean) => {
+      const s = st.current
+      const ed = editorRef.current
+      window.clearTimeout(s.timer)
+      s.timer = 0
+      if (!s.dirty || !ed || ed.isDestroyed) return
+      if (!force && (s.composing || ed.view.composing)) {
+        s.held++ // 조합이 끝나면 compositionend가 다시 부른다
+        return
+      }
+      const json = ed.getJSON()
+      s.dirty = false
+      s.pending++
+      const write = async (tries: number): Promise<void> => {
+        try {
+          const r = await saveBody(noteId, json)
+          s.version = r.version
+          s.saves++
+          r.added.forEach(([a, b]) => sky.drawLink(a, b, { layer: 'graph', deferIfPaused: true }))
+          if (!s.dead) setSave(s.dirty ? 'dirty' : 'saved')
+        } catch {
+          if (s.dead) {
+            // 이미 떠난 노트: 찍어 둔 문서를 한 번 더 시도
+            if (tries < 2) await new Promise((r) => setTimeout(r, 800)).then(() => write(tries + 1))
+            return
+          }
+          s.dirty = true
+          setSave('error')
+          schedule()
+        }
+      }
+      s.chain = s.chain.then(() => write(0)).finally(() => {
+        s.pending--
+      })
+    },
+    [noteId, sky, schedule],
+  )
+  const commitRef = useRef(commit)
+  commitRef.current = commit
 
   const noteTemplate = useRef<TemplateName | null | undefined>(note.template)
   noteTemplate.current = note.template ?? noteTemplate.current
@@ -193,7 +205,6 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
         }),
         TaskList,
         TaskItem.configure({ nested: true }),
-        Hints.configure({ template: () => noteTemplate.current, byHeading: PLACEHOLDER_BY_HEADING, empty: '쓰기' }),
         NoteLink.configure({ onOpen: (a) => openRef.current(a) }),
         LinkDecor.configure({ resolve: () => resolveRef.current }),
         Trigger.configure({ onChange: (s) => setTrigger(s), onKey: (e) => keyRef.current(e) }),
@@ -204,9 +215,21 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
         attributes: { class: 'np-prose', 'aria-label': '본문', spellcheck: 'false' },
         scrollThreshold: { top: 24, bottom: 96, left: 0, right: 0 },
         scrollMargin: { top: 24, bottom: 96, left: 0, right: 0 },
+        // 본문 맨 앞에서 ↑ → 제목 끝으로 (제목 Enter → 본문의 짝)
+        handleKeyDown: (view, e) => {
+          if (e.key !== 'ArrowUp' || e.isComposing || e.keyCode === 229 || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return false
+          const sel = view.state.selection
+          const t = titleRef.current
+          if (!sel.empty || sel.from > 1 || !t) return false
+          e.preventDefault()
+          t.focus()
+          t.setSelectionRange(t.value.length, t.value.length)
+          return true
+        },
       },
-      onUpdate: ({ transaction }) => {
+      onUpdate: ({ editor: ed, transaction }) => {
         if (!transaction.docChanged) return
+        setEmpty(ed.isEmpty)
         const s = st.current
         s.dirty = true
         setSave('dirty')
@@ -215,7 +238,7 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
       onFocus: () => setFocused(true),
       onBlur: () => {
         setFocused(false)
-        if (st.current.dirty) void doSave()
+        commitRef.current(false)
       },
     },
     [note.id],
@@ -242,13 +265,13 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
     }
   }, [editor, schedule])
 
-  // 떠날 때 · 숨길 때 바로 저장
+  // 떠날 때 · 숨길 때 · 다른 노트로 바꿀 때(언마운트) 바로 저장 — 조합 중이어도 지금 문서를 찍는다
   useEffect(() => {
+    const s = st.current
+    s.dead = false
     const flush = () => {
-      if (st.current.dirty) {
-        st.current.composing = false
-        void doSave()
-      }
+      s.composing = false
+      commitRef.current(true)
     }
     const onVis = () => document.visibilityState === 'hidden' && flush()
     document.addEventListener('visibilitychange', onVis)
@@ -257,14 +280,15 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
       document.removeEventListener('visibilitychange', onVis)
       window.removeEventListener('pagehide', flush)
       flush()
+      s.dead = true
     }
-  }, [doSave])
+  }, [])
 
   // 밖에서 본문이 바뀌면(별가루 '노트로' 붙이기 등) 고치는 중이 아닐 때 다시 읽는다
   const extVersion = useLiveQuery(async () => (await db.noteBodies.get(note.id))?.version ?? 0, [note.id])
   useEffect(() => {
     const s = st.current
-    if (!editor || extVersion === undefined || extVersion <= s.version || s.dirty || s.saving) return
+    if (!editor || extVersion === undefined || extVersion <= s.version || s.dirty || s.pending) return
     void db.noteBodies.get(note.id).then((b) => {
       if (!b || editor.isDestroyed || st.current.dirty || b.version <= st.current.version) return
       st.current.version = b.version
@@ -330,32 +354,35 @@ function PaperBody(props: NotePaperProps & { subject: Subject | null; initial: {
   )
 
   const room = props.room
+  const dateText = fmtMD(classDate(note.classKey) ?? note.createdAt)
   return (
     <div className="np-scroll" ref={scrollRef}>
       <div className="np-col">
         <div className="np-top">
           {props.onBack && (
-            <button type="button" className="np-back" onClick={props.onBack}>
-              ‹ 노트
+            <button type="button" className="ibtn np-back" {...tip('노트 목록', { kbd: 'esc' })} onClick={props.onBack}>
+              <IconBack size={20} />
             </button>
           )}
           <NoteMenu note={note} subjects={subjects} onDeleted={props.onDeleted} />
         </div>
-        <TitleField
-          ref={titleRef}
-          note={note}
-          placeholder={titlePlaceholder(note.template)}
-          onEnter={() => editor?.commands.focus('start')}
-        />
+        <TitleField ref={titleRef} note={note} placeholder={dateText} onEnter={() => editor?.commands.focus('start')} />
         <p className="np-meta">
-          <i className="np-dot" aria-hidden="true" />
-          <span>{subject?.name ?? '과목 없음'}</span>
-          <span>· {fmtMD(classDate(note.classKey) ?? note.createdAt)}</span>
-          {room && <span>· {room}</span>}
+          <i className={`sdot${subject ? '' : ' is-none'}`} style={subject ? { ['--c' as string]: `var(--s-${subject.color})` } : undefined} tabIndex={0} {...tip(subject?.name ?? '과목 없음')} />
+          <span className="mono" {...(room ? { tabIndex: 0, ...tip(room) } : {})}>
+            {dateText}
+          </span>
           <span className={`np-save is-${save}`} role="status" aria-label={save === 'saved' ? '저장됨' : save === 'dirty' ? '저장 중' : '저장 실패'} />
         </p>
         {save === 'error' && <p className="np-err">저장하지 못했어요. 저장 공간을 확인해 주세요.</p>}
-        <EditorContent editor={editor} className="np-editor" />
+        <div className="np-editor-wrap">
+          {empty && (
+            <span className="np-h6" aria-hidden="true">
+              <Hint id="H6" side="right" active={empty} />
+            </span>
+          )}
+          <EditorContent editor={editor} className="np-editor" />
+        </div>
         <Backlinks noteId={note.id} title={note.title} onOpen={props.onOpenNote} />
       </div>
       {editor && trigger && (
@@ -384,6 +411,17 @@ function TitleField({ note, placeholder, onEnter, ref }: { note: Note; placehold
   const [v, setV] = useState(note.title)
   const st = useRef({ composing: false, timer: 0, dirty: false })
   const own = useRef<HTMLTextAreaElement | null>(null)
+  const latest = useRef({ v: note.title, title: note.title, id: note.id })
+  latest.current = { v, title: note.title, id: note.id }
+  // 다른 노트로 바꾸거나 화면을 떠나면(언마운트) 고치던 제목을 바로 저장 — 조합 중이어도
+  useEffect(
+    () => () => {
+      window.clearTimeout(st.current.timer)
+      const l = latest.current
+      if (st.current.dirty && l.v.trim() !== l.title) void renameNote(l.id, l.v)
+    },
+    [],
+  )
   // 밖에서 제목이 바뀌면(수업 틀 적용 등) 고치는 중이 아닐 때 따라간다
   useEffect(() => {
     if (!st.current.dirty && document.activeElement !== own.current) setV(note.title)
@@ -453,6 +491,7 @@ function TitleField({ note, placeholder, onEnter, ref }: { note: Note; placehold
 function NoteMenu({ note, subjects, onDeleted }: { note: Note; subjects: Subject[]; onDeleted?: () => void }) {
   const [open, setOpen] = useState<null | 'menu' | 'subject'>(null)
   const [arm, setArm] = useState(false)
+  const cur = subjects.find((s) => s.id === note.subjectId)
   const box = useRef<HTMLDivElement>(null)
   const go = useGo()
   const sky = useSkyEvent()
@@ -462,7 +501,11 @@ function NoteMenu({ note, subjects, onDeleted }: { note: Note; subjects: Subject
       return
     }
     const off = (e: PointerEvent) => !box.current?.contains(e.target as Node) && setOpen(null)
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(null)
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault() // 메뉴만 닫는다(노트 목록으로 돌아가지 않게)
+      setOpen(null)
+    }
     document.addEventListener('pointerdown', off)
     document.addEventListener('keydown', esc)
     return () => {
@@ -472,12 +515,17 @@ function NoteMenu({ note, subjects, onDeleted }: { note: Note; subjects: Subject
   }, [open])
   return (
     <div className="np-menu" ref={box}>
-      <button type="button" className="np-more" aria-label="노트 메뉴" aria-expanded={!!open} onClick={() => setOpen(open ? null : 'menu')}>
+      <button type="button" className="ibtn np-more" {...tip('노트 메뉴')} aria-expanded={!!open} onClick={() => setOpen(open ? null : 'menu')}>
         <IconMore size={18} />
       </button>
       {open === 'menu' && (
         <div className="np-pop" role="menu">
-          <button type="button" role="menuitem" onClick={() => setOpen('subject')}>과목 바꾸기</button>
+          <button type="button" role="menuitem" onClick={() => setOpen('subject')}>
+            <span className="np-pop-ic" aria-hidden="true">
+              <i className={`sdot is-lg${cur ? '' : ' is-none'}`} style={cur ? { ['--c' as string]: `var(--s-${cur.color})` } : undefined} />
+            </span>
+            과목 바꾸기
+          </button>
           <button
             type="button"
             role="menuitem"
@@ -487,6 +535,9 @@ function NoteMenu({ note, subjects, onDeleted }: { note: Note; subjects: Subject
               void go('/map', el).then(() => sky.select(note.id))
             }}
           >
+            <span className="np-pop-ic" aria-hidden="true">
+              <IconMap size={18} />
+            </span>
             지도에서 보기
           </button>
           <button
@@ -499,7 +550,10 @@ function NoteMenu({ note, subjects, onDeleted }: { note: Note; subjects: Subject
               void deleteNote(note.id).then(() => onDeleted?.())
             }}
           >
-            {arm ? '지우기 · 한 번 더' : '지우기'}
+            <span className="np-pop-ic" aria-hidden="true">
+              <IconTrash size={18} />
+            </span>
+            {arm ? '한 번 더' : '지우기'}
           </button>
         </div>
       )}
@@ -516,7 +570,9 @@ function NoteMenu({ note, subjects, onDeleted }: { note: Note; subjects: Subject
                 void setNoteSubject(note.id, s?.id ?? null)
               }}
             >
-              <i style={{ background: s ? `var(--s-${s.color})` : 'var(--text-3)' }} aria-hidden="true" />
+              <span className="np-pop-ic" aria-hidden="true">
+                <i className={`sdot is-lg${s ? '' : ' is-none'}`} style={s ? { ['--c' as string]: `var(--s-${s.color})` } : undefined} />
+              </span>
               {s?.name ?? '과목 없음'}
             </button>
           ))}
@@ -533,7 +589,10 @@ interface MenuItem {
   label: string
   range?: [number, number] | null
   dot?: string | null
-  right?: string
+  /** 앞 표시: 블록 = 마크다운 글자, 틀 = 문서 아이콘 */
+  lead?: ReactNode
+  /** [[ 제안: 이 노트를 가리키는 링크 수 */
+  links?: number
   run: () => void
 }
 
@@ -562,7 +621,7 @@ function TriggerMenu(props: {
 }) {
   const { editor, state, notes, subjects } = props
   const [sel, setSel] = useState(0)
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
+  const [pos, setPos] = useState<{ left: number; top: number; up: boolean } | null>(null)
   const linkCounts = useLiveQuery(async () => {
     const m = new Map<string, number>()
     if (state.kind !== 'link') return m
@@ -588,14 +647,15 @@ function TriggerMenu(props: {
           label: n.title,
           range: q ? m.range : null,
           dot: s ? `var(--s-${s.color})` : 'var(--text-3)',
-          right: c ? `링크 ${c}` : '',
+          links: c,
           run: () => replace({ type: 'noteLink', attrs: { to: n.id, title: n.title.trim() } }),
         }
       })
       if (q && !notes.some((n) => n.title.trim() === q)) {
         out.push({
           id: 'new',
-          label: `＋ 새 노트 ‘${q}’`,
+          label: `‘${q}’`,
+          lead: <IconPlus size={16} />,
           run: () => {
             replace({ type: 'noteLink', attrs: { to: null, title: q } })
             void props.onCreateTitle(q)
@@ -612,7 +672,7 @@ function TriggerMenu(props: {
         id: b.id,
         label: b.label,
         range: q ? m.range : null,
-        right: b.hint,
+        lead: <span className="np-sg-key">{b.hint || '¶'}</span>,
         run: () => {
           const c = editor.chain().focus().deleteRange({ from: state.from, to: state.to })
           if (b.id === 'p') c.setParagraph()
@@ -634,7 +694,7 @@ function TriggerMenu(props: {
       ;([['class', '수업 노트 틀', ['수업', 'class', '틀', 'template']], ['concept', '개념 정리 틀', ['개념', 'concept', '틀', 'template']]] as const).forEach(([t, label, keys]) => {
         const m = matchText(label, q, [...keys])
         if (q && m.score <= 0) return
-        out.push({ id: 'tpl-' + t, label, range: q ? m.range : null, right: '틀', run: () => props.onTemplate(t) })
+        out.push({ id: 'tpl-' + t, label, range: q ? m.range : null, lead: <IconDoc size={16} />, run: () => props.onTemplate(t) })
       })
     }
     return out
@@ -659,16 +719,22 @@ function TriggerMenu(props: {
     return false
   }
 
-  // 자리: 커서 아래 6px(폰은 키보드 바로 위, 종이 폭 − 16px)
-  useEffect(() => {
+  // 자리: 커서 아래 6px. 화면(키보드 위 보이는 영역) 아래로 잘리면 커서 위로 뒤집는다. 폰은 키보드 바로 위, 종이 폭 − 16px
+  const boxRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
     const place = () => {
       if (props.phone) return setPos(null)
       try {
         const c = editor.view.coordsAtPos(state.from)
-        const left = Math.max(8, Math.min(c.left, window.innerWidth - 328))
+        const vv = window.visualViewport
+        const bottomEdge = vv ? vv.offsetTop + vv.height : window.innerHeight
+        const h = boxRef.current?.offsetHeight ?? Math.min(items.length, 7) * 40 + 10
+        const w = boxRef.current?.offsetWidth ?? 320
+        const left = Math.max(8, Math.min(c.left, window.innerWidth - w - 8))
         const below = c.bottom + 6
-        const top = below + 6 * 40 + 16 > window.innerHeight ? Math.max(8, c.top - 6 - Math.min(items.length, 7) * 40 - 12) : below
-        setPos({ left, top })
+        const up = below + h > bottomEdge - 8 && c.top - 6 - h >= 8
+        const top = up ? c.top - 6 - h : Math.max(8, Math.min(below, bottomEdge - 8 - h))
+        setPos((p) => (p && p.left === left && p.top === top && p.up === up ? p : { left, top, up }))
       } catch {
         setPos(null)
       }
@@ -676,11 +742,13 @@ function TriggerMenu(props: {
     place()
     window.addEventListener('scroll', place, true)
     window.addEventListener('resize', place)
+    window.visualViewport?.addEventListener('resize', place)
     return () => {
       window.removeEventListener('scroll', place, true)
       window.removeEventListener('resize', place)
+      window.visualViewport?.removeEventListener('resize', place)
     }
-  }, [editor, state.from, props.phone, items.length])
+  }, [editor, state.from, state.query, props.phone, items.length])
 
   const [kb, setKb] = useState(0)
   useEffect(() => {
@@ -693,24 +761,37 @@ function TriggerMenu(props: {
   }, [props.phone])
 
   if (!items.length) return null
-  const style = props.phone ? { left: 8, right: 8, bottom: kb + 8 } : pos ? { left: pos.left, top: pos.top } : { display: 'none' }
+  // 처음 한 번은 보이지 않게 그려 높이를 잰 뒤 자리를 잡는다
+  const style = props.phone ? { left: 8, right: 8, bottom: kb + 8 } : pos ? { left: pos.left, top: pos.top } : { left: 0, top: 0, visibility: 'hidden' as const }
   return (
-    <div className={`np-suggest${props.phone ? ' is-phone' : ''}`} style={style} role="listbox" aria-label={state.kind === 'link' ? '노트 링크' : '블록'} onMouseDown={(e) => e.preventDefault()}>
+    <div ref={boxRef} className={`np-suggest${props.phone ? ' is-phone' : ''}${pos?.up ? ' is-up' : ''}`} style={style} role="listbox" aria-label={state.kind === 'link' ? '노트 링크' : '블록'} onMouseDown={(e) => e.preventDefault()}>
       {items.map((it, i) => (
         <button
           key={it.id}
           type="button"
           role="option"
           aria-selected={i === sel}
+          aria-label={it.id === 'new' ? `새 노트 ${it.label}` : undefined}
           className={`np-sg-row${i === sel ? ' is-sel' : ''}${it.id === 'new' ? ' is-new' : ''}`}
           onMouseEnter={() => setSel(i)}
           onClick={() => it.run()}
         >
-          {state.kind === 'link' && it.id !== 'new' && <i className="np-sg-dot" style={{ background: it.dot ?? 'var(--text-3)' }} aria-hidden="true" />}
+          {it.lead ? (
+            <span className="np-sg-lead" aria-hidden="true">
+              {it.lead}
+            </span>
+          ) : (
+            <i className="np-sg-dot" style={{ background: it.dot ?? 'var(--text-3)' }} aria-hidden="true" />
+          )}
           <span className="np-sg-t">
             <Hl text={it.label} range={it.range} />
           </span>
-          {it.right ? <span className="np-sg-r">{it.right}</span> : null}
+          {it.links ? (
+            <span className="np-sg-r" aria-label={`링크 ${it.links}`}>
+              <IconLink size={13} />
+              {it.links}
+            </span>
+          ) : null}
         </button>
       ))}
     </div>

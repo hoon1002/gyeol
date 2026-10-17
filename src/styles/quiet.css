@@ -1,0 +1,146 @@
+/* ===== M3 조용한 화면 공용 (design-quiet 3-1 · 4장): 툴팁 · 첫 회 안내 · 눌림 · 금빛 원 · 숫자 뱃지 · 과목 점 ===== */
+
+/* 툴팁 */
+.tip {
+  position: fixed; left: 0; top: 0; z-index: 120; pointer-events: none;
+  display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 4px 8px; box-sizing: border-box; border-radius: 6px;
+  background: rgba(10, 14, 26, .92); color: #F2EFE8; font: 500 12px/1 var(--f-kr); white-space: nowrap; text-shadow: none;
+  animation: tipin 120ms var(--ease-out) both;
+}
+:root[data-theme="light"] .tip { background: rgba(20, 23, 32, .9); }
+.tip kbd { font: 400 11px var(--f-mono); color: #8E94A8; background: none; border: 0; padding: 0; }
+.tip.is-out { opacity: 0; transition: opacity 80ms; }
+@keyframes tipin { from { opacity: 0; margin-top: 2px; } }
+:root[data-motion="off"] .tip { animation: tipfade 120ms both; }
+@keyframes tipfade { from { opacity: 0; } }
+
+/* 첫 회 안내 그림 */
+.hint { position: absolute; z-index: 30; pointer-events: none; color: var(--text-2); display: none; }
+.hint.is-on { display: block; animation: hintin 240ms var(--ease-out) both; }
+.hint-top { left: 50%; bottom: calc(100% + 10px); translate: -50% 0; }
+.hint-bottom { left: 50%; top: calc(100% + 10px); translate: -50% 0; }
+.hint-right { left: calc(100% + 10px); top: 50%; translate: 0 -50%; }
+.hint-left { right: calc(100% + 10px); top: 50%; translate: 0 -50%; }
+.hint svg { display: block; filter: drop-shadow(0 1px 8px rgba(4, 6, 12, .7)); }
+@keyframes hintin { from { opacity: 0; } }
+.ha-draw { stroke-dasharray: 80; stroke-dashoffset: 80; animation: ha-draw 2.4s var(--ease-out) 2 forwards; }
+.ha-late { animation-name: ha-draw-late; }
+.ha-tap { transform-box: fill-box; transform-origin: center; animation: ha-tap 2.4s var(--ease-out) 2 forwards; }
+.ha-slide { animation: ha-slide 2.4s var(--ease-in-out) 2 forwards; }
+.ha-grow { transform-box: fill-box; transform-origin: top; animation: ha-grow 2.4s var(--ease-in-out) 2 forwards; }
+.ha-fade-out { animation: ha-out 2.4s ease 2 forwards; }
+.ha-fade-in { animation: ha-in 2.4s ease 2 forwards; }
+.ha-fan { transform-box: fill-box; transform-origin: center; animation: ha-fan 2.4s var(--ease-out) 2 forwards; }
+.ha-f2 { animation-delay: .12s; } .ha-f3 { animation-delay: .24s; }
+.ha-ring { transform-box: fill-box; transform-origin: center; animation: ha-ring 2.4s var(--ease-out) 2 forwards; }
+@keyframes ha-draw { 0%, 10% { stroke-dashoffset: 80; } 60%, 100% { stroke-dashoffset: 0; } }
+@keyframes ha-draw-late { 0%, 40% { stroke-dashoffset: 80; } 85%, 100% { stroke-dashoffset: 0; } }
+@keyframes ha-tap { 0%, 10% { transform: scale(1.6); opacity: 0; } 25% { transform: scale(1); opacity: 1; } 35% { transform: scale(.82); } 50%, 100% { transform: scale(1); opacity: 1; } }
+@keyframes ha-slide { 0%, 15% { transform: translateY(-30px); opacity: 0; } 25% { opacity: 1; } 75%, 100% { transform: none; opacity: 1; } }
+@keyframes ha-grow { 0%, 25% { transform: scaleY(0); } 75%, 100% { transform: none; } }
+@keyframes ha-out { 0%, 35% { opacity: 1; } 60%, 100% { opacity: 0; } }
+@keyframes ha-in { 0%, 35% { opacity: 0; } 60%, 100% { opacity: 1; } }
+@keyframes ha-fan { 0%, 30% { transform: translateY(14px) scale(.3); opacity: 0; } 60%, 100% { transform: none; opacity: 1; } }
+@keyframes ha-ring { 0%, 30% { transform: scale(.2); opacity: 0; } 55% { opacity: .9; } 100% { transform: none; opacity: .5; } }
+:root[data-motion="off"] .hint * { animation: none !important; stroke-dashoffset: 0 !important; }
+:root[data-motion="off"] .ha-fade-out { opacity: 0; }
+
+/* 눌림 (design-quiet 3-1): scale .94 90ms out → 놓으면 160ms */
+.icon-btn, .gold-btn, .dock-item, .seg-ico button, .ibtn { transition: transform 160ms var(--ease-out), color var(--dur-fast), background-color var(--dur-fast), filter var(--dur-fast); }
+.icon-btn:active, .dock-item:active, .seg-ico button:active, .ibtn:active { transform: scale(.94); transition-duration: 90ms; }
+.ibtn {
+  display: inline-grid; place-items: center; min-width: 32px; height: 32px; padding: 0 6px; border-radius: 10px; color: var(--text-2);
+  font: inherit; background: none;
+}
+.ibtn:hover { color: var(--text-1); background: color-mix(in srgb, var(--text-1) 6%, transparent); }
+.ibtn:disabled { opacity: .35; }
+.ibtn.is-danger { color: var(--danger); }
+@media (pointer: coarse) { .ibtn { min-width: 44px; height: 44px; } }
+
+/* 금빛 원 (화면당 1개 주 동작) */
+.gold-btn {
+  position: relative; display: inline-grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; flex: none;
+  background: var(--accent); color: var(--on-accent); box-shadow: 0 12px 32px -14px var(--accent);
+}
+.gold-btn:hover { background: var(--accent-hover); }
+.gold-btn:active { transform: scale(.94); filter: brightness(.92); transition-duration: 90ms; }
+.gold-btn:disabled { opacity: .45; }
+@media (max-width: 599px) { .gold-btn { width: 52px; height: 52px; } }
+.gold-btn .ibadge { position: absolute; left: calc(100% + 6px); top: 50%; translate: 0 -50%; }
+
+/* 숫자 뱃지 · 숫자 + 아이콘 */
+.ibadge { font: 400 12px var(--f-mono); color: var(--text-3); letter-spacing: 0; white-space: nowrap; }
+.inum { display: inline-flex; align-items: center; gap: 4px; font: 400 13px var(--f-mono); color: var(--text-3); letter-spacing: 0; }
+.inum svg { color: var(--text-2); }
+
+/* 과목 점: 6px(행) · 8px(칩), 없음 = 빈 고리 */
+.sdot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--c, var(--text-3)); }
+.sdot.is-lg { width: 8px; height: 8px; }
+.sdot.is-none { background: none; box-shadow: inset 0 0 0 1.5px var(--text-3); }
+.sdot.is-seal { --c: var(--seal); }
+
+/* 아이콘 세그먼트 + 값 낱말 1.2초 */
+.seg-ico { position: relative; display: inline-flex; gap: 2px; padding: 3px; border-radius: 12px; background: color-mix(in srgb, var(--text-1) 5%, transparent); }
+.seg-ico button { position: relative; display: grid; place-items: center; width: 40px; height: 34px; border-radius: 9px; color: var(--text-3); }
+.seg-ico button:hover { color: var(--text-1); }
+.seg-ico button[aria-checked="true"] { color: var(--text-1); background: color-mix(in srgb, var(--text-1) 8%, transparent); }
+.seg-ico button[aria-checked="true"]::after { content: ""; position: absolute; bottom: 2px; left: 50%; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 50%; background: var(--accent); }
+.seg-ico.is-disabled { opacity: .45; }
+.seg-word { position: absolute; right: 0; top: calc(100% + 4px); font: 400 11px var(--f-mono); color: var(--text-2); white-space: nowrap; animation: segword 1.2s ease both; pointer-events: none; }
+@keyframes segword { 0% { opacity: 0; } 12%, 75% { opacity: 1; } 100% { opacity: 0; } }
+
+/* 포커스 고리 (아이콘 전용 컨트롤) */
+.ibtn:focus-visible, .gold-btn:focus-visible, .seg-ico button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 오늘 (design-quiet 1-2): 한 줄 + 금빛 원 + ✦ n */
+.today-line { display: inline-flex; align-items: center; gap: 14px; outline: none; border-radius: 8px; }
+.today-line:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.today-line.is-num .focus-lines { font-family: var(--f-mono); font-weight: 300; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.today-acts { display: flex; align-items: center; gap: 20px; min-height: 52px; }
+.hint-host { position: relative; display: inline-flex; }
+.today-acts .dust-line { margin: 0; }
+.plan-line .plan-line-v { font-family: var(--f-mono); }
+
+/* 설정 시트 (design-quiet 1-8): 단원 이름 없이 간격 + 가는 선, 행 = 아이콘 + 컨트롤 */
+.sheet-head { justify-content: flex-end; }
+.settings.is-quiet .set-sec + .set-sec { border-top: 1px solid var(--border); }
+.set-row.is-icon { min-height: 56px; }
+.set-ico { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; color: var(--text-2); outline: none; }
+.set-ico:focus-visible, .set-lock:focus-visible, .set-icons .inum:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.set-row.is-icon .set-row-c { position: relative; display: flex; align-items: center; gap: 10px; }
+.set-lock { display: grid; place-items: center; color: var(--text-3); border-radius: 6px; }
+.set-icons { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 6px 0 14px; }
+.set-shield.is-dim { opacity: .45; }
+.set-icons .ibtn { gap: 2px; display: inline-flex; align-items: center; }
+/* 레일 위 첫 회 안내는 오른쪽 */
+@media (min-width: 600px) { .dock .hint-top { left: calc(100% + 10px); bottom: auto; top: 50%; translate: 0 -50%; } }
+.lens-pill { position: relative; min-width: 36px; justify-content: center; }
+
+/* 보관 카드 조용한 판 */
+.bk-card.is-row { grid-template-columns: 1fr auto; align-items: center; }
+.bk-card.is-row .ios-line, .bk-card.is-row .err-line { grid-column: 1 / -1; }
+.bk-last { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-3); outline: none; border-radius: 6px; }
+.bk-last:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bk-card .bk-acts { margin-top: 0; }
+.bk-nums { display: flex; align-items: center; gap: 14px; margin: 0; }
+.bk-nums .mono { font-size: 13px; color: var(--text-3); }
+.bk-radio { grid-template-columns: auto auto 1fr; color: var(--text-1); }
+.bk-radio svg { color: var(--text-2); }
+
+/* 계획 · 시간표 팝오버 (design-quiet 1-7) */
+.hint-host-block { position: relative; }
+.tt-field { display: flex; align-items: center; gap: 8px; color: var(--text-3); }
+.tt-field .tt-in { flex: 1; min-width: 0; }
+.gold-btn.is-sm { width: 40px; height: 40px; box-shadow: none; }
+.tt-acts { gap: 4px; }
+.tt-acts .tt-del { margin-right: auto; }
+.tt-weekly.is-on { color: var(--accent); }
+.tt-toggle.is-on { color: var(--text-1); }
+.tt-tools .ibtn { min-width: 32px; height: 28px; }
+.ics-h.inum { font: 500 20px var(--f-mono); color: var(--text-1); gap: 8px; }
+.ics-acts { gap: 8px; }
+.plan-menu-item { gap: 10px; }
+
+/* 별 정보 (design-quiet 1-6): 제목(데이터) 한 줄 + 점·숫자 */
+.star-chips { display: flex; align-items: center; gap: 12px; margin: 0; }
+.star-info .gold-btn { box-shadow: none; }

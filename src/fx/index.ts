@@ -67,6 +67,7 @@ export {
   useSkySheet,
   useSkyAnchor,
   useSkyDrag,
+  useSkyPaper,
   useSkyClock,
 } from './hooks'
 /** 글 구역 (design-m1 2-1·2-2) — 렌더러 안전 마스크와 앱 배치가 같은 숫자를 쓴다 */
@@ -76,6 +77,7 @@ export type { SkyEvents, SkyStarsSpec } from './hooks'
 export { SKY_TIMING } from './sky/field'
 export type { SkyPhase, StarKind, SkyStatsOut, CameraTarget, Travel } from './sky/field'
 export { flightMs } from './sky/field'
+export { isSkyDragClick } from './sky/gesture'
 export { ProgressLine } from './components/ProgressLine'
 export type { ProgressLineProps } from './components/ProgressLine'
 export { SkyCaption } from './components/SkyCaption'

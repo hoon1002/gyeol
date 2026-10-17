@@ -211,3 +211,48 @@
 .ios-line { margin-top: 6px; }
 .ios-steps { display: flex; gap: 16px; margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--text-2); }
 .ios-steps li { display: inline-flex; align-items: center; gap: 6px; }
+
+/* M3 메모 칸: 아이콘 도구 · 체크리스트 · 음성 */
+.memo-tools { display: flex; align-items: center; gap: 2px; }
+.memo-tools .ibtn.is-on { color: var(--accent); }
+.memo-mic.is-rec { color: var(--seal); gap: 4px; display: inline-flex; }
+.memo-dot { min-width: 32px; }
+.memo-voice { flex: none; height: 32px; padding: 0 6px 0 8px; border-radius: 8px; background: color-mix(in srgb, var(--text-1) 7%, transparent); }
+.memo-voice button { margin-left: 2px; color: var(--text-3); font-size: 15px; }
+kbd.memo-hint { font: 400 11px var(--f-mono); color: var(--text-3); border: 1px solid var(--border-strong); border-radius: 5px; padding: 1px 6px; }
+.memo-photo { width: auto; height: auto; }
+
+/* M3 별가루함: 아이콘 머리 · 거르기 · 고르기 모드 · 체크리스트 · 음성 */
+.dust-bar { display: flex; align-items: center; gap: 6px; min-height: 36px; }
+.dust-h.inum { font: 400 15px var(--f-mono); color: var(--text-2); gap: 6px; margin: 0; }
+.dust-h.inum svg { color: var(--text-1); }
+.dust-tools { margin-left: auto; display: inline-flex; gap: 2px; }
+.dust-filter { display: flex; gap: 2px; flex-wrap: wrap; }
+.dust-filter .ibtn.is-on { background: color-mix(in srgb, var(--text-1) 10%, transparent); }
+.dust-filter .ibtn.is-on .sdot { box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--c, var(--text-3)); }
+.dust-row.is-sel { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.dust-row.is-pin { border-left: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); }
+.dust-check { position: absolute; left: 4px; top: 14px; width: 14px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 1.5px var(--border-strong); }
+.dust-check.is-on { background: var(--accent); box-shadow: none; }
+.dust-row:has(.dust-check) { padding-left: 26px; }
+.dust-meta { gap: 6px; }
+.dust-subj.ibtn { min-width: 20px; height: 20px; padding: 0; }
+.dust-acts { gap: 2px; }
+.dust-acts .ibtn.is-on { color: var(--accent); }
+.dust-checklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.dust-checklist label { display: flex; align-items: flex-start; gap: 8px; font-size: 15px; line-height: 1.5; color: var(--text-1); cursor: pointer; }
+.dust-checklist input { margin-top: 4px; accent-color: var(--accent); }
+.dust-checklist .is-done { color: var(--text-3); }
+.dust-voice { height: 24px; min-width: 0; padding: 0 6px; gap: 4px; display: inline-flex; }
+.dust-back.ibtn { justify-self: auto; }
+.dust-foot .ibtn { gap: 4px; display: inline-flex; }
+.memo-input.is-check { font-variant-ligatures: none; }
+/* ＋ 하나에서 펼쳐지는 종류 칸 (design-ink 8-2) */
+.memo-plus svg { transition: transform 160ms var(--ease-out); }
+.memo-plus.is-open svg { transform: rotate(45deg); }
+.memo-fan { display: inline-flex; gap: 4px; animation: fanin 160ms var(--ease-out) both; }
+@keyframes fanin { from { opacity: 0; transform: translateX(12px); } }
+:root[data-motion="off"] .memo-fan { animation: none; }
+.memo-mic.is-late .ibadge { color: var(--accent); }
+.memo-pen { flex: none; display: grid; place-items: center; height: 36px; color: var(--text-3); }
+.memo-box:focus { outline: none; }

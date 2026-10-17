@@ -7,16 +7,27 @@ import { createPortal } from 'react-dom'
 import { parseIcs, type IcsClass } from '@/lib/ics'
 import { weekdayShort } from '@/lib/time'
 import { importClasses, type TimetableStore } from './slots'
+import { tip } from '@/shell/Tip'
+import { IconCalendarIn, IconCheck, IconClose, IconPlan } from '@/shell/icons'
 import '@/styles/capture.css'
 
 /** 파일 고르기 버튼 + 미리보기 시트 */
-export function IcsButton({ store, className = 'btn-ghost small', label = '캘린더 파일', onDone, onPicked }: { store: TimetableStore; className?: string; label?: string; onDone?: (n: number) => void; onPicked?: () => void }) {
+export function IcsButton({ store, className = 'ibtn', label = '캘린더 파일', iconOnly = true, onDone, onPicked }: { store: TimetableStore; className?: string; label?: string; iconOnly?: boolean; onDone?: (n: number) => void; onPicked?: () => void }) {
   const input = useRef<HTMLInputElement>(null)
   const [list, setList] = useState<IcsClass[] | null>(null)
   const [error, setError] = useState(false)
   return (
     <>
-      <button type="button" className={className} onClick={() => input.current?.click()}>{label}</button>
+      {iconOnly ? (
+        <button type="button" className={className} {...tip(label)} onClick={() => input.current?.click()}>
+          <IconCalendarIn size={20} />
+        </button>
+      ) : (
+        <button type="button" className={className} onClick={() => input.current?.click()}>
+          <IconCalendarIn size={18} />
+          {label}
+        </button>
+      )}
       <input
         ref={input}
         type="file"
@@ -57,8 +68,10 @@ export function IcsPreview({ list, store, onClose }: { list: IcsClass[]; store: 
       <div className="ics-catch" onClick={() => onClose(null)} />
       <div className="ics-sheet" role="dialog" aria-label="캘린더 파일 가져오기">
         <span className="sheet-grip" aria-hidden="true" />
-        <h2 className="ics-h">수업 {list.length}개</h2>
-        <p className="meta">매주 반복만</p>
+        <h2 className="ics-h inum" aria-label={`매주 수업 ${list.length}개`}>
+          <IconPlan size={20} />
+          <span aria-hidden="true">{list.length}</span>
+        </h2>
         {list.length > 0 && (
           <ul className="ics-list">
             {list.map((c) => (
@@ -84,8 +97,12 @@ export function IcsPreview({ list, store, onClose }: { list: IcsClass[]; store: 
           </ul>
         )}
         <div className="ics-acts">
-          <button type="button" className="btn-primary small" disabled={!picked.length || busy} onClick={() => void insert()} autoFocus>넣기</button>
-          <button type="button" className="btn-quiet" onClick={() => onClose(null)}>취소</button>
+          <button type="button" className="gold-btn" {...tip('넣기')} disabled={!picked.length || busy} onClick={() => void insert()} autoFocus>
+            <IconCheck size={22} />
+          </button>
+          <button type="button" className="ibtn" {...tip('취소')} onClick={() => onClose(null)}>
+            <IconClose size={20} />
+          </button>
         </div>
       </div>
     </div>

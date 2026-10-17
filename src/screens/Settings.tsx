@@ -2,13 +2,17 @@
  * 설정 시트의 본문 (M1: 장소가 아니라 시트 — 틀·열기·닫기·포커스 가두기는 src/shell/SettingsSheet.tsx).
  * 섹션은 상자 없이 제목 + 행: 모양(테마) · 움직임(모션 · 은하 회전 · 공간 이동) · 데이터(표시만) · 개발용.
  */
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ComponentType, type KeyboardEvent, type ReactNode } from 'react'
 import { useMotionPrefs, useSeal, type MotionLevel } from '@/fx'
 import { useActive } from '@/app/keepAlive'
 import { db } from '@/db/schema'
 import { hasSamples, removeSamples, seedSample } from '@/db/seed'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { BackupCard } from '@/capture/BackupCard'
+import { tip } from '@/shell/Tip'
+import { resetHints } from '@/shell/hints'
+import { announce } from '@/shell/announce'
+import { IconAuto, IconFade, IconFlat, IconLock, IconMoon, IconMotion, IconOrbit, IconOrbitOff, IconOrbitSlow, IconReplay, IconSample, IconShield, IconStorage, IconSun, IconTheme, IconTrash, IconTravel, IconTravelShort, IconWave1, IconWave3 } from '@/shell/icons'
 import { useCapture } from '@/capture/store'
 import { switchTheme } from '@/lib/theme'
 import { useSettings, type ClockPreset, type RotationPref, type ThemePref, type TravelPref } from '@/stores/settings'
@@ -115,6 +119,63 @@ function fmtBytes(b: number | null): string {
 export const THEME_NAME: Record<ThemePref, string> = { dark: '밤', light: '낮', system: '시스템' }
 export const ROTATION_NAME: Record<RotationPref, string> = { on: '켬', slow: '느리게', off: '끔' }
 
+type Ico = ComponentType<{ size?: number }>
+
+/** 아이콘 행: 맨 앞 20px 아이콘(툴팁 = 행 이름) + 컨트롤. 잠긴 행은 자물쇠 */
+function IRow({ icon: I, label, lock, children }: { icon: Ico; label: string; lock?: string; children: ReactNode }) {
+  return (
+    <div className="set-row is-icon">
+      <span className="set-ico" tabIndex={0} {...tip(lock ? `${label} · 잠김` : label)}>
+        <I size={20} />
+      </span>
+      <div className="set-row-c">
+        {lock && (
+          <span className="set-lock" tabIndex={0} {...tip(lock)}>
+            <IconLock size={16} />
+          </span>
+        )}
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/** 아이콘 세그먼트 (role=radiogroup). 바꾸면 값 낱말이 아래에 1.2초 */
+function SegIcon<T extends string>({ label, value, options, onChange, disabled }: { label: string; value: T; options: Array<[T, string, Ico]>; onChange: (v: T, el: HTMLElement) => void; disabled?: boolean }) {
+  const [flash, setFlash] = useState<{ word: string; n: number } | null>(null)
+  const pick = (v: T, word: string, el: HTMLElement) => {
+    if (v === value) return
+    setFlash((f) => ({ word, n: (f?.n ?? 0) + 1 }))
+    announce(`${label} ${word}`)
+    onChange(v, el)
+  }
+  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+    e.preventDefault()
+    const i = options.findIndex(([v]) => v === value)
+    const n = options[(i + (e.key === 'ArrowRight' ? 1 : -1) + options.length) % options.length]!
+    const btn = e.currentTarget.querySelector<HTMLElement>(`[data-v="${n[0]}"]`)
+    if (btn) {
+      btn.focus()
+      pick(n[0], n[1], btn)
+    }
+  }
+  return (
+    <div className={`seg-ico${disabled ? ' is-disabled' : ''}`} role="radiogroup" aria-label={label} onKeyDown={onKey}>
+      {options.map(([v, word, I]) => (
+        <button key={v} type="button" role="radio" data-v={v} aria-checked={v === value} tabIndex={v === value ? 0 : -1} disabled={disabled} {...tip(word)} onClick={(e) => pick(v, word, e.currentTarget)}>
+          <I size={20} />
+        </button>
+      ))}
+      {flash && (
+        <span key={flash.n} className="seg-word" aria-hidden="true">
+          {flash.word}
+        </span>
+      )}
+    </div>
+  )
+}
+
 export function SettingsBody() {
   const theme = useSettings((s) => s.theme)
   const setTheme = useSettings((s) => s.setTheme)
@@ -138,85 +199,65 @@ export function SettingsBody() {
   const seal = useSeal()
   const dev = import.meta.env.DEV || (typeof location !== 'undefined' && /[?&]dev\b/.test(location.search))
 
+  const lockTip = '기기 설정 · 동작 줄이기'
+  const replay = () => {
+    resetHints()
+    useUi.getState().closeSettings()
+    useCapture.getState().startOnboarding('real')
+  }
+
   return (
     <>
-      <div className="settings">
+      <div className="settings is-quiet">
 
+        {/* 데이터 (맨 위: 내보내기를 설정 맨 위에) — 단원 이름은 읽기용, 화면은 간격 + 가는 선 */}
         <section className="set-sec" aria-labelledby="sec-data">
-          <h2 id="sec-data">데이터</h2>
+          <h2 id="sec-data" className="sr-only">데이터</h2>
           <BackupCard />
-          <Row title="이 기기" hint={storage.counts || undefined}>
-            <span className="set-val">{fmtBytes(storage.usage)}</span>
-          </Row>
-          <Row title="영구 저장">
-            <span className="set-val">{storage.persisted === null ? '알 수 없음' : storage.persisted ? '허용됨' : '요청함'}</span>
-          </Row>
-          {samples && (
-            <Row title="샘플">
-              <button type="button" className="btn-ghost small" onClick={() => void removeSamples()}>샘플 지우기</button>
-            </Row>
-          )}
-          <Row title="처음 화면">
-            <button
-              type="button"
-              className="btn-ghost small"
-              onClick={() => {
-                useUi.getState().closeSettings()
-                useCapture.getState().startOnboarding('real')
-              }}
-            >
-              다시 보기
+          <div className="set-icons">
+            <span className="inum" tabIndex={0} {...tip(storage.counts ? storage.counts.replace(/ · /g, ' ') : '이 기기')}>
+              <IconStorage size={18} />
+              <span aria-hidden="true">{fmtBytes(storage.usage)}</span>
+            </span>
+            <span className={`inum set-shield${storage.persisted === null ? ' is-dim' : ''}`} tabIndex={0} {...tip(storage.persisted === null ? '영구 저장 모름' : storage.persisted ? '영구 저장 허용' : '영구 저장 요청함')}>
+              <IconShield size={18} filled={!!storage.persisted} />
+            </span>
+            {samples && (
+              <button type="button" className="ibtn" {...tip('샘플 지우기')} onClick={() => void removeSamples().then(() => announce('샘플 지움'))}>
+                <IconSample size={18} />
+                <IconTrash size={16} />
+              </button>
+            )}
+            <button type="button" className="ibtn" {...tip('처음 화면 다시 보기')} onClick={replay}>
+              <IconReplay size={18} />
             </button>
-          </Row>
+          </div>
         </section>
 
         <section className="set-sec" aria-labelledby="sec-look">
-          <h2 id="sec-look">모양</h2>
-          <Row title="하늘">
-            <span className="swatch" aria-hidden="true" />
-            <Segmented<ThemePref>
+          <h2 id="sec-look" className="sr-only">모양</h2>
+          <IRow icon={IconTheme} label="테마">
+            <SegIcon<ThemePref>
               label="테마"
               value={theme}
-              options={[['dark', '밤'], ['light', '낮'], ['system', '시스템']]}
+              options={[['dark', '밤', IconMoon], ['light', '낮', IconSun], ['system', '시스템', IconAuto]]}
               onChange={(v, el) => switchTheme(v, setTheme, { origin: el, animate: level !== 'off' })}
             />
-          </Row>
+          </IRow>
         </section>
 
         <section className="set-sec" aria-labelledby="sec-motion">
-          <h2 id="sec-motion">움직임</h2>
-          <Row
-            title="움직임"
-            hint={osReduced ? '기기 설정 · 동작 줄이기' : undefined}
-          >
-            <Segmented<MotionLevel>
-              label="모션"
-              value={osReduced ? 'off' : motion}
-              disabled={osReduced}
-              options={[['rich', '풍부'], ['calm', '절제'], ['off', '정지']]}
-              onChange={(v) => setMotion(v)}
-            />
-          </Row>
-          <Row title="공간 이동" hint={osReduced ? '기기 설정 · 동작 줄이기' : undefined}>
-            <Segmented<TravelPref>
-              label="공간 이동"
-              value={osReduced ? 'off' : travel}
-              disabled={osReduced}
-              options={[['fly', '비행'], ['short', '짧게'], ['off', '끔']]}
-              onChange={(v) => setTravel(v)}
-            />
-          </Row>
-          <Row title="은하 회전" hint={osReduced ? '기기 설정 · 동작 줄이기' : undefined}>
-            <Segmented<RotationPref>
-              label="은하 회전"
-              value={osReduced ? 'off' : rotation}
-              disabled={osReduced}
-              options={[['on', '켬'], ['slow', '느리게'], ['off', '끔']]}
-              onChange={(v) => setRotation(v)}
-            />
-          </Row>
+          <h2 id="sec-motion" className="sr-only">움직임</h2>
+          <IRow icon={IconMotion} label="움직임" lock={osReduced ? lockTip : undefined}>
+            <SegIcon<MotionLevel> label="움직임" value={osReduced ? 'off' : motion} disabled={osReduced} options={[['rich', '풍부', IconWave3], ['calm', '절제', IconWave1], ['off', '정지', IconFlat]]} onChange={(v) => setMotion(v)} />
+          </IRow>
+          <IRow icon={IconTravel} label="공간 이동" lock={osReduced ? lockTip : undefined}>
+            <SegIcon<TravelPref> label="공간 이동" value={osReduced ? 'off' : travel} disabled={osReduced} options={[['fly', '비행', IconTravel], ['short', '짧게', IconTravelShort], ['off', '끔', IconFade]]} onChange={(v) => setTravel(v)} />
+          </IRow>
+          <IRow icon={IconOrbit} label="은하 회전" lock={osReduced ? lockTip : undefined}>
+            <SegIcon<RotationPref> label="은하 회전" value={osReduced ? 'off' : rotation} disabled={osReduced} options={[['on', '켬', IconOrbit], ['slow', '느리게', IconOrbitSlow], ['off', '끔', IconOrbitOff]]} onChange={(v) => setRotation(v)} />
+          </IRow>
         </section>
-
 
         {dev && (
           <section className="set-sec set-dev" aria-labelledby="sec-dev">
@@ -254,7 +295,7 @@ export function SettingsBody() {
             </Row>
           </section>
         )}
-        <p className="set-foot mono">결 · M2</p>
+        
       </div>
     </>
   )

@@ -159,6 +159,249 @@ export const IconClose = (p: P) => (
   </Svg>
 )
 
+/* ===== M3 새 아이콘 (design-quiet 3-3: 24 격자 · 선 1.5 · round) — 문서의 New* = 코드의 Icon* ===== */
+
+const Fill = { fill: 'currentColor', stroke: 'none' } as const
+/** 왼쪽 꺾쇠 (뒤로) */
+export const IconBack = (p: P) => (
+  <Svg {...p}>
+    <path d="M14.5 6.5L9 12l5.5 5.5" />
+  </Svg>
+)
+export const IconCheck = (p: P) => (
+  <Svg {...p}>
+    <path d="M5 12.5l4.5 4.5L19 7.5" />
+  </Svg>
+)
+export const IconUndo = (p: P) => (
+  <Svg {...p}>
+    <path d="M8 5L4 9l4 4M4 9h10a5 5 0 0 1 0 10h-3" />
+  </Svg>
+)
+export const IconStop = (p: P) => (
+  <Svg {...p}>
+    <rect x="7.5" y="7.5" width="9" height="9" rx="2" />
+  </Svg>
+)
+export const IconRepeat = (p: P) => (
+  <Svg {...p}>
+    <path d="M19 12a7 7 0 1 1-2.05-4.95M19 4.5V9h-4.5" />
+  </Svg>
+)
+export const IconRest = (p: P) => (
+  <Svg {...p}>
+    <path d="M5.5 10h11v3.5a5.5 5.5 0 0 1-11 0zM16.5 11h1.25a2.25 2.25 0 0 1 0 4.5H16M9 4.5c-.6.8.6 1.4 0 2.2M12.5 4.5c-.6.8.6 1.4 0 2.2" />
+  </Svg>
+)
+export const IconDust = (p: P) => (
+  <Svg {...p}>
+    <g {...Fill}>
+      <circle cx="8" cy="9" r="1.4" />
+      <circle cx="15.5" cy="7" r="1" />
+      <circle cx="13" cy="15.5" r="1.8" />
+    </g>
+  </Svg>
+)
+export const IconToNote = (p: P) => (
+  <Svg {...p}>
+    <path d="M14 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5zM14 3.5v5h5M8.5 14.5h6M12 11.5l3 3-3 3" />
+  </Svg>
+)
+export const IconTask = (p: P) => (
+  <Svg {...p}>
+    <rect x="4.5" y="4.5" width="15" height="15" rx="3.5" />
+    <path d="M8.5 12.2l2.4 2.4 4.6-4.8" />
+  </Svg>
+)
+export const IconArchive = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 5.5h16v3.5H4zM5.5 9v9.5h13V9M10 12.5h4" />
+  </Svg>
+)
+export const IconExport = (p: P) => (
+  <Svg {...p}>
+    <path d="M12 4v10M8 10l4 4 4-4M5 15.5v4h14v-4" />
+  </Svg>
+)
+export const IconImport = (p: P) => (
+  <Svg {...p}>
+    <path d="M12 14V4M8 8l4-4 4 4M5 15.5v4h14v-4" />
+  </Svg>
+)
+export const IconMerge = (p: P) => (
+  <Svg {...p}>
+    <path d="M6 4v4a5 5 0 0 0 5 5h8M6 20v-4M16 10l3 3-3 3" />
+  </Svg>
+)
+export const IconReplace = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 8.5h13l-3.5-3.5M20 15.5H7l3.5 3.5" />
+  </Svg>
+)
+export const IconTrash = (p: P) => (
+  <Svg {...p}>
+    <path d="M5 7h14M10 7V5h4v2M7 7l.9 12.5h8.2L17 7" />
+  </Svg>
+)
+export const IconCalendarIn = (p: P) => (
+  <Svg {...p}>
+    <rect x="4" y="5.5" width="16" height="14.5" rx="2.5" />
+    <path d="M4 9.5h16M8.5 3.5v4M15.5 3.5v4M12 12v5.5M9.8 15.3l2.2 2.2 2.2-2.2" />
+  </Svg>
+)
+export const IconGridDraw = (p: P) => (
+  <Svg {...p}>
+    <path d="M19.5 11V6.5a2 2 0 0 0-2-2h-11a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2H11M4.5 10h15M10 4.5V19.5M14 20.5l5.6-5.6 1.4 1.4-5.6 5.6H14z" />
+  </Svg>
+)
+export const IconRoom = (p: P) => (
+  <Svg {...p}>
+    <path d="M6.5 20V4.8a.8.8 0 0 1 .8-.8h9.4a.8.8 0 0 1 .8.8V20M4 20h16M14.2 12v1.2" />
+  </Svg>
+)
+export const IconFlag = (p: P) => (
+  <Svg {...p}>
+    <path d="M6 21V4M6 4.5h10.5l-2 3.5 2 3.5H6" />
+  </Svg>
+)
+export const IconLink = (p: P) => (
+  <Svg {...p}>
+    <path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" />
+  </Svg>
+)
+export const IconMoon = (p: P) => (
+  <Svg {...p}>
+    <path d="M19 14.5A7.5 7.5 0 1 1 9.5 5 6 6 0 0 0 19 14.5z" />
+  </Svg>
+)
+export const IconSun = (p: P) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4" />
+  </Svg>
+)
+export const IconAuto = (p: P) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="7.5" />
+    <path d="M12 4.5a7.5 7.5 0 0 1 0 15z" {...Fill} />
+  </Svg>
+)
+const WAVE = 'c2.7-3 5.3 3 8 0s5.3-3 8 0'
+export const IconWave3 = (p: P) => (
+  <Svg {...p}>
+    <path d={`M4 8${WAVE}M4 12${WAVE}M4 16${WAVE}`} />
+  </Svg>
+)
+export const IconWave1 = (p: P) => (
+  <Svg {...p}>
+    <path d={`M4 12${WAVE}`} />
+  </Svg>
+)
+export const IconFlat = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 12h16" />
+  </Svg>
+)
+export const IconTravel = (p: P) => (
+  <Svg {...p}>
+    <path d="M5 18c2.5-7.5 9.5-10 14-8M15.5 6.5L19 10l-3.8 2.6" />
+  </Svg>
+)
+export const IconTravelShort = (p: P) => (
+  <Svg {...p}>
+    <path d="M8 12h8M13 9l3 3-3 3" />
+  </Svg>
+)
+export const IconFade = (p: P) => (
+  <Svg {...p}>
+    <rect x="4" y="5" width="10" height="10" rx="2" />
+    <rect x="10" y="9" width="10" height="10" rx="2" opacity=".45" />
+  </Svg>
+)
+const ORBIT = <ellipse cx="12" cy="12" rx="8.5" ry="4" transform="rotate(-30 12 12)" />
+export const IconOrbit = (p: P) => (
+  <Svg {...p}>
+    {ORBIT}
+    <circle cx="18.6" cy="8.4" r="1.5" {...Fill} />
+  </Svg>
+)
+export const IconOrbitSlow = (p: P) => (
+  <Svg {...p}>
+    <ellipse cx="12" cy="12" rx="8.5" ry="4" transform="rotate(-30 12 12)" strokeDasharray="2 2.6" />
+    <circle cx="18.6" cy="8.4" r="1.5" {...Fill} />
+  </Svg>
+)
+export const IconOrbitOff = (p: P) => (
+  <Svg {...p}>
+    {ORBIT}
+    <path d="M5 19L19 5" />
+  </Svg>
+)
+export const IconLock = (p: P) => (
+  <Svg {...p}>
+    <rect x="5.5" y="10.5" width="13" height="9" rx="2" />
+    <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
+  </Svg>
+)
+export const IconStorage = (p: P) => (
+  <Svg {...p}>
+    <ellipse cx="12" cy="6.5" rx="6.5" ry="2.5" />
+    <path d="M5.5 6.5v11c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5v-11M5.5 12c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5" />
+  </Svg>
+)
+export const IconShield = (p: P & { filled?: boolean }) => {
+  const { filled, ...rest } = p
+  return (
+    <Svg {...rest}>
+      <path d="M12 3.5l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9v-5z" fill={filled ? 'currentColor' : 'none'} fillOpacity={filled ? 0.18 : undefined} />
+      <path d="M9 12l2 2 4-4" />
+    </Svg>
+  )
+}
+export const IconSample = (p: P) => (
+  <Svg {...p}>
+    <path d="M9.5 3.5h5M10.5 3.5V9l-4.8 8.4a2 2 0 0 0 1.7 3.1h9.2a2 2 0 0 0 1.7-3.1L13.5 9V3.5M7.8 14.5h8.4" />
+  </Svg>
+)
+export const IconReplay = (p: P) => (
+  <Svg {...p}>
+    <path d="M19 12a7 7 0 1 1-2.05-4.95M19 4.5V9h-4.5" />
+    <path d="M12 9.6l.7 1.7 1.7.7-1.7.7-.7 1.7-.7-1.7-1.7-.7 1.7-.7z" {...Fill} />
+  </Svg>
+)
+
+/* 메모 강화 · 손글씨와 함께 쓰는 이름 (손글씨 도구 칸은 src/ink/ui/icons.tsx가 이것을 가져다 쓴다) */
+export const IconChecklist = (p: P) => (
+  <Svg {...p}>
+    <path d="M4.5 7l1.6 1.6L9 5.7M4.5 15l1.6 1.6L9 13.7M12 7.5h7.5M12 15.5h7.5" />
+  </Svg>
+)
+export const IconPin = (p: P & { filled?: boolean }) => {
+  const { filled, ...rest } = p
+  return (
+    <Svg {...rest}>
+      <path d="M9 4h6l-1 5 3.5 3.5h-11L10 9zM12 12.5V20" fill={filled ? 'currentColor' : 'none'} fillOpacity={filled ? 0.25 : undefined} />
+    </Svg>
+  )
+}
+export const IconEraser = (p: P) => (
+  <Svg {...p}>
+    <path d="M8.5 19.5l-4-4a1.5 1.5 0 0 1 0-2.1l8.9-8.9a1.5 1.5 0 0 1 2.1 0l4 4a1.5 1.5 0 0 1 0 2.1L12 18.1M8.5 19.5H19M8.4 9.5l6.1 6.1" />
+  </Svg>
+)
+export const IconLasso = (p: P) => (
+  <Svg {...p}>
+    <path d="M7.5 15.5C4.8 14.4 3.5 12.6 3.5 10.5c0-3.6 3.8-6 8.5-6s8.5 2.4 8.5 6-3.8 6-8.5 6c-1.2 0-2.3-.2-3.3-.5" strokeDasharray="2.6 2.4" />
+    <path d="M8.7 16c-.9 1.6-.2 3.5 1.8 3.5 1.2 0 1.6-1 1-2" />
+  </Svg>
+)
+export const IconSelect = (p: P) => (
+  <Svg {...p}>
+    <rect x="4.5" y="4.5" width="15" height="15" rx="3.5" strokeDasharray="3 2.4" />
+    <path d="M8.5 12.2l2.4 2.4 4.6-4.8" />
+  </Svg>
+)
+
 /** 결 심볼 v3: 57° 사선 위 별 5개(은하의 결) + 인주 점 하나(낙관) */
 export function Symbol({ size = 26, className }: { size?: number; className?: string }) {
   return (

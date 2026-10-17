@@ -218,6 +218,8 @@ export const Trigger = Extension.create<TriggerOptions>({
             if (e.key === 'Escape') {
               dismissed = current.from
               set(null)
+              // ProseMirror는 Esc를 늘 preventDefault하므로, '제안 상자를 닫는 데 쓴 Esc'는 따로 표시한다(노트 화면이 보고 손을 떼지 않음)
+              ;(e as KeyboardEvent & { gyeolHandled?: boolean }).gyeolHandled = true
               return true
             }
             return opts.onKey(e)
@@ -284,74 +286,5 @@ export const Asset = Node.create({
         },
       }
     }
-  },
-})
-
-/* ---------- 자리표시 (비어 있을 때만) ---------- */
-
-export interface HintOptions {
-  /** 지금 노트의 틀 */
-  template: () => string | null | undefined
-  /** 빈 블록 → 바로 위 제목 이름으로 고른 자리표시 */
-  byHeading: Record<string, string>
-  /** 문서가 빈 문단 하나뿐일 때 */
-  empty: string
-}
-
-/**
- * 자리표시: 문서 전체가 비면 한 줄, 틀 노트면 빈 블록마다 바로 위 제목에 맞는 글, 빈 제목에 커서가 있으면 '제목'.
- * (Placeholder 확장 대신 — 장식 계산 중 editor.state를 읽지 않고 그 상태의 doc만 본다)
- */
-export const Hints = Extension.create<HintOptions>({
-  name: 'gyeolHints',
-  addOptions() {
-    return { template: () => null, byHeading: {}, empty: '' }
-  },
-  addProseMirrorPlugins() {
-    const o = this.options
-    return [
-      new Plugin({
-        key: new PluginKey('gyeolHints'),
-        props: {
-          decorations: (state) => {
-            const { doc, selection } = state
-            const decos: Decoration[] = []
-            const mark = (pos: number, size: number, text: string) => text && decos.push(Decoration.node(pos, pos + size, { class: 'is-empty', 'data-placeholder': text }))
-            const first = doc.firstChild
-            if (doc.childCount === 1 && first && first.isTextblock && first.content.size === 0) {
-              mark(0, first.nodeSize, o.empty)
-              return DecorationSet.create(doc, decos)
-            }
-            const tpl = !!o.template()
-            const anchor = selection.empty ? selection.$from : null
-            let heading = ''
-            let next = false // 제목 바로 다음 블록만
-            doc.forEach((block, offset) => {
-              if (block.type.name === 'heading') {
-                heading = block.textContent.trim()
-                next = true
-                if (!block.content.size && anchor && anchor.parent === block) mark(offset, block.nodeSize, '제목')
-                return
-              }
-              const first = next
-              next = false
-              if (!tpl || !first) return
-              const hint = o.byHeading[heading]
-              if (!hint) return
-              if (block.isTextblock) {
-                if (!block.content.size) mark(offset, block.nodeSize, hint)
-                return
-              }
-              block.descendants((n, p) => {
-                if (!n.isTextblock) return true
-                if (!n.content.size) mark(offset + 1 + p, n.nodeSize, hint)
-                return false
-              })
-            })
-            return DecorationSet.create(doc, decos)
-          },
-        },
-      }),
-    ]
   },
 })

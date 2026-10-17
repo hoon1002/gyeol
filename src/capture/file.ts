@@ -5,12 +5,14 @@
 import { db, uid, type Memo } from '@/db/schema'
 import { fileMemoToNote } from '@/db/notes'
 import { skyFileDust, type FileTo } from './sky'
+import { memoItems } from './api'
+import { fmtSec } from './voice'
 
 /** 할 일의 '마감 없음' (Task.dueAt은 필수 숫자라 0으로 둔다 — 마감 목록·D-day는 dueAt ≥ 지금만 본다) */
 export const NO_DUE = 0
 
 function firstLine(text: string, n: number): string {
-  const line = (text.split('\n').find((l) => l.trim()) ?? '').trim()
+  const line = (text.split('\n').find((l) => l.replace(/^\s*\[( |x|X)\]\s?/, '').trim()) ?? '').replace(/^\s*\[( |x|X)\]\s?/, '').trim()
   return line.length > n ? line.slice(0, n) : line
 }
 
@@ -27,10 +29,17 @@ export async function fileMemo(memo: Memo, to: FileTo): Promise<void> {
     await db.memos.update(memo.id, { state: 'filed', filedTo: { type: 'note', id: r.id }, updatedAt: now })
     skyFileDust(memo.id, sid, 'note')
   } else if (to === 'task') {
-    const id = uid('task-')
+    // 체크 메모 = 체크 안 된 항목마다 과제 1개, 음성 = "음성 메모 0:42" (design-ink 8-3 · 8-4). 마감은 비움
+    const items = memoItems(memo)
+    const titles = items ? items.filter((x) => !x.done).map((x) => x.text) : [memo.kind === 'voice' ? `음성 메모 ${fmtSec(memo.durationMs ?? 0)}` : firstLine(memo.text, 80) || '사진 메모']
+    const ids: string[] = []
     await db.transaction('rw', db.tasks, db.memos, async () => {
-      await db.tasks.add({ id, subjectId: sid, kind: 'assignment', title: firstLine(memo.text, 80) || '사진 메모', dueAt: NO_DUE, done: 0, createdAt: now, updatedAt: now })
-      await db.memos.update(memo.id, { state: 'filed', filedTo: { type: 'task', id }, updatedAt: now })
+      for (const title of titles.length ? titles : [firstLine(memo.text, 80) || '메모']) {
+        const id = uid('task-')
+        ids.push(id)
+        await db.tasks.add({ id, subjectId: sid, kind: 'assignment', title: title.slice(0, 80), dueAt: NO_DUE, done: 0, createdAt: now, updatedAt: now })
+      }
+      await db.memos.update(memo.id, { state: 'filed', filedTo: { type: 'task', id: ids[0]! }, updatedAt: now })
     })
     skyFileDust(memo.id, null, 'task')
   } else {

@@ -20,6 +20,7 @@ import { examStar, todayStarPositions } from '../../galaxy/scenes'
 import type { FieldStats } from '../engine/engine'
 import type { FieldData, Mood, MoodName, MotionLevel, MotionPrefs, PauseReason, RippleOptions, ThemeName, Tier } from '../types'
 import { SPACE_RULES } from '@/perf/scheduler'
+import { installSkyGesture } from './gesture'
 
 export type Mode = 'rich' | 'calm' | 'off'
 
@@ -408,6 +409,8 @@ export class FieldEngine {
     canvas.className = 'gx-sky-canvas'
     host.appendChild(canvas)
     this.canvas = canvas
+    // 누르기 ↔ 끌기 구분 (M3): 하늘 끌기·핀치·관성·휠 뒤의 click 표시 → isSkyDragClick
+    this.cleanups.push(installSkyGesture(this.dragFilter, () => this.g3d?.spin() ?? 0))
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
     svg.setAttribute('class', 'gx-sky-links')
     svg.setAttribute('aria-hidden', 'true')
@@ -436,6 +439,7 @@ export class FieldEngine {
             this.anchorCbs.get(n)?.forEach((f) => f(a))
           })
         this.config3d()
+        this.g3d.setPaper(this.paperN > 0)
         this.uploadNotes()
         this.uploadNoteLinks()
       } catch {
@@ -967,7 +971,7 @@ export class FieldEngine {
         // 노트 책등 위 점 (#28): 노트에서는 지도 별이 책등의 높이(해시)에 점으로
         this.g3d.setSpine(
           this.preset === 'notes'
-            ? [...this.stars.values()].filter((s) => s.layer === 'graph' && s.to > 0.01).map((s) => ({ id: s.id, s: ((hashStr(s.id) % 1000) / 1000) * 1.8 - 0.9, level: Math.max(0.35, s.to), color: s.color }))
+            ? [...[...this.stars.values()].filter((s) => s.layer === 'graph' && s.to > 0.01).map((s) => ({ id: s.id, s: ((hashStr(s.id) % 1000) / 1000) * 1.8 - 0.9, level: Math.max(0.35, s.to), color: s.color })), ...this.inkSpine()]
             : [],
         )
         this.pushLinks3d()
@@ -2213,14 +2217,14 @@ export class FieldEngine {
       this.pushStars()
     }, 2000)
   }
-  private dustPos(d: { id: string }): [number, number, number] {
+  private dustPos(d: { id: string }, pinned = !!this.pins.get(d.id)?.on): [number, number, number] {
     // FNV 해시는 끝 글자만 다른 id('dust:0'…'dust:9')에서 위 16비트가 거의 같아 점이 한 방향으로 뭉쳤다 → 섞어서 쓴다
     let h = hashStr(d.id)
     h = Math.imul(h ^ (h >>> 16), 0x85ebca6b) >>> 0
     h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0
     h = (h ^ (h >>> 16)) >>> 0
     const c = LANDMARKS.focus
-    const r = 1.5 + 0.8 * ((h & 0xffff) / 65536) // 별자리(1.4u) 바깥 고리
+    const r = pinned ? 1.5 : 1.5 + 0.8 * ((h & 0xffff) / 65536) // 별자리(1.4u) 바깥 고리 · 고정한 점은 고리 안쪽 자리
     const a = (((h >>> 16) & 0xffff) / 65536) * Math.PI * 2
     const q: [number, number, number] = [c[0] + r * Math.cos(a), c[1] + 0.2, c[2] + r * Math.sin(a)]
     // 오늘의 별자리 별에서 화면 18px 이상: 세계 거리 DUST_GAP(오늘 장소 기준)보다 가까우면 바깥으로 민다
@@ -2240,6 +2244,68 @@ export class FieldEngine {
     return q
   }
   /** D8 검색: 앞 12개 반짝(40ms 간격) 뒤 결과 +25% · 나머지 별·선 ×0.5로 고정. []이면 원래대로 */
+  /** M3 K1 '잉크가 별이 된다' (design-ink 10장): 노트를 닫을 때 그 노트 별이 V11로 반짝인다.
+   *  쪽(pages, 새로 다 쓴 쪽) 0–2: +40% 300ms · 3 이상: +60% 450ms (동작 줄이기: 밝기만 300ms).
+   *  지도: 그 노트 별 · 노트 장소: 책등 위 그 노트 점. 다른 장소에서는 사건 없이 최종 상태만(노트 데이터가 정한다) */
+  inkSettled(noteId: string, o?: { pages?: number }): void {
+    const p = this.preset
+    if (!this.notes.has(noteId) || !(p === 'map' || p === 'graph' || p === 'notes')) return
+    const big = (o?.pages ?? 0) >= 3
+    const dur = this.mode === 'off' ? 0.3 : big ? 0.45 : 0.3
+    this.inks.set(noteId, { t0: this.nowS(), k: big ? 0.6 : 0.4, dur })
+    this.pushStars()
+    window.setTimeout(() => this.pushStars(), dur * 300 + 10)
+    window.setTimeout(() => this.pushStars(), dur * 1000 + 20)
+  }
+  /** 반짝 한 번의 모양: 앞 30% 오르고 뒤 70% 내려온다 */
+  private inkShape(id: string, t: number): { from: number; to: number; t0: number; dur: number } | null {
+    const e = this.inks.get(id)
+    const r = this.notes.get(id)
+    if (!e || !r || t - e.t0 >= e.dur) {
+      this.inks.delete(id)
+      return null
+    }
+    const n = this.notes.size
+    const dens = Math.min(1, 7 / Math.sqrt(Math.max(1, n)))
+    const amp = e.k * (n <= 100 ? Math.max(0.45, r.level * dens) : r.level * dens)
+    const up = e.dur * 0.3
+    return t - e.t0 < up ? { from: 0, to: amp, t0: e.t0, dur: up } : { from: amp, to: 0, t0: e.t0 + up, dur: e.dur - up }
+  }
+  /** 노트 장소: 책등 위 그 노트 점의 반짝 (엔진 spineDots가 같은 공식으로 자리를 잡는다) */
+  private inkSpine(): Array<{ id: string; s: number; level: number; color: [number, number, number]; from: number; to: number; t0: number; dur: number; size: number }> {
+    const out: Array<{ id: string; s: number; level: number; color: [number, number, number]; from: number; to: number; t0: number; dur: number; size: number }> = []
+    const t = this.nowS()
+    for (const id of [...this.inks.keys()]) {
+      const sh = this.inkShape(id, t)
+      const r = this.notes.get(id)
+      if (sh && r) out.push({ id: 'ink:' + id, s: r.s, level: sh.to, color: r.color, ...sh, size: r.size })
+    }
+    return out
+  }
+  /** K6 메모 고정 (design-ink 8-5): 고정한 별가루 점은 고리 안쪽 자리에 멈추고(표류 0) 55 → 60%, 고정하는 순간 V11(+40%, 300ms).
+   *  풀면 원래 고리 자리로 돌아가고 표류가 1초 램프로 돌아온다 */
+  pinDust(id: string, on: boolean): void {
+    if (!!this.pins.get(id)?.on === on) return
+    if (on && !this.dusts.some((d) => d.id === id && !d.gone)) this.dusts.push({ id, t0: -1e9 }) // 점 기록이 없으면(앱을 다시 연 뒤) 이미 있던 점으로
+    this.pins.set(id, { on, t: this.mode === 'off' ? -1e9 : this.nowS() })
+    this.pushStars()
+    if (this.mode !== 'off') window.setTimeout(() => this.pushStars(), 1100)
+  }
+  private pins = new Map<string, { on: boolean; t: number }>()
+  /** K0 종이 펼침 (useSkyPaper): 붙잡은 수가 0보다 크면 펼침 */
+  paperHold(): () => void {
+    this.paperN++
+    this.g3d?.setPaper(true)
+    let done = false
+    return () => {
+      if (done) return
+      done = true
+      this.paperN = Math.max(0, this.paperN - 1)
+      this.g3d?.setPaper(this.paperN > 0)
+    }
+  }
+  private paperN = 0
+  private inks = new Map<string, { t0: number; k: number; dur: number }>()
   glintNotes(ids: string[]): void {
     this.search = ids.length ? new Set(ids) : null
     if (ids.length && this.mode !== 'off' && this.theme !== 'light')
@@ -2312,7 +2378,10 @@ export class FieldEngine {
     // 별가루: T · F · R(×0.5) · S, 최대 24점 45%
     const dustVis = p === 'today' || p === 'landing' || p === 'focus' || p === 'settings' ? 1 : p === 'review' ? 0.5 : 0
     if (dustVis > 0 || this.dusts.some((d) => d.path)) {
-      const live = this.dusts.filter((d) => !d.gone).slice(-24)
+      // 고정한 점은 늘 보인다(24점 안에서 먼저)
+      const alive = this.dusts.filter((d) => !d.gone)
+      const pinnedLive = alive.filter((d) => this.pins.get(d.id)?.on)
+      const live = [...pinnedLive, ...alive.filter((d) => !this.pins.get(d.id)?.on).slice(-Math.max(0, 24 - pinnedLive.length))].slice(0, 24)
       const extra = Math.max(0, Math.min(24, this.dustN) - live.length)
       const all: Array<{ id: string; subjectId?: string; t0: number; path?: { to: [number, number, number]; t0: number; dur: number }; fadeT0?: number }> = [...live, ...this.dusts.filter((d) => d.gone)]
       for (let k = 0; k < extra; k++) all.push({ id: 'dust:' + k, t0: -1e9 })
@@ -2324,10 +2393,32 @@ export class FieldEngine {
         const h = hashStr(d.id)
         const fading = d.fadeT0 !== undefined
         const fresh = !fading && !d.path && t - d.t0 < 3 && t - d.t0 >= 0
+        const pin = this.pins.get(d.id)
+        const pk = pin ? t - pin.t : 1e9 // 고정·풀기 뒤 지난 초
+        const pinned = !!pin?.on && !fading && !d.path
+        if (pinned) {
+          // K6: 고리 안쪽 자리 · 표류 0 · 60%, 고정하는 순간 +40% 300ms
+          out.push({
+            id: 'dust:' + d.id,
+            group: 'dust',
+            pos: this.dustPos(d, true),
+            L: 1,
+            color: col,
+            size: 1.6,
+            from: pk < 0.3 ? 0.84 * vis : 0.6 * vis,
+            to: 0.6 * vis,
+            t0: pk < 0.3 ? pin!.t : 0,
+            dur: pk < 0.3 ? 0.3 : 0,
+            move: pk < 0.6 ? { from: this.dustPos(d, false), t0: pin!.t, dur: 0.6 } : undefined,
+          })
+          continue
+        }
+        const unpinned = !!pin && !pin.on && pk < 1.2
         out.push({
           id: 'dust:' + d.id,
           group: 'dust',
           pos: this.dustPos(d),
+          ...(unpinned ? { driftAt: pin!.t, move: pk < 0.6 ? { from: this.dustPos(d, true), t0: pin!.t, dur: 0.6 } : undefined } : {}),
           L: 1,
           color: col,
           size: d.path ? 2 : 1.6,
@@ -2344,6 +2435,13 @@ export class FieldEngine {
     // 고른 노트 별: 노트 층(35%에서 잘림) 밖에서 금빛 3.2px로 따로 — 예외로 밝게
     if ((p === 'map' || p === 'graph') && this.selected && this.notes.has(this.selected))
       out.push({ id: 'selnote:' + this.selected, group: 'nebula', pos: this.notes.get(this.selected)!.pos, L: 1, color: GOLD, size: 3.2, from: 1, to: 1, t0: 0, dur: 0 })
+    // M3 K1 잉크가 별이 된다(지도): 노트 별 위에 사건 층으로 더한다(노트 층 상한 밖)
+    if (p === 'map' || p === 'graph')
+      for (const id of [...this.inks.keys()]) {
+        const sh = this.inkShape(id, t)
+        const r = this.notes.get(id)
+        if (sh && r) out.push({ id: 'ink:' + id, group: 'nebula', pos: r.pos, L: 1, color: r.color, size: r.size, ...sh })
+      }
     // 과목 성운: 첫 실행 · 지도 · 오늘
     const nebVis = p === 'onboarding' || p === 'map' || p === 'graph' || p === 'today' || p === 'landing'
     if (nebVis)
