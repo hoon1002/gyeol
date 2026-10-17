@@ -187,6 +187,8 @@ export interface PlanToday extends PlanDay {
   exam: { id: string; title: string; dday: number } | null
   /** 오늘 떠올린 범위 카드 수 */
   done: number
+  /** 오늘 떠올리기를 마친 범위 노트 수 (앱 A의 meta 'recall.log') */
+  recallDone: number
 }
 
 export async function planDay(date: Date): Promise<PlanToday> {
@@ -202,7 +204,14 @@ export async function planDay(date: Date): Promise<PlanToday> {
     const set = new Set(day.cardIds)
     done = new Set(logs.filter((l) => set.has(l.cardId)).map((l) => l.cardId)).size
   }
-  return { ...day, exam: near ? { id: near.id, title: near.title, dday: daysBetween(k, keyOf(new Date(near.dueAt))) } : null, done }
+  let recallDone = 0
+  if (day.noteIds.length) {
+    const start = dateOf(k).getTime()
+    const log = ((await db.meta.get('recall.log'))?.value as Array<{ noteId: string; at: number }> | undefined) ?? []
+    const want = new Set(day.noteIds)
+    recallDone = new Set(log.filter((r) => r.at >= start && r.at < start + DAY_MS && want.has(r.noteId)).map((r) => r.noteId)).size
+  }
+  return { ...day, exam: near ? { id: near.id, title: near.title, dday: daysBetween(k, keyOf(new Date(near.dueAt))) } : null, done, recallDone }
 }
 
 /** 하늘용 요약 (모션 · 시험 별자리 순간 ④): 공부 날 수 · 오늘까지 끝낸 날 수 · 범위 카드 id */

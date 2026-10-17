@@ -233,14 +233,15 @@ export function evaluateSituation(m: DayModel): Situation {
   if (base.key === 'class' || base.key === 'empty' || !p?.exam || p.exam.dday < 0 || p.kind !== 'study') return base
   const dd = fmtDday(p.exam.dday)
   const left = Math.max(0, p.cards - p.done)
-  if (left > 0 || p.recall > 0) {
+  const recallLeft = Math.max(0, p.recall - (p.recallDone ?? 0))
+  if (left > 0 || recallLeft > 0) {
     const parts: NonNullable<SitLine['parts']> = []
     if (left) parts.push({ icon: 'cards', text: String(left) })
-    if (p.recall) parts.push({ icon: 'recall', text: String(p.recall) })
+    if (recallLeft) parts.push({ icon: 'recall', text: String(recallLeft) })
     return {
       ...base,
       key: 'exam',
-      line: { text: dd, num: true, dot: 'var(--seal)', tip: p.exam.title, sr: `${p.exam.title}까지 ${p.exam.dday}일, 오늘 카드 ${left}장${p.recall ? `, 떠올리기 ${p.recall}개` : ''}`, parts },
+      line: { text: dd, num: true, dot: 'var(--seal)', tip: p.exam.title, sr: `${p.exam.title}까지 ${p.exam.dday}일, 오늘 카드 ${left}장${recallLeft ? `, 떠올리기 ${recallLeft}개` : ''}`, parts },
       primary: { icon: 'review', label: '시험 복습', badge: null, action: { kind: 'review' } },
       pressure: Math.max(base.pressure, 0.6),
     }

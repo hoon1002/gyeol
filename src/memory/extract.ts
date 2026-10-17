@@ -13,6 +13,9 @@ import type { CardCandidate } from '@/db/schema'
 
 export type Rule = 'qa' | 'cloze' | 'term' | 'bold' | 'table' | 'list' | 'qline' | 'ask'
 
+/** 이 파일이 만드는 규칙 8개 — 정리는 이 규칙의 후보만 한다(떠올리기 · 테이프 · 메모 후보는 건드리지 않는다) */
+export const RULES: ReadonlySet<string> = new Set<Rule>(['qa', 'cloze', 'term', 'bold', 'table', 'list', 'qline', 'ask'])
+
 export interface Extracted {
   rule: Rule
   front: string
@@ -217,7 +220,8 @@ export function extractCandidates(doc: unknown, text: string, noteId: string): E
 
 /* ---------- 병합 (순수) ---------- */
 
-export function mergeCandidates(existing: CardCandidate[], fresh: Extracted[], noteId: string, now: number, mkId: () => string): { add: CardCandidate[]; remove: string[] } {
+export function mergeCandidates(all: CardCandidate[], fresh: Extracted[], noteId: string, now: number, mkId: () => string): { add: CardCandidate[]; remove: string[] } {
+  const existing = all.filter((c) => RULES.has(c.rule))
   const byAnchor = new Map(existing.map((c) => [c.anchor ?? '', c]))
   const freshAnchors = new Set(fresh.map((f) => f.anchor))
   const add: CardCandidate[] = []

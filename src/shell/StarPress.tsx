@@ -14,7 +14,21 @@ import { graphNodeInfo } from '@/lib/graph'
 import { ddayOf, fmtDday, fmtHM, fmtMD, MIN, studyDayRange } from '@/lib/time'
 import { useUi } from '@/stores/ui'
 import { useGo } from './hooks'
-import { IconArrow, IconClose, IconFocus, IconLink, IconNote, IconReview } from './icons'
+import { IconArrow, IconClose, IconFocus, IconLink, IconNote, IconPlay, IconReview } from './icons'
+import { Hint } from './Hint'
+import { requestReview } from '@/memory/intent'
+import { noteMemory } from '@/memory/brightness'
+import { useSettings } from '@/stores/settings'
+
+/** H14 흐린 별: 흐린 별을 톡 → ▶ → 별이 밝아짐 */
+const H14_ART = (
+  <svg width="80" height="80" viewBox="0 0 80 80" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+    <circle className="ha-fade-out" cx="22" cy="40" r="4" fill="currentColor" fillOpacity=".35" stroke="none" />
+    <circle className="ha-tap" cx="22" cy="40" r="6" fill="var(--accent)" fillOpacity=".25" stroke="var(--accent)" />
+    <path className="ha-fade-in" d="M36 33v14l11-7z" />
+    <circle className="ha-fade-in" cx="62" cy="40" r="5" fill="var(--accent)" stroke="none" />
+  </svg>
+)
 import { tip } from './Tip'
 import type { SpacePath } from './spaces'
 
@@ -33,7 +47,7 @@ interface StarInfo {
   /** 화면에는 chips, 스크린리더·툴팁에는 이 문장 */
   meta: string
   chips: Chip[]
-  action: { icon: 'note' | 'review' | 'arrow'; label: string; run: (el: Element | null) => void } | null
+  action: { icon: 'note' | 'review' | 'arrow' | 'play'; label: string; run: (el: Element | null) => void } | null
   zoom: (z: number) => number
 }
 
@@ -98,7 +112,7 @@ export function StarPress() {
         title: t.title,
         meta: `${fmtMD(t.dueAt)} · ${fmtDday(ddayOf(new Date(), t.dueAt))}${scope ? ` · 범위 ${scope}` : ''}`,
         chips: [{ kind: 'dot', color: 'var(--seal)', tip: '시험' }, { kind: 'num', text: fmtMD(t.dueAt) }, { kind: 'num', text: fmtDday(ddayOf(new Date(), t.dueAt)) }, ...(scope ? [{ kind: 'review' as const, text: `${scope}`, tip: '범위' }] : [])],
-        action: { icon: 'review', label: '범위 복습', run: (el) => { ui.setReviewIntent(true); goTo('/review', el) } },
+        action: { icon: 'review', label: '범위 복습', run: (el) => { requestReview({ kind: 'exam', examId: id }); goTo('/review', el) } },
         zoom: (z) => z * 2.4,
       }
     }
@@ -112,7 +126,7 @@ export function StarPress() {
         title: c.front,
         meta: `${await subjectName(c.subjectId)} · ${c.due < end ? '오늘' : days <= 1 ? '내일 다시' : `${days}일 뒤`}`,
         chips: [await subjectDot(c.subjectId), { kind: 'review', text: fmtMD(c.due), tip: c.due < end ? '오늘' : days <= 1 ? '내일 다시' : `${days}일 뒤` }],
-        action: { icon: 'review', label: '이 카드 복습', run: (el) => { ui.setReviewIntent(true); goTo('/review', el) } },
+        action: { icon: 'review', label: '이 카드 복습', run: (el) => { requestReview({ kind: 'cards', cardIds: [id] }); goTo('/review', el) } },
         zoom: () => 3.0,
       }
     }
@@ -133,12 +147,15 @@ export function StarPress() {
       const note = await db.notes.get(id)
       if (!note || note.deletedAt) return null
       const links = (await db.links.where('from').equals(id).count()) + (await db.links.where('to').equals(id).count())
+      const mem = useSettings.getState().memoryBrightness ? (await noteMemory().catch(() => null))?.get(id) : undefined
+      const dim = !!mem && mem.bright < 0.75
       return {
         id,
         title: note.title || fmtMD(note.createdAt),
         meta: `${await subjectName(note.subjectId)} · 링크 ${links}`,
         chips: [await subjectDot(note.subjectId), { kind: 'link', text: `${links}`, tip: '링크' }],
-        action: { icon: 'arrow', label: '열기', run: (el) => { ui.setNoteFocusId(note.id); goTo('/notes', el) } },
+        // 흐려진 별(기억 밝기 < 0.75, 카드가 있는 노트): ▶ 그 노트 카드로 바로 복습(순간 ③). 그 밖에는 열기
+        action: dim ? { icon: 'play', label: '흐린 별 복습', run: (el) => { requestReview({ kind: 'note', noteId: note.id, limit: 10 }); goTo('/review', el) } } : { icon: 'arrow', label: '열기', run: (el) => { ui.setNoteFocusId(note.id); goTo('/notes', el) } },
         zoom: () => 3.4,
       }
     }
@@ -264,9 +281,12 @@ export function StarPress() {
       </p>
       <div className="actions">
         {info.action && (
+          <span className="hint-host">
+          {info.action.icon === 'play' && <Hint id="H14" side="right" art={H14_ART} />}
           <button type="button" className="gold-btn" {...tip(info.action.label)} onClick={(e) => info.action!.run(e.currentTarget)}>
-            {info.action.icon === 'note' ? <IconNote size={24} /> : info.action.icon === 'review' ? <IconReview size={24} /> : <IconArrow size={24} />}
+            {info.action.icon === 'note' ? <IconNote size={24} /> : info.action.icon === 'review' ? <IconReview size={24} /> : info.action.icon === 'play' ? <IconPlay size={24} /> : <IconArrow size={24} />}
           </button>
+          </span>
         )}
         <button type="button" className="icon-btn ghost" {...tip('닫기', { kbd: 'esc' })} onClick={close}>
           <IconClose size={18} />

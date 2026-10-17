@@ -33,6 +33,12 @@ export function PlanScreen() {
   const [addMenu, setAddMenu] = useState(false)
   const [examOpen, setExamOpen] = useState(false)
   const holdT = useRef(0)
+  // ⌘K '시험 넣기' → /plan으로 온 뒤 이 이벤트로 시험 넣기 판을 연다
+  useEffect(() => {
+    const open = () => setExamOpen(true)
+    window.addEventListener('gyeol:exam-new', open)
+    return () => window.removeEventListener('gyeol:exam-new', open)
+  }, [])
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
