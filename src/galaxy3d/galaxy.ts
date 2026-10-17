@@ -47,7 +47,7 @@ function armStr(k: number, rad: number) {
   if (rad < BAR_LEN) return 0
   const A = ARMS[k]!
   // 막대 끝에서 바로 가장 밝으면 막대를 감싼 고리처럼 읽힌다 → 6–9u에서 가장 밝게
-  return A.w * (0.3 + 0.7 * sstep(BAR_LEN, 6.8, rad)) * Math.exp(-(rad - 6) / 8) * (0.22 + 0.78 * segOf(rad, A.ph)) * spanOf(k, rad)
+  return A.w * (0.3 + 0.7 * sstep(BAR_LEN, 6.8, rad)) * Math.exp(-(rad - 6) / 8) * (0.5 + 0.5 * segOf(rad, A.ph)) * spanOf(k, rad)
 }
 
 /** 늙은 별의 팔 밝기 (정점 셰이더용 GLSL) — 위 armAngle·armStr과 같은 식, 단 끊김을 약하게(넓고 부드러운 밀도파) */
@@ -113,6 +113,8 @@ export interface GalaxyData {
   starCount: number
   clouds: Float32Array
   cloudCount: number
+  /** 구름 앞쪽 dustCount개가 먼지(kind 0) — 먼지·빛 패스를 범위로 나눠 그린다 */
+  dustCount: number
 }
 
 type C3 = [number, number, number]
@@ -203,7 +205,7 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
   for (let n = 0; n < nOld; n++) {
     let rad = -3.6 * Math.log(1 - r() * 0.985)
     if (rad > 15.5) rad = 15.5 * Math.sqrt(r())
-    if (rad < 0.6 || r() > 0.3 + 0.7 * sstep(0.6, 4.5, rad)) {
+    if (rad < 0.6 || r() > 0.12 + 0.88 * sstep(1.5, 5.8, rad)) {
       n-- // 중심은 팽대부·막대 몫 (원반 빛이 가운데 둥근 덩어리가 되지 않게)
       continue
     }
@@ -219,7 +221,7 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
   /* ---- 팽대부 + 막대: 크림·금, 3축 1 : 0.6 : 0.45, 막대 반길이 4.5u — 패턴과 함께 단단히(kind 1) ---- */
   const CORE = [hex('#FFF1D6'), hex('#F6C98A'), hex('#E9A970')] as const
   for (let n = 0; n < nBulge; n++) {
-    const bar = r() < 0.68
+    const bar = r() < 0.75
     const a = bar ? BAR_LEN : 1.7
     const rr = Math.pow(r(), bar ? 0.85 : 1.7)
     const u = r() * 2 - 1
@@ -232,7 +234,7 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
     const z = x0 * Math.sin(BAR_ANGLE) + z0 * Math.cos(BAR_ANGLE)
     const k = Math.min(1, rr * 1.3)
     const c = k < 0.5 ? mix3(CORE[0], CORE[1], k * 2) : mix3(CORE[1], CORE[2], (k - 0.5) * 2)
-    put(x, y, z, lum(0.55) * (bar ? 0.95 : 0.55), c, 1)
+    put(x, y, z, lum(0.55) * (bar ? 0.62 : 0.32), c, 1)
   }
 
   /* ---- 헤일로: 반지름 40u 구, 그중 60개 구상성단 — 거의 돌지 않는다(kind 2, 2층 시차) ---- */
@@ -263,7 +265,7 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
 
   /* ---- 젊은 별 (kind 4, 패턴과 함께): 70%는 성협 안, 30%는 팔 하류에 흩어짐. 복습 성단 600 · 나의 자리 300 ---- */
   for (let n = 0; n < nYoung; n++) {
-    const col = mix3(r() < 0.5 ? YOUNG : YOUNG2, blackbody(14000 + r() * 12000), 0.35)
+    const col = mix3(r() < 0.6 ? YOUNG : YOUNG2, blackbody(16000 + r() * 14000), 0.3)
     if (n < 600) {
       const m = LANDMARKS.review
       put(m[0] + gauss(r) * 0.32, m[1] + gauss(r) * 0.12, m[2] + gauss(r) * 0.32, lum(0.6) * 2.4, mix3(YOUNG, [1, 1, 1], r() * 0.4), 4)
@@ -274,15 +276,15 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
       put(m[0] + gauss(r) * 0.9, m[1] + gauss(r) * 0.3, m[2] + gauss(r) * 0.9, lum(0.55), mix3(OLD_IN, YOUNG, r()), 4)
       continue
     }
-    if (r() < 0.55) {
+    if (r() < 0.42) {
       const c = clumps[Math.floor(r() * clumps.length)]!
-      put(c.x + gauss(r) * c.s, gauss(r) * 0.045, c.z + gauss(r) * c.s, lum(0.62) * 1.5 * c.b, col, 4)
+      put(c.x + gauss(r) * c.s, gauss(r) * 0.045, c.z + gauss(r) * c.s, lum(0.62) * 2.0 * c.b, col, 4)
     } else {
       // 팔 하류로 넓게 흩어진 젊은 별 (팔이 가는 띠가 아니라 넓은 빛의 길이 되게)
       const { rad, k, branch } = armSpot(BAR_LEN + 0.2, 14.5)
       const rr = rad + 0.3 + gauss(r) * 0.65
       const th = armTh(k, rad, branch) + (gauss(r) * 0.3) / rad
-      put(rr * Math.cos(th), gauss(r) * 0.08, rr * Math.sin(th), lum(0.62) * 1.1, col, 4)
+      put(rr * Math.cos(th), gauss(r) * 0.08, rr * Math.sin(th), lum(0.62) * 1.8, col, 4)
     }
   }
 
@@ -308,7 +310,7 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
   /* ================= 구름 (인스턴스 사각형, 모두 패턴과 함께) ================= */
   const nDust = Math.round(17000 * cloudScale)
   const nGlowDisk = Math.round(3600 * cloudScale)
-  const nHIIgroups = Math.round(620 * cloudScale)
+  const nHIIgroups = Math.round(330 * cloudScale)
   const nBarGlow = 160
   const C = new Float32Array((nDust + nGlowDisk + nClump + nHIIgroups * 14 + 160 + nBarGlow + 120 + 9) * 8)
   let j = 0
@@ -330,7 +332,7 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
   /* 먼지: 팔 안쪽(오목) 가장자리를 따라 끊기는 가는 실 + 팔을 비스듬히 가로지르는 깃털(스퍼) + 팔 사이 성긴 먼지 조각 */
   for (let n = 0; n < nDust; n++) {
     const kindR = r()
-    if (kindR < 0.12) {
+    if (kindR < 0.07) {
       // 팔 사이·원반 전체의 성긴 먼지 조각 (원반이 너무 매끈하지 않게)
       const rad = 2.5 + Math.pow(r(), 0.9) * 11
       const th = r() * Math.PI * 2
@@ -341,8 +343,8 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
     const { rad, k, branch } = armSpot(BAR_LEN - 0.3, 13.5, 0.9)
     const ph = ARMS[k]!.ph
     // 실을 끊는 틈: 팔마다 다른 두 주파수
-    const gap = Math.sin(rad * 9.5 + ph * 2.3) * Math.sin(rad * 3.3 + ph) + 0.35 * Math.sin(rad * 23 + ph * 5)
-    if (gap < -0.12) {
+    const gap = Math.sin(rad * 2.3 + ph * 2.3) * Math.sin(rad * 0.9 + ph) + 0.25 * Math.sin(rad * 7.7 + ph * 5) // 드물고 고르지 않은 끊김 (구슬 꿴 점선이 되지 않게)
+    if (gap < -0.45) {
       n--
       continue
     }
@@ -354,24 +356,25 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
       rr += t * 0.85
       th -= (t * 0.55) / rad
     }
-    const op = (0.05 + Math.pow(r(), 2) * 0.22) * Math.min(1, armStr(k, rad) * 1.4 + 0.35)
+    const op = (kindR < 0.36 ? 0.05 + Math.pow(r(), 2) * 0.2 : 0.08 + Math.pow(r(), 1.5) * 0.32) * Math.min(1, armStr(k, rad) * 1.4 + 0.4) // 팔 안쪽 먼지띠는 진하게, 깃털은 옅게
     cput(rr * Math.cos(th), gauss(r) * 0.02, rr * Math.sin(th), 0.035 + Math.pow(r(), 1.5) * 0.12, [DUST[0] * op, DUST[1] * op, DUST[2] * op], 0)
   }
+  const dustCount = j
   /* 분해되지 않은 별빛 ① 원반 전체의 흐린 금빛(팔 사이도 검지 않게) ② 팔을 따라 넓고 부드러운 흰빛 — 둘 다 패턴에 붙어 감기지 않는다 */
   for (let n = 0; n < nGlowDisk; n++) {
     if (r() < 0.45) {
       const rad = 0.8 + -3.4 * Math.log(1 - r() * 0.95)
       const th = r() * Math.PI * 2
       const c = mix3(OLD_IN, OLD_OUT, Math.min(1, rad / 15))
-      const k = 0.016 * (0.6 + r() * 0.8) * Math.exp(-rad / 6)
+      const k = 0.026 * (0.6 + r() * 0.8) * Math.exp(-rad / 7) * (0.25 + 0.75 * sstep(1.5, 5.5, rad)) // 막대 둘레는 어둡게(NGC 1300)
       cput(rad * Math.cos(th), gauss(r) * 0.08, rad * Math.sin(th), 0.8 + r() * 1.4, [c[0] * k, c[1] * k, c[2] * k], 1)
     } else {
       const { rad, k: arm, branch } = armSpot(BAR_LEN, 14)
       const rr = rad + 0.15 + gauss(r) * 0.5
       const th = armTh(arm, rad, branch) + (gauss(r) * 0.22) / rad
       const c = mix3(OLD_OUT, YOUNG2, 0.35 + r() * 0.4)
-      const frag = 0.55 + 0.45 * Math.sin(rad * 11 + arm * 2.1) * Math.sin(rad * 2.9 + arm)
-      const k = 0.016 * (0.5 + r()) * frag * Math.min(1, armStr(arm, rad) * 1.5 + 0.2)
+      const frag = 0.75 + 0.25 * Math.sin(rad * 11 + arm * 2.1) * Math.sin(rad * 2.9 + arm)
+      const k = 0.026 * (0.5 + r()) * frag * Math.min(1, armStr(arm, rad) * 1.5 + 0.2)
       cput(rr * Math.cos(th), gauss(r) * 0.06, rr * Math.sin(th), 0.25 + r() * 0.55, [c[0] * k, c[1] * k, c[2] * k], 1)
     }
   }
@@ -385,12 +388,12 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
   const HII_CORE = hex('#FFC2D8')
   const grp = (x: number, z: number, spread: number, nK: number, big: number) => {
     for (let q = 0; q < nK; q++) {
-      const k = 0.4 + r() * 0.6
-      const core = r() < 0.2
-      const c = core ? HII_CORE : HII
+      // 작고·적고·채도 낮게, 크기는 거듭제곱 분포로 다양하게 (대부분 아주 작고 몇 개만 조금 크다)
+      const k = 0.22 + r() * 0.5
+      const c = mix3(r() < 0.2 ? HII_CORE : HII, [1, 0.93, 0.95], 0.35)
       const blue = r() < 0.06
-      const cc: C3 = blue ? [0.3, 0.5, 1.0] : c
-      cput(x + gauss(r) * spread, gauss(r) * 0.03, z + gauss(r) * spread, 0.012 + Math.pow(r(), 2.2) * big, [cc[0] * k, cc[1] * 0.55 * k, cc[2] * 0.8 * k], 2)
+      const cc: C3 = blue ? [0.45, 0.6, 1.0] : c
+      cput(x + gauss(r) * spread, gauss(r) * 0.03, z + gauss(r) * spread, 0.007 + Math.pow(r(), 3.2) * big, [cc[0] * k, cc[1] * 0.7 * k, cc[2] * 0.85 * k], 2)
     }
   }
   for (let n = 0; n < nHIIgroups; n++) {
@@ -398,17 +401,17 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
     // 성협에서 팔 안쪽(먼지 쪽)으로 조금
     const ux = c.x / c.rad
     const uz = c.z / c.rad
-    grp(c.x - ux * 0.1, c.z - uz * 0.1, 0.05 + c.s * 0.6, 3 + Math.floor(r() * 11), 0.07)
+    grp(c.x - ux * 0.1, c.z - uz * 0.1, 0.05 + c.s * 0.6, 2 + Math.floor(r() * 6), 0.09)
   }
   // 그래프 장소: 막대 끝의 큰 HII 복합체 = 작은 매듭 무리 여러 개
-  for (let g = 0; g < 12; g++) {
+  for (let g = 0; g < 9; g++) {
     const m = LANDMARKS.graph
     grp(m[0] + gauss(r) * 0.45, m[2] + gauss(r) * 0.45, 0.12, 13, 0.1)
   }
   /* 막대 빛: 막대를 따라 금빛 (가운데가 하얗게 날지 않게 약하게) */
   for (let n = 0; n < nBarGlow; n++) {
     const t = gauss(r) * BAR_LEN * 0.42
-    const k = 0.026 + r() * 0.026
+    const k = 0.018 + r() * 0.018
     const c = mix3(CORE[1], CORE[2], r() * 0.6)
     cput(t * Math.cos(BAR_ANGLE), gauss(r) * 0.12, t * Math.sin(BAR_ANGLE), 0.5 + r() * 1.2, [c[0] * k, c[1] * k, c[2] * k], 3)
   }
@@ -437,5 +440,39 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
     C[o + 7] = 4
     j++
   }
-  return { stars: S, starCount: i, clouds: C, cloudCount: j }
+  return { stars: S, starCount: i, clouds: C, cloudCount: j, dustCount }
+}
+
+/** 늙은 별 팔 밝기 조회 텍스처 (정점당 4팔 루프 → 텍스처 1회): 가로 φ(패턴 좌표) 1024 · 세로 r 0–16u 256, RG8.
+ *  R = 팔 밝기 / 1.6 (ARM_GLSL의 oldArm과 같은 식) · G = 패턴에 붙은 얼룩 − 0.5 */
+export const ARM_TEX_W = 1024
+export const ARM_TEX_H = 256
+export function bakeArmTex(): Uint8Array {
+  const out = new Uint8Array(ARM_TEX_W * ARM_TEX_H * 2)
+  const sm = (e0: number, e1: number, x: number) => sstep(e0, e1, x)
+  for (let y = 0; y < ARM_TEX_H; y++) {
+    const r = ((y + 0.5) / ARM_TEX_H) * 16
+    for (let x = 0; x < ARM_TEX_W; x++) {
+      const phi = ((x + 0.5) / ARM_TEX_W) * Math.PI * 2
+      let a = 0
+      if (r >= BAR_LEN)
+        for (let k = 0; k < 4; k++) {
+          const A = ARMS[k]!
+          const th = ARM_START + A.a * Math.PI - Math.log(Math.max(r, 0.5) / BAR_LEN) * PK
+          let w = phi - th
+          w -= 2 * Math.PI * Math.floor((w + Math.PI) / (2 * Math.PI))
+          const d = r * w * Math.sin(ARM_PITCH) - 0.12
+          const seg = 0.45 + 0.55 * sm(-0.15, 0.6, Math.sin(r * 1.9 + A.ph) * 0.6 + Math.sin(r * 0.71 + A.ph * 1.7) * 0.4)
+          const span = A.w > 0.9 ? 1 - sm(10.5, 14.5, r) : sm(5.5, 6.5, r) * (1 - sm(9.5, 11.5, r))
+          a += A.w * (0.3 + 0.7 * sm(BAR_LEN, 6.8, r)) * Math.exp(-(r - 6) / 8) * seg * span * Math.exp(-d * d)
+        }
+      const qx = r * Math.cos(phi)
+      const qz = r * Math.sin(phi)
+      const m = 1 + 0.22 * Math.sin(qx * 1.31 + qz * 0.73) * Math.sin(qz * 1.07 - qx * 0.41) + 0.14 * Math.sin(qx * 3.7 - qz * 2.9) * Math.sin(qz * 3.3 + qx * 1.9)
+      const o = (y * ARM_TEX_W + x) * 2
+      out[o] = Math.round(Math.min(1, a / 1.6) * 255)
+      out[o + 1] = Math.round(Math.min(1, Math.max(0, m - 0.5)) * 255)
+    }
+  }
+  return out
 }

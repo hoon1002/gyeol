@@ -4,7 +4,7 @@
  * 매 프레임 CPU는 카메라 행렬·유니폼과 전경 별 600개 가중치만 바꾼다.
  * 쿼리: ?tier=A|B|C · ?rot=on|slow|off · ?place=today|… · ?clean=1(UI 숨김) · ?hud=0 · ?lowpower=1
  */
-import { omega, OMEGA_P, LANDMARKS } from './galaxy'
+import { omega, OMEGA_P, LANDMARKS, ARM_TEX_W as SH_ARM_W, ARM_TEX_H as SH_ARM_H } from './galaxy'
 import * as SH from './shaders'
 import GenWorker from './gen.worker.ts?worker'
 
@@ -43,10 +43,10 @@ const PLACES: Place[] = [
   { id: 'settings', name: '설정', sub: '집 안, 어둡게', t: [0, 0, 0], az: 210, el: 30, dist: 25, expo: 0.65, orbit: 1 },
 ]
 /** 화면에서 바라보는 점의 자리 (design-v4: 0.66, 0.44) · 원반 장축 57° 대각선 고정 기울기(롤 변화 0) */
-const SEAT = [0.66, 0.44]
+const SEAT: [number, number] = [0.66, 0.44] // 가로. 세로 화면은 resize에서 (0.56, 0.36)
 let EMIT = 0.3
 let STAR = 2.2
-let ARM: [number, number] = [1.0, 1.4]
+let ARM: [number, number] = [1.25, 1.5]
 const TILT = -57
 const FOV = 50
 
@@ -200,11 +200,12 @@ const P = {
   up: prog(SH.FULL_VS, SH.UP_FS),
   comp: prog(SH.FULL_VS, SH.COMPOSITE_FS),
   blit: prog(SH.FULL_VS, SH.BLIT_FS),
-  fg: prog(SH.FG_VS, SH.STAR_FS),
+  fg: prog(SH.FG_VS, SH.FG_FS),
+  down4: prog(SH.FULL_VS, SH.DOWN4_FS),
 }
 
 /* ---------- 4층 전경 별 (design-v4 §7-2) ---------- */
-const FG_N = 600
+const FG_N = 3000 // 후보 — 화면에 남기는 수는 CPU가 상한으로 고른다
 const FG_R = 4
 const fgPos = new Float32Array(FG_N * 4)
 const fgKey = new Float32Array(FG_N) // 고르는 순서(고정) — 같은 별이 계속 남아 깜빡이지 않게
@@ -229,7 +230,7 @@ const fgVao = (() => {
     d[o] = fgPos[i * 4] = (rnd() * 2 - 1) * FG_R
     d[o + 1] = fgPos[i * 4 + 1] = (rnd() * 2 - 1) * FG_R * 0.6
     d[o + 2] = fgPos[i * 4 + 2] = (rnd() * 2 - 1) * FG_R
-    d[o + 3] = fgPos[i * 4 + 3] = 0.005 + Math.pow(rnd(), 3) * 0.05
+    d[o + 3] = fgPos[i * 4 + 3] = 0.008 + Math.pow(rnd(), 2.5) * 0.08
     const T = rnd()
     // 흑체 팔레트, 살짝 따뜻하게
     const c = T < 0.18 ? [0.8, 0.87, 1] : T < 0.7 ? [1, 0.96, 0.9] : [1, 0.84, 0.64]
@@ -319,13 +320,16 @@ let readyAt = 0
 const bufs: WebGLBuffer[] = []
 const worker = new GenWorker()
 let genId = 0
-worker.onmessage = (e: MessageEvent<{ id: number; ms: number; stars: Float32Array; starCount: number; clouds: Float32Array; cloudCount: number }>) => {
+let dustVao: WebGLVertexArrayObject | null = null
+let dustN = 0
+const armTex = gl.createTexture()!
+worker.onmessage = (e: MessageEvent<{ id: number; ms: number; stars: Float32Array; starCount: number; clouds: Float32Array; cloudCount: number; dustCount: number; armTex: Uint8Array }>) => {
   if (e.data.id !== genId) return
   const t0 = performance.now()
   genMs = e.data.ms
   bufs.forEach((b) => gl.deleteBuffer(b))
   bufs.length = 0
-  const mkVao = (data: Float32Array, inst: boolean) => {
+  const mkVao = (data: Float32Array, inst: boolean, off = 0) => {
     const vao = gl.createVertexArray()!
     gl.bindVertexArray(vao)
     const b = gl.createBuffer()!
@@ -333,9 +337,9 @@ worker.onmessage = (e: MessageEvent<{ id: number; ms: number; stars: Float32Arra
     gl.bindBuffer(gl.ARRAY_BUFFER, b)
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW)
     gl.enableVertexAttribArray(0)
-    gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 32, 0)
+    gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 32, off)
     gl.enableVertexAttribArray(1)
-    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 16)
+    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, off + 16)
     if (inst) {
       gl.vertexAttribDivisor(0, 1)
       gl.vertexAttribDivisor(1, 1)
@@ -344,9 +348,19 @@ worker.onmessage = (e: MessageEvent<{ id: number; ms: number; stars: Float32Arra
     return vao
   }
   starVao = mkVao(e.data.stars, false)
-  cloudVao = mkVao(e.data.clouds, true)
+  // 구름: 앞쪽 dustCount개 = 먼지 → 먼지 패스·빛 패스를 범위로 나눠 그린다(인스턴스 반씩, 버리는 정점 0)
+  dustVao = mkVao(e.data.clouds, true)
+  cloudVao = mkVao(e.data.clouds, true, e.data.dustCount * 32)
+  dustN = e.data.dustCount
+  gl.bindTexture(gl.TEXTURE_2D, armTex)
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG8, SH_ARM_W, SH_ARM_H, 0, gl.RG, gl.UNSIGNED_BYTE, e.data.armTex)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
   starN = e.data.starCount
-  cloudN = e.data.cloudCount
+  cloudN = e.data.cloudCount - e.data.dustCount
   uploadMs = performance.now() - t0
   if (!readyAt) readyAt = performance.now()
   kick()
@@ -383,14 +397,16 @@ function resize(vw = innerWidth, vh = innerHeight, vdpr = Math.min(devicePixelRa
   dustRT = rt(Math.max(1, W >> 1), Math.max(1, H >> 1))
   emitRT = rt(Math.max(1, W >> 1), Math.max(1, H >> 1))
   mips = []
-  let w = W
-  let h = H
-  for (let i = 0; i < TIERS[tier].bloom; i++) {
+  // 블룸은 ¼ 해상도에서 시작(첫 단 쌍선형 4탭) — 단 수는 하나 줄지만 가장 큰 번짐은 같다
+  let w = W >> 1
+  let h = H >> 1
+  for (let i = 0; i < TIERS[tier].bloom - 1; i++) {
     w = Math.max(1, w >> 1)
     h = Math.max(1, h >> 1)
     mips.push(rt(w, h))
   }
   updateMask(vw, vh, !document.body.classList.contains('clean'))
+  computeFit(vw / vh)
 }
 
 /* ---------- 카메라: 은하 중심(바라보는 점) 둘레 구 위의 자유 회전 — 쿼터니언 아크볼 ----------
@@ -424,13 +440,47 @@ let flightPeak = 0
 let prevFlightQ: Q | null = null
 let flightFrames: number[] = []
 const flightLog: Array<{ to: string; ms: number; maxFrame: number; p95: number; angDeg: number; peakDegS: number }> = []
-const camNow = (): CamS => ({ t: placeTarget(place, simT), dist: place.dist, q: worldQ(place, simT, orient), expo: place.expo })
+/** 처음 구도 맞춤 (화면비별): 기본 3/4 자세에서 원반 가장자리(14.5u 고리 32점 + 팽대부 위아래)가 화면 여백 3% 안에 드는
+ *  가장 가까운 거리 → 은하 중심 장소(오늘·플래너·설정)의 거리 배율. 오른쪽 치우침(좌석)은 유지, 세로 화면은 좌석 (0.56, 0.36) */
+let fitK = 1
+function computeFit(aspect: number) {
+  SEAT[0] = aspect < 1 ? 0.56 : 0.66
+  SEAT[1] = aspect < 1 ? 0.36 : 0.44
+  const q = homeOrient(PLACES[0]!)
+  const back = qRot(q, [0, 0, 1])
+  const sv = qRot(q, [1, 0, 0])
+  const uv = qRot(q, [0, 1, 0])
+  const f: V3 = [-back[0], -back[1], -back[2]]
+  const pts: V3[] = [[0, 1.2, 0], [0, -1.2, 0]]
+  for (let k = 0; k < 32; k++) pts.push([14.5 * Math.cos((k / 32) * Math.PI * 2), 0, 14.5 * Math.sin((k / 32) * Math.PI * 2)])
+  const fits = (d: number) => {
+    const m = viewProj([back[0] * d, back[1] * d, back[2] * d], sv, uv, f, FOV * DEG, aspect, 0.02, 3000).m
+    for (const p of pts) {
+      const w = m[3]! * p[0] + m[7]! * p[1] + m[11]! * p[2] + m[15]!
+      if (w <= 0) return false
+      const x = (m[0]! * p[0] + m[4]! * p[1] + m[8]! * p[2] + m[12]!) / w
+      const y = (m[1]! * p[0] + m[5]! * p[1] + m[9]! * p[2] + m[13]!) / w
+      if (Math.abs(x) > 0.94 || Math.abs(y) > 0.94) return false
+    }
+    return true
+  }
+  let lo = 6
+  let hi = 150
+  for (let i = 0; i < 32; i++) {
+    const mid = (lo + hi) / 2
+    if (fits(mid)) hi = mid
+    else lo = mid
+  }
+  fitK = hi / PLACES[0]!.dist
+}
+const pdist = (pl: Place) => pl.dist * (Math.hypot(pl.t[0], pl.t[2]) < 0.01 ? fitK : 1)
+const camNow = (): CamS => ({ t: placeTarget(place, simT), dist: pdist(place), q: worldQ(place, simT, orient), expo: place.expo })
 function curCam(now: number): { c: CamS; flying: boolean } {
   if (!flight) return { c: camNow(), flying: false }
   const p = Math.min(1, (now - flight.t0) / flight.dur)
   const e = easeS(p) // 이동·회전 같은 이징
   const a = flight.from
-  const b: CamS = { t: placeTarget(flight.to, simT), dist: flight.to.dist, q: worldQ(flight.to, simT, flight.o), expo: flight.to.expo }
+  const b: CamS = { t: placeTarget(flight.to, simT), dist: pdist(flight.to), q: worldQ(flight.to, simT, flight.o), expo: flight.to.expo }
   const far = Math.abs(Math.log(b.dist / a.dist)) + Math.hypot(b.t[0] - a.t[0], b.t[2] - a.t[2]) / 6
   const arc = Math.sin(Math.PI * p)
   if (p >= 1) {
@@ -460,7 +510,7 @@ function startFlight(pl: Place, o: Q, home: boolean) {
   const toQ = worldQ(pl, simT, o)
   const ang = qAngle(from.q, toQ) / DEG
   const tt = placeTarget(pl, simT)
-  const dz = Math.abs(Math.log(pl.dist / from.dist))
+  const dz = Math.abs(Math.log(pdist(pl) / from.dist))
   const dp = Math.hypot(tt[0] - from.t[0], tt[2] - from.t[2])
   let dur: number
   // 리더 결정(2026-10-17): 처음 자리로·장소 비행 모두 최고 각속도 60°/s를 지키되 길이는 3.0s에서 자른다.
@@ -747,6 +797,13 @@ let last = 0
 let orbitK = 0 // 0–1 공전 램프 (3s 뒤 4s inout, 입력 300ms 안 0)
 let orbitRate = 1 * DEG // 장소·상태별 공전 속도 (2s·5s 이즈)
 let fgCapK = 1
+const fgVis: number[] = []
+const fgArea = new Float32Array(FG_N)
+const fgSx = new Float32Array(FG_N)
+const fgSy = new Float32Array(FG_N)
+const fgKeep = new Uint8Array(FG_N)
+let fgMoveK = 0
+let capMoving = false // 렌더용: 드래그 중 장면
 const t0 = performance.now()
 function frame(now: number, timed = false) {
   pending = false
@@ -763,6 +820,7 @@ function frame(now: number, timed = false) {
   schedule()
 }
 let drawnAll = 0
+let skipMask = 0
 let rsOverride = 0 // 측정용: 해상도 배율 고정
 
 interface DrawOpt {
@@ -854,10 +912,14 @@ function draw(now: number, opt: DrawOpt = {}) {
   gl.uniform1f(S.u.uDpr!, sdpr)
   gl.uniform2f(S.u.uArm!, ARM[0], ARM[1])
   gl.uniform1f(S.u.uRest!, smooth01(restK))
+  gl.activeTexture(gl.TEXTURE2)
+  gl.bindTexture(gl.TEXTURE_2D, armTex)
+  gl.uniform1i(S.u.uArmTex!, 2)
+  gl.activeTexture(gl.TEXTURE0)
   gl.bindVertexArray(starVao)
-  gl.drawArrays(gl.POINTS, 0, starN)
+  if (!(skipMask & 1)) gl.drawArrays(gl.POINTS, 0, starN)
   // 1b) 4층 전경 별
-  fgUpdate(dt, eye, vp.m, sdpr, st.flying || !!drag || Math.hypot(user.wv[0], user.wv[1]) > 1e-9, opt.capture ? 1 : spd)
+  fgUpdate(dt, eye, vp.m, sdpr, st.flying || !!drag || Math.hypot(user.wv[0], user.wv[1]) > 1e-9 || capMoving, opt.capture ? 1 : spd)
   {
     const F = P.fg
     gl.useProgram(F.p)
@@ -867,7 +929,8 @@ function draw(now: number, opt: DrawOpt = {}) {
     gl.uniform1f(F.u.uR!, FG_R)
     gl.uniform1f(F.u.uDpr!, sdpr)
     gl.uniform1f(F.u.uK!, fgK(eye))
-    gl.uniform1f(F.u.uMaxPx!, (rot === 'slow' ? 8 : 14) * sdpr)
+    gl.uniform1f(F.u.uMaxPx!, (rot === 'slow' ? 8 : 22) * sdpr) // 가까운 보케 원판은 22px까지(개수·점유 상한 안)
+    gl.uniform1f(F.u.uCA!, rot === 'slow' ? 0 : 0.9 * sdpr)
     gl.uniform4fv(F.u['uMask[0]']!, maskNdc)
     gl.uniform2f(F.u.uFeather!, (24 / cssW) * 2, (24 / cssH) * 2)
     gl.bindVertexArray(fgVao)
@@ -882,7 +945,7 @@ function draw(now: number, opt: DrawOpt = {}) {
   gl.uniform3f(C.u.uRight!, vp.right[0], vp.right[1], vp.right[2])
   gl.uniform3f(C.u.uUp!, vp.up[0], vp.up[1], vp.up[2])
   gl.uniform1f(C.u.uGain!, 1)
-  gl.bindVertexArray(cloudVao)
+  gl.bindVertexArray(dustVao)
   gl.bindFramebuffer(gl.FRAMEBUFFER, dustRT.fb)
   gl.viewport(0, 0, cw, ch)
   gl.clearColor(1, 1, 1, 1)
@@ -890,7 +953,8 @@ function draw(now: number, opt: DrawOpt = {}) {
   gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_COLOR)
   gl.uniform1f(C.u.uKindMin!, 0)
   gl.uniform1f(C.u.uKindMax!, 0)
-  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, cloudN)
+  if (!(skipMask & 2)) gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, dustN)
+  gl.bindVertexArray(cloudVao)
   gl.bindFramebuffer(gl.FRAMEBUFFER, emitRT.fb)
   gl.clearColor(0, 0, 0, 1)
   gl.clear(gl.COLOR_BUFFER_BIT)
@@ -898,7 +962,7 @@ function draw(now: number, opt: DrawOpt = {}) {
   gl.uniform1f(C.u.uKindMin!, 1)
   gl.uniform1f(C.u.uKindMax!, 4)
   gl.uniform1f(C.u.uGain!, EMIT)
-  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, cloudN)
+  if (!(skipMask & 2)) gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, cloudN)
   // 3) 장면 = (별 + E) × T
   const src = (t: RT, uw: number, uh: number) => [uw / t.w, uh / t.h, (uw - 0.5) / t.w, (uh - 0.5) / t.h] as const
   gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fb)
@@ -913,7 +977,7 @@ function draw(now: number, opt: DrawOpt = {}) {
   gl.drawArrays(gl.TRIANGLES, 0, 3)
   // 먼지 투과율 하한: 비스듬히 볼 땐 짙은 갈색(0.40), 옆(edge-on)에서는 원반을 가르는 진한 먼지띠(0.16)
   const edgeCam = 1 - smooth01((Math.abs(eye[1] - target[1]) / dist - 0.08) / 0.27)
-  gl.uniform3f(P.blit.u.uFloor!, 0.4 - 0.24 * edgeCam, 0.3 - 0.19 * edgeCam, 0.24 - 0.16 * edgeCam)
+  gl.uniform3f(P.blit.u.uFloor!, 0.32 - 0.16 * edgeCam, 0.24 - 0.13 * edgeCam, 0.19 - 0.11 * edgeCam)
   gl.bindTexture(gl.TEXTURE_2D, dustRT.tex)
   gl.blendFunc(gl.DST_COLOR, gl.ZERO)
   gl.drawArrays(gl.TRIANGLES, 0, 3)
@@ -924,15 +988,18 @@ function draw(now: number, opt: DrawOpt = {}) {
   let fw = sw
   let fh = sh
   const used: Array<[number, number]> = []
-  for (const m of mips) {
-    const mw = Math.max(1, fw >> 1)
-    const mh = Math.max(1, fh >> 1)
+  for (const m of skipMask & 4 ? [] : mips) {
+    const first = m === mips[0]
+    const mw = Math.max(1, fw >> (first ? 2 : 1))
+    const mh = Math.max(1, fh >> (first ? 2 : 1))
+    const D = first ? P.down4 : P.down
+    gl.useProgram(D.p)
     gl.bindFramebuffer(gl.FRAMEBUFFER, m.fb)
     gl.viewport(0, 0, mw, mh)
     gl.bindTexture(gl.TEXTURE_2D, from.tex)
-    gl.uniform1i(P.down.u.uTex!, 0)
-    gl.uniform2f(P.down.u.uTexel!, 1 / from.w, 1 / from.h)
-    gl.uniform4f(P.down.u.uSrc!, ...src(from, fw, fh))
+    gl.uniform1i(D.u.uTex!, 0)
+    gl.uniform2f(D.u.uTexel!, 1 / from.w, 1 / from.h)
+    gl.uniform4f(D.u.uSrc!, ...src(from, fw, fh))
     gl.drawArrays(gl.TRIANGLES, 0, 3)
     used.push([mw, mh])
     from = m
@@ -942,7 +1009,7 @@ function draw(now: number, opt: DrawOpt = {}) {
   gl.useProgram(P.up.p)
   gl.enable(gl.BLEND)
   gl.blendFunc(gl.ONE, gl.ONE)
-  for (let i = mips.length - 1; i > 0; i--) {
+  for (let i = skipMask & 4 ? 0 : mips.length - 1; i > 0; i--) {
     const a = mips[i]!
     const b = mips[i - 1]!
     const ua = used[i]!
@@ -968,7 +1035,7 @@ function draw(now: number, opt: DrawOpt = {}) {
   gl.bindTexture(gl.TEXTURE_2D, mips[0]!.tex)
   gl.uniform1i(P.comp.u.uBloom!, 1)
   gl.uniform4f(P.comp.u.uSrc!, ...src(scene, sw, sh))
-  gl.uniform4f(P.comp.u.uSrcB!, ...src(mips[0]!, used[0]![0], used[0]![1]))
+  gl.uniform4f(P.comp.u.uSrcB!, ...src(mips[0]!, used[0]?.[0] ?? 1, used[0]?.[1] ?? 1))
   gl.uniform1f(P.comp.u.uBloomK!, 0.085)
   gl.uniform1f(P.comp.u.uExposure!, expo * 0.55)
   gl.uniform1f(P.comp.u.uAspect!, W / H)
@@ -1069,19 +1136,25 @@ function fgUpdate(dt: number, eye: V3, m: Float32Array, sdpr: number, moving: bo
   }
   fgPrevEye = eye
   const phone = Math.min(cssW, cssH) < 600
-  let cap = rot === 'slow' ? (phone ? 6 : 12) : phone ? 20 : 40
+  // 가만히: 조용하게(데스크톱·iPad 12 · 폰 8) · 드래그·비행: 많이(80 · 40) — 올라갈 땐 0.3s, 내려갈 땐 1.5s에 걸쳐
+  fgMoveK += ((moving ? 1 : 0) - fgMoveK) * Math.min(1, dt / (moving ? 300 : 1500))
+  const idleCap = rot === 'slow' ? (phone ? 6 : 12) : phone ? 8 : 12
+  const moveCap = rot === 'slow' ? (phone ? 6 : 12) : phone ? 40 : 80
+  let cap = Math.round(idleCap + (moveCap - idleCap) * fgMoveK)
   if (reducedOS) cap = 6
   const deepK = power === 'deep' ? 0.3 : 1
   fgCapK += (deepK - fgCapK) * Math.min(1, dt / 5000)
   cap = Math.max(0, Math.round(cap * fgCapK))
   const areaCap = (rot === 'slow' ? 0.005 : 0.015) * cssW * cssH
   const K = fgK(eye)
-  const maxCss = rot === 'slow' ? 8 : 14
+  const maxCss = rot === 'slow' ? 8 : 22
   const R = FG_R
-  const vis: number[] = []
-  const area = new Float32Array(FG_N)
-  const sx = new Float32Array(FG_N)
-  const sy = new Float32Array(FG_N)
+  // 프레임마다 새 배열을 만들지 않는다(GC 멈칫 방지)
+  const vis = fgVis
+  vis.length = 0
+  const area = fgArea.fill(0)
+  const sx = fgSx
+  const sy = fgSy
   for (let i = 0; i < FG_N; i++) {
     let rx = fgPos[i * 4]! - fgCam[0] + R
     let ry = fgPos[i * 4 + 1]! - fgCam[1] + R
@@ -1100,9 +1173,9 @@ function fgUpdate(dt: number, eye: V3, m: Float32Array, sdpr: number, moving: bo
     const nx = (m[0]! * x + m[4]! * y + m[8]! * z + m[12]!) / cw_
     const ny = (m[1]! * x + m[5]! * y + m[9]! * z + m[13]!) / cw_
     if (nx < -1.02 || nx > 1.02 || ny < -1.02 || ny > 1.02) continue
-    let sig = 0.45 * sdpr + (d < 1 ? (1 - d) * 2.4 * sdpr : 0)
-    sig = Math.min(sig, (maxCss * sdpr) / 5)
-    const peak = (((fgPos[i * 4 + 3]! / (d * d)) * K * fade) * 40) / (6.2831853 * sig * sig)
+    let sig = 0.45 * sdpr + (d < 1 ? (1 - d) * (1 - d) * 6 * sdpr : 0)
+    sig = Math.min(sig, (maxCss * sdpr) / 4)
+    const peak = (((fgPos[i * 4 + 3]! / (d * d)) * K * fade) * 40) / (6.2831853 * sig * sig) * (1 + 3 * smooth01((0.95 - d) / 0.4))
     if (Math.min(peak, 0.55) < 0.012) continue
     const sc = sig / sdpr
     area[i] = Math.PI * (2 * sc) * (2 * sc)
@@ -1111,7 +1184,7 @@ function fgUpdate(dt: number, eye: V3, m: Float32Array, sdpr: number, moving: bo
     vis.push(i)
   }
   vis.sort((a, b) => fgKey[a]! - fgKey[b]!)
-  const keep = new Uint8Array(FG_N)
+  const keep = fgKeep.fill(0)
   let n = 0
   let A = 0
   for (const i of vis) {
@@ -1122,6 +1195,7 @@ function fgUpdate(dt: number, eye: V3, m: Float32Array, sdpr: number, moving: bo
     A += area[i]!
   }
   const a = Math.min(1, dt / 250)
+  const aOut = Math.min(1, dt / 600) // 사라질 땐 천천히
   const aFast = Math.min(1, dt / 50)
   let shown = 0
   let shownA = 0
@@ -1131,7 +1205,8 @@ function fgUpdate(dt: number, eye: V3, m: Float32Array, sdpr: number, moving: bo
     let v = 0
     if (area[i]! > 0 && fgSeen[i] && dt > 0) v = (Math.hypot(sx[i]! - fgScr[i * 2]!, sy[i]! - fgScr[i * 2 + 1]!) * 1000) / dt
     const fast = v > capPx
-    fgW[i]! += ((keep[i] && !fast ? 1 : 0) - fgW[i]!) * (fast ? aFast : a)
+    const tgtW = keep[i] && !fast ? 1 : 0
+    fgW[i]! += (tgtW - fgW[i]!) * (fast ? aFast : tgtW > fgW[i]! ? a : aOut)
     if (fgW[i]! < 0.002) fgW[i] = 0
     if (fgW[i]! > 0.3 && area[i]! > 0) {
       shown++
@@ -1231,6 +1306,11 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
     FRAME_MS.active = on ? 1 : 1000 / 60
     touch()
   },
+  /** 측정용: 1 별 · 2 구름 · 4 블룸 건너뛰기 (비용 나누기) */
+  skip: (m: number) => {
+    skipMask = m
+    touch()
+  },
   rs: (x: number) => {
     rsOverride = x
     touch()
@@ -1277,7 +1357,7 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
     return res
   },
   /** 가상 화면 렌더: w×h CSS · DPR 2로 오프스크린 크기를 바꿔 한 장 그리고 PNG를 로컬 저장 도우미로 보낸다 */
-  capture: async (name: string, w: number, h: number, setup?: { az?: number; el?: number; roll?: number; zoom?: number; t?: number; fg?: boolean }) => {
+  capture: async (name: string, w: number, h: number, setup?: { az?: number; el?: number; roll?: number; zoom?: number; t?: number; fg?: boolean; moving?: boolean }) => {
     const keep = { orient, zoom: user.zoom, simT, clean: document.body.classList.contains('clean') }
     document.body.classList.add('clean')
     clearTimeout(timerId)
@@ -1289,6 +1369,8 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
     if (setup?.az !== undefined) orient = orientAzEl(setup.az, setup.el ?? 30, setup.roll ?? TILT)
     if (setup?.zoom !== undefined) user.zoom = setup.zoom
     orbitK = setup?.fg ? 1 : 0
+    capMoving = !!setup?.moving
+    if (capMoving) fgMoveK = 1
     const tnow = performance.now()
     // 전경 별 가중치를 차오르게 몇 번 그린다 (같은 자리)
     const st0 = simT
@@ -1304,6 +1386,7 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
     last = 0
     draw(tnow + 1300, { capture: true })
     const blob: Blob = await new Promise((r) => canvas.toBlob((b) => r(b!), 'image/png'))
+    capMoving = false
     let saved = 'no-server'
     try {
       const r = await fetch(`${SAVE}?name=${encodeURIComponent(name)}`, { method: 'POST', body: blob })

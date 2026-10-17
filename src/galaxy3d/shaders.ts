@@ -26,6 +26,7 @@ uniform float uDof;    // 흐림 세기
 uniform float uDpr;
 uniform vec2 uArm;    // 늙은 별 팔 밝기: 바탕 · 팔 (팔:팔 사이 ≈ 2–3 : 1)
 uniform float uRest;   // 쉼 크로스페이드 0→1: 희미한 별 +20%
+uniform highp sampler2D uArmTex; // 늙은 별 팔 밝기·얼룩 조회(패턴 좌표 φ × r) — 정점당 4팔 계산 대신 1회 조회
 layout(location = 0) in vec4 a0;
 layout(location = 1) in vec4 a1;
 out vec3 vCol;
@@ -45,9 +46,8 @@ void main() {
     p = diskPos(a0.x, a0.y, a0.z);               // 늙은 별: 차등 회전
     // 지금 패턴 좌표에서 팔 위에 있으면 밝게 (별이 팔을 지나며 밝아졌다 어두워진다) + 패턴에 붙은 얼룩
     float phi = a0.y + (omega(a0.x) - OMEGA_P) * uTime;
-    vec2 q = a0.x * vec2(cos(phi), sin(phi));
-    float m = 1.0 + 0.22 * sin(q.x * 1.31 + q.y * 0.73) * sin(q.y * 1.07 - q.x * 0.41) + 0.14 * sin(q.x * 3.7 - q.y * 2.9) * sin(q.y * 3.3 + q.x * 1.9);
-    gain = (uArm.x + uArm.y * oldArm(a0.x, phi)) * m;
+    vec2 at = textureLod(uArmTex, vec2(phi * 0.15915494, a0.x / 16.0), 0.0).rg;
+    gain = (uArm.x + uArm.y * at.r * 1.6) * (0.5 + at.g);
   }
   vec4 clip = uVP * vec4(p, 1.0);
   float d = max(length(p - uCam), 0.02);
@@ -58,19 +58,19 @@ void main() {
   float flux = L / (dd * dd) * uExpo;
   // 피사계 심도: 초점에서 멀수록 번진다(빛의 총량은 같게)
   float coc = sky ? 0.0 : uDof * uPx * abs(1.0 / d - 1.0 / uFocus) * 0.004;
-  float sig = max(0.55 * uDpr, min(coc, 9.0 * uDpr));
+  float sig = max(0.5 * uDpr, min(coc, 9.0 * uDpr)); // 최소 σ 0.5px(DPR 1 기준) — 점 하나 5×5px
   float E = flux * 260.0;
   float peak = E / (6.2831853 * sig * sig);
   vec3 col = a1.rgb * peak;
   float mx = max(col.r, max(col.g, col.b));
   col *= 1.0 + 0.2 * uRest * (1.0 - smoothstep(0.08, 0.6, mx)); // 정지 장면: 3등급(희미한) 별 +20%
   mx = max(col.r, max(col.g, col.b));
-  if (mx < 0.0015 || clip.w <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vCol = vec3(0.0); vSig = 1.0; vPx = 1.0; return; }
+  if (mx < 0.002 || clip.w <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vCol = vec3(0.0); vSig = 1.0; vPx = 1.0; return; }
   // 아주 밝은 별: 중심은 1.0 안팎으로 누르고 남는 빛은 넓게 (블룸이 받는다)
   float k = mx > 3.0 ? 3.0 / mx : 1.0;
   vCol = col * k;
   vSig = sig / sqrt(k);
-  vPx = min(ceil(vSig * 5.0) + 1.0, 40.0); // 점 크기 상한 40px (채우기 비용)
+  vPx = min(ceil(vSig * 4.0) + 1.0, 40.0); // ±2σ까지만 (채우기 비용 −35%), 상한 40px
   gl_Position = clip;
   gl_PointSize = vPx;
 }
@@ -169,6 +169,20 @@ void main() {
 const SRC = /* glsl */ `
 uniform vec4 uSrc;
 vec3 S(sampler2D t, vec2 uv) { return texture(t, min(uv, uSrc.zw)).rgb; }
+`
+/* 블룸 첫 단: 장면 → ¼ 해상도를 쌍선형 4탭으로(탭 하나가 2×2 평균 → 4×4 덮음). 전체 해상도 13탭 패스를 없앤다 */
+export const DOWN4_FS = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform vec2 uTexel;
+${SRC}
+out vec4 o;
+void main() {
+  vec2 u = vUv * uSrc.xy;
+  vec3 s = S(uTex, u + uTexel * vec2(-1, -1)) + S(uTex, u + uTexel * vec2(1, -1)) + S(uTex, u + uTexel * vec2(-1, 1)) + S(uTex, u + uTexel * vec2(1, 1));
+  o = vec4(min(s * 0.25, vec3(64.0)), 1.0);
+}
 `
 /* 블룸: 13탭 내려 받기 → 텐트 올려 더하기 */
 export const DOWN_FS = /* glsl */ `#version 300 es
@@ -272,15 +286,18 @@ layout(location = 2) in float aW;  // CPU가 고른 가중치 (0 = 안 보임)
 out vec3 vCol;
 out float vSig;
 out float vPx;
+out float vBok;
+out vec2 vDir;
 void main() {
   vec3 rel = mod(a0.xyz - uFgCam + uR, 2.0 * uR) - uR;
   float d = length(rel);
   float fade = smoothstep(0.3, 0.6, d) * (1.0 - smoothstep(0.7 * uR, 0.98 * uR, d));
   vec4 clip = uVP * vec4(uCam + rel, 1.0);
   float flux = a0.w / (d * d) * uK * fade;
-  float sig = 0.45 * uDpr + (d < 1.0 ? (1.0 - d) * 2.4 * uDpr : 0.0); // 1u 안에서만 보케
-  sig = min(sig, uMaxPx / 5.0);
+  float sig = 0.45 * uDpr + (d < 1.0 ? (1.0 - d) * (1.0 - d) * 6.0 * uDpr : 0.0); // 1u 안에서만 보케 — 가까울수록 크고 부드러운 원판
+  sig = min(sig, uMaxPx / 4.0);
   float peak = flux * 40.0 / (6.2831853 * sig * sig);
+  peak *= 1.0 + 3.0 * smoothstep(0.95, 0.55, d); // 초점 나간 원판은 넓게 퍼져도 보이게 (불투명도 상한 0.35 안)
   float cap = d < 1.0 ? mix(0.35, 0.55, d) : 0.55; // 보케 원판은 불투명도 ≤ 0.35, 가장 밝아도 55%
   vec3 col = a1.rgb * min(peak, cap) * aW;
   if (clip.w <= 0.0 || aW < 0.002) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vCol = vec3(0.0); vSig = 1.0; vPx = 1.0; return; }
@@ -293,8 +310,32 @@ void main() {
   }
   vCol = col * mix(1.0, 0.15, inside);
   vSig = sig;
-  vPx = clamp(ceil(sig * 5.0) + 1.0, 2.0 * uDpr, uMaxPx);
+  vPx = clamp(ceil(sig * 4.0) + 1.0, 2.0 * uDpr, uMaxPx);
+  vBok = smoothstep(0.95, 0.55, d);
+  vDir = length(n) > 1e-3 ? normalize(n) : vec2(0.0);
   gl_Position = clip;
   gl_PointSize = vPx;
+}
+`
+
+/* 전경 별 조각: 먼 별은 가우스 점, 가까운 별(1u 안)은 가장자리가 부드러운 초점 나간 원판으로 바뀐다.
+   원판은 화면 중심에서 바깥 방향으로 R/B를 ±uCA px 어긋나게(렌즈 색수차, ≤ 1px) */
+export const FG_FS = /* glsl */ `#version 300 es
+precision highp float;
+in vec3 vCol;
+in float vSig;
+in float vPx;
+in float vBok;
+in vec2 vDir;
+uniform float uCA;
+out vec4 o;
+void main() {
+  vec2 d = (gl_PointCoord - 0.5) * vPx;
+  float g = exp(-dot(d, d) / (2.0 * vSig * vSig));
+  if (vBok < 0.01) { o = vec4(vCol * g, 1.0); return; }
+  float R = vPx * 0.5 - 0.5;
+  vec2 ca = vDir * uCA * vBok;
+  vec3 disc = vec3(smoothstep(R, R * 0.55, length(d - ca)), smoothstep(R, R * 0.55, length(d)), smoothstep(R, R * 0.55, length(d + ca)));
+  o = vec4(vCol * mix(vec3(g), disc * 0.85, vBok), 1.0);
 }
 `
