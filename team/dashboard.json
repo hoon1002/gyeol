@@ -1,34 +1,31 @@
 {
   "project": "결 GYEOL · M0 3D 품질 관문",
-  "subtitle": "갤럭시탭 S7 FE 보고 수정 중 (3D→2D·펜 위치·글씨 사라짐) → 그다음 M4 기억 엔진",
+  "subtitle": "M4 · 기억 엔진 (FSRS · 카드 자동 추출 · 테이프 카드 · 떠올리기 · 시험 역산 · 기억 밝기)",
   "phases": [
     {
-      "name": "v4 기획 · 3D · M0 · M1 · M2",
+      "name": "v4 · 3D · M0–M3",
       "status": "done"
     },
     {
-      "name": "M3 1차: 손글씨 엔진 · 필기 설계 · QA · 글 줄이기 감사",
-      "status": "done",
+      "name": "M4 설계 (아트 디렉터)",
+      "status": "active",
       "members": [
-        "ink",
-        "inkd",
-        "qa",
         "ad"
       ]
     },
     {
-      "name": "M3 2차: 노트에 잉크 연결 · 메모 강화 · 버그 수정 · 하늘 디테일",
-      "status": "done",
+      "name": "M4 구현: FSRS·복습·떠올리기 / 추출·시험 계획 / 테이프 카드 / 하늘",
+      "status": "todo",
       "members": [
         "app",
         "app2",
-        "fx",
-        "ink"
+        "ink",
+        "fx"
       ]
     },
     {
-      "name": "M3 검수 · 펜 측정 · 보고",
-      "status": "done",
+      "name": "M4 검수 · 보고",
+      "status": "todo",
       "members": [
         "ad",
         "qa"

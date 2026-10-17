@@ -7,6 +7,7 @@
  * v2(M2): noteBodies · links · memos · assets 추가, notes에 classKey·title 인덱스.
  *
  * v3(손글씨 라운드): pages · strokes · pageItems 추가.
+ * v4(M4 기억 엔진): reviewLogs · cardCandidates 추가, Card에 FSRS 필드·source, Task에 scope.
  *
  * 이후 예고(아직 테이블 없음):
  *  - strokes: 'id, pageId, [pageId+layer], updatedAt'
@@ -56,6 +57,8 @@ export interface Task {
   dueAt: number
   /** 0 = 남음, 1 = 끝 (Dexie 인덱스용 숫자) */
   done: 0 | 1
+  /** M4 시험 범위 (시험 역산 계획): 노트·과목·카드 */
+  scope?: { noteIds?: string[]; subjectIds?: string[]; cardIds?: string[] } | null
   createdAt: number
   updatedAt: number
 }
@@ -98,6 +101,57 @@ export interface Card {
   reps: number
   lapses: number
   lastReview?: number | null
+  /* M4 (FSRS, ts-fsrs): 색인 없는 필드 */
+  stability?: number
+  difficulty?: number
+  elapsedDays?: number
+  scheduledDays?: number
+  learningSteps?: number
+  /** 어디서 왔나 — 노트 규칙 추출 · 손글씨 테이프 · 직접 · 메모 */
+  source?: {
+    kind: 'rule' | 'tape' | 'manual' | 'memo'
+    noteId?: string | null
+    /** 추출 규칙 이름 (qa · cloze · term · bold · table · list · qline · ask) */
+    rule?: string | null
+    /** 테이프 카드: 그 쪽과 가린 영역(쪽 좌표 pt) · 테이프 id */
+    pageId?: string | null
+    rect?: [number, number, number, number] | null
+    itemId?: string | null
+  } | null
+  /** 잠시 빼기 (복습에 안 나옴) */
+  suspended?: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+/** M4: 복습 기록 한 번 = 행 하나 (FSRS 다시 맞추기 · 기억 밝기 · 돌아보기) */
+export interface ReviewLog {
+  id: string
+  cardId: string
+  /** 1 다시 · 2 어려움 · 3 알맞음 · 4 쉬움 */
+  rating: 1 | 2 | 3 | 4
+  state: CardState
+  due: number
+  stability: number
+  difficulty: number
+  elapsedDays: number
+  scheduledDays: number
+  reviewedAt: number
+  /** 카드를 본 시간(ms) */
+  durationMs?: number
+}
+
+/** M4: 노트에서 뽑은 카드 후보 — 사람이 고르면 Card가 된다 */
+export interface CardCandidate {
+  id: string
+  noteId: string
+  rule: string
+  front: string
+  back: string
+  /** 노트 안 위치 (블록 id나 글자 범위) — 다시 뽑을 때 같은 후보를 알아본다 */
+  anchor?: string | null
+  status: 'new' | 'accepted' | 'dismissed'
+  cardId?: string | null
   createdAt: number
   updatedAt: number
 }
@@ -275,6 +329,8 @@ export class GyeolDB extends Dexie {
   pages!: EntityTable<Page, 'id'>
   strokes!: EntityTable<Stroke, 'id'>
   pageItems!: EntityTable<PageItem, 'id'>
+  reviewLogs!: EntityTable<ReviewLog, 'id'>
+  cardCandidates!: EntityTable<CardCandidate, 'id'>
 
   constructor() {
     super('gyeol')
@@ -301,6 +357,11 @@ export class GyeolDB extends Dexie {
       pages: 'id, noteId, [noteId+index], updatedAt',
       strokes: 'id, pageId, [pageId+layer], updatedAt',
       pageItems: 'id, pageId, updatedAt',
+    })
+    // v4 (M4 기억 엔진): 복습 기록 · 카드 후보
+    this.version(4).stores({
+      reviewLogs: 'id, cardId, reviewedAt',
+      cardCandidates: 'id, noteId, status, createdAt',
     })
   }
 }
