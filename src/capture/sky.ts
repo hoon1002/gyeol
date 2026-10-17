@@ -28,6 +28,11 @@ export function skyFileDust(id: string, subjectId: string | null, to: FileTo): v
   current?.fileDust(id, subjectId, to)
 }
 
+/** 고정한 별가루: 고리 안쪽에 멈추고 조금 밝아지며 24점 안에서 늘 먼저 보인다(design-ink 8-5) */
+export function skyPinDust(id: string, on: boolean): void {
+  current?.pinDust(id, on)
+}
+
 /** D9: 과목 성운 피기 */
 export function skyBloom(subjectId: string, color: string): void {
   current?.bloomNebula(subjectId, color)

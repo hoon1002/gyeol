@@ -21,12 +21,14 @@ import { fileMemo, restoreMemo, setMemoSubject } from './file'
 import { memoItems, type AssetX, type MemoX } from './api'
 import { fmtSec } from './voice'
 import { SubjectPicker } from './SubjectPicker'
+import { skyPinDust } from './sky'
 import '@/styles/capture.css'
 
 type To = 'note' | 'task' | 'archive'
 
 async function setPinned(id: string, pinned: boolean) {
   await db.memos.update(id, { pinned, updatedAt: Date.now() } as Partial<MemoX>)
+  skyPinDust(id, pinned)
 }
 
 function VoicePlay({ assetId, ms }: { assetId: string; ms?: number | null }) {

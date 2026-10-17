@@ -13,7 +13,7 @@ import { closeMemoSheet, memoTimings, registerMemoSheet } from './open'
 import { fmtSec, useVoice } from './voice'
 import { tip } from '@/shell/Tip'
 import { useHintCount } from '@/shell/hints'
-import { IconChecklist, IconMic, IconPen, IconPlus, IconStop } from '@/shell/icons'
+import { IconChecklist, IconMic, IconPen, IconPin, IconPlus, IconStop } from '@/shell/icons'
 import { SubjectPicker } from './SubjectPicker'
 import '@/styles/capture.css'
 
@@ -49,6 +49,7 @@ export function MemoSheet() {
   const [check, setCheck] = useState(false)
   /** ＋ 하나에서 펼쳐지는 종류 칸 (design-ink 8-2) */
   const [fan, setFan] = useState(false)
+  const [pin, setPin] = useState(false)
   /** 펜으로 ＋를 눌렀다: 포커스를 주지 않는다(키보드 없음). 키를 치면 바로 글 상태 (design-ink 8-1) */
   const [penWait, setPenWait] = useState(false)
   const voice = useVoice()
@@ -189,13 +190,14 @@ export function MemoSheet() {
       closeNow()
       return
     }
-    void saveMemo(raw, { subjectId, photo: a ? null : p, audio: a, checklist: check && !!raw.trim() })
+    void saveMemo(raw, { subjectId, photo: a ? null : p, audio: a, checklist: check && !!raw.trim(), pinned: pin })
     if (!phone) enterHint.bump()
     setText('')
     setPhoto(null)
     setAudio(null)
     setCheck(false)
     setFan(false)
+    setPin(false)
     setPenWait(false)
     setOverride(undefined)
     if (taRef.current) taRef.current.value = ''
@@ -377,6 +379,9 @@ export function MemoSheet() {
                     <circle cx="12" cy="13" r="3.5" />
                   </svg>
                 </button>
+                <button type="button" className={`ibtn${pin ? ' is-on' : ''}`} aria-pressed={pin} {...tip(pin ? '고정 풀기' : '고정')} onPointerDown={(e) => e.preventDefault()} onClick={() => setPin((v) => !v)}>
+                  <IconPin size={20} filled={pin} />
+                </button>
                 {/* 음성: 보안 주소가 아니거나 녹음기가 없으면 숨긴다(흐리게 두지 않는다) */}
                 {voice.state === 'idle' && (
                   <button type="button" className="ibtn" {...tip('음성')} onPointerDown={(e) => e.preventDefault()} onClick={() => { setFan(false); void voice.start() }}>
@@ -385,6 +390,7 @@ export function MemoSheet() {
                 )}
               </span>
             )}
+            {pin && !fan && <span className="memo-pinned" aria-hidden="true"><IconPin size={14} filled /></span>}
             <button type="button" className={`ibtn memo-plus${fan ? ' is-open' : ''}`} aria-expanded={fan} {...tip(fan ? '접기' : '메모 종류')} onPointerDown={(e) => e.preventDefault()} onClick={() => setFan((v) => !v)}>
               <IconPlus size={20} />
             </button>

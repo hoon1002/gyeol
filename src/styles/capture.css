@@ -256,3 +256,4 @@ kbd.memo-hint { font: 400 11px var(--f-mono); color: var(--text-3); border: 1px 
 .memo-mic.is-late .ibadge { color: var(--accent); }
 .memo-pen { flex: none; display: grid; place-items: center; height: 36px; color: var(--text-3); }
 .memo-box:focus { outline: none; }
+.memo-pinned { display: grid; place-items: center; color: var(--accent); }

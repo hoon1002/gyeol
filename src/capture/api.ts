@@ -9,7 +9,7 @@
  */
 import { db, uid, type Asset, type Memo, type Subject } from '@/db/schema'
 import { parseCommand } from '@/lib/parser'
-import { skyDust } from './sky'
+import { skyDust, skyPinDust } from './sky'
 import { closeMemoSheet, openMemoSheet } from './open'
 
 export interface SaveMemoOpts {
@@ -124,7 +124,10 @@ export async function saveMemo(text: string, opts: SaveMemoOpts = {}): Promise<s
   })
   if (opts.sky !== false) {
     const wait = Math.max(0, 80 - (performance.now() - t0))
-    window.setTimeout(() => skyDust(id, subjectId), wait)
+    window.setTimeout(() => {
+      skyDust(id, subjectId)
+      if (opts.pinned) skyPinDust(id, true)
+    }, wait)
   }
   return id
 }
