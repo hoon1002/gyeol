@@ -11,7 +11,7 @@ for (const p of ['/map', '/focus', '/review', '/plan']) {
   const b = await st()
   await wheel(1300, 160, 100, 3); await sleep(800)
   const c = await st()
-  await shot(`star-place${p.replace('/', '-')}_1440x900`, { clip: { x: 0, y: 0, width: 1440, height: 900 }, scale: 0.5 })
+  await shot(`qa-star-place${p.replace('/', '-')}_1440x900`, { clip: { x: 0, y: 0, width: 1440, height: 900 }, scale: 0.5 })
   print(p, s.layer, s.id, '| press:', a.star, a.focus, '| drag:', b.star, '| wheel:', c.star)
   await key('Escape'); await sleep(800)
 }

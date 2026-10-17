@@ -21,7 +21,7 @@ for (const c of cases) {
   await drag(ex[0], ex[1], ex[2], ex[3], { steps: 14, stepMs: 20 })
   await sleep(1200)
   const b = await st()
-  await shot(`star-drag-${c.name}_${c.w}x${c.h}`)
+  await shot(`qa-star-drag-${c.name}_${c.w}x${c.h}`)
   // 짧게 움직인 누르기(4px) — 탭으로 봐야 함(닫힘이 맞음)
   print(c.name, 'star', s.id, s.x, s.y, '| after press:', a.star, a.focus, '| after drag:', b.star, b.focus)
 }
