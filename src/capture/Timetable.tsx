@@ -9,6 +9,7 @@ import { addDays, hm, minutesOfDay, startOfWeek, weekdayShort } from '@/lib/time
 import { useIsPhone } from '@/shell/hooks'
 import { COLORS, COLOR_NAME, nextColor, type TimetableStore } from './slots'
 import { tip } from '@/shell/Tip'
+import { announce } from '@/shell/announce'
 import { pushLayer } from '@/shell/layers'
 import { IconCheck, IconChevron, IconClose, IconRepeat, IconRoom, IconTrash, IconUndo } from '@/shell/icons'
 import '@/styles/capture.css'
@@ -44,6 +45,27 @@ export function Timetable({ store, now, knotRef, className = '' }: { store: Time
   const ws = startOfWeek(now)
   const nowMin = minutesOfDay(now)
   const sub = (id: string) => subjects.find((s) => s.id === id)
+
+  /* 겹침 (QA #28): 그리는 동안 빨간 점선, 놓으면 가장 가까운 빈 자리로 붙인다. 저장 때 같은 과목이면 합치고, 다른 과목이면 막는다 */
+  const clashes = (wd: number, a: number, b: number, except?: string) => slots.filter((x) => x.weekday === wd && x.id !== except && hm(x.start) < b && a < hm(x.end))
+  const freeSpot = (wd: number, a: number, b: number, except?: string): [number, number] | null => {
+    const len = b - a
+    for (let k = 0; k <= span / STEP; k++)
+      for (const dir of [1, -1]) {
+        const na = a + dir * k * STEP
+        const nb = na + len
+        if (na < startH * 60 || nb > endH * 60) continue
+        if (!clashes(wd, na, nb, except).length) return [na, nb]
+      }
+    return null
+  }
+  const [shake, setShake] = useState<string[]>([])
+  useEffect(() => {
+    if (!shake.length) return
+    const t = setTimeout(() => setShake([]), 420)
+    return () => clearTimeout(t)
+  }, [shake])
+  const draftClash = draft ? clashes(draft.weekday, draft.a, draft.b, draft.id).map((x) => x.id) : []
 
   useEffect(() => {
     if (!undo) return
@@ -93,11 +115,21 @@ export function Timetable({ store, now, knotRef, className = '' }: { store: Time
     drag.current = null
     if (!d) return
     if (phone) {
-      if (Math.abs(minAt(d.el, e.clientY, 'floor') - d.a) <= STEP) setDraft(newDraft(d.weekday, d.a, Math.min(endH * 60, d.a + 60)))
+      if (Math.abs(minAt(d.el, e.clientY, 'floor') - d.a) <= STEP) {
+        const b = Math.min(endH * 60, d.a + 60)
+        const f = clashes(d.weekday, d.a, b).length ? freeSpot(d.weekday, d.a, b) : null
+        setDraft(newDraft(d.weekday, f ? f[0] : d.a, f ? f[1] : b))
+      }
       return
     }
-    // 끌지 않고 누르기만 했으면 1시간
-    if (!d.moved) setDraft((x) => (x && !x.id ? { ...x, b: Math.min(endH * 60, x.a + 60) } : x))
+    // 끌지 않고 누르기만 했으면 1시간. 겹치면 가장 가까운 빈 자리로 붙인다
+    setDraft((x) => {
+      if (!x || x.id) return x
+      const y = d.moved ? x : { ...x, b: Math.min(endH * 60, x.a + 60) }
+      if (!clashes(y.weekday, y.a, y.b).length) return y
+      const f = freeSpot(y.weekday, y.a, y.b)
+      return f ? { ...y, a: f[0], b: f[1] } : y
+    })
   }
 
   // 폰 손잡이: 위·아래로 늘리기
@@ -127,7 +159,28 @@ export function Timetable({ store, now, knotRef, className = '' }: { store: Time
     const name = d.name.trim()
     if (!name) return
     const exist = subjects.find((s) => s.name === name || s.short === name)
+    const touching = slots.filter((x) => x.weekday === d.weekday && x.id !== d.id && hm(x.start) <= d.b && d.a <= hm(x.end))
+    const same = exist ? touching.filter((x) => x.subjectId === exist.id) : []
+    const other = clashes(d.weekday, d.a, d.b, d.id).filter((x) => !same.includes(x))
+    if (other.length) {
+      // 다른 수업과 겹친다: 저장하지 않고 겹친 칸을 흔든다
+      setShake(other.map((x) => x.id))
+      announce('다른 수업과 겹쳐요')
+      return
+    }
     const subj = exist ?? (await store.createSubject(name, d.color))
+    if (same.length) {
+      // 같은 과목을 이어 붙이거나 겹쳤다: 한 칸으로 합친다
+      const a = Math.min(d.a, ...same.map((x) => hm(x.start)))
+      const b = Math.max(d.b, ...same.map((x) => hm(x.end)))
+      const keep = same[0]!
+      await store.saveSlot({ id: keep.id, subjectId: subj.id, weekday: d.weekday, start: toHM(a), end: toHM(b), room: d.room.trim() || keep.room })
+      for (const x of same.slice(1)) await store.deleteSlot(x.id)
+      if (d.id && d.id !== keep.id) await store.deleteSlot(d.id)
+      announce('같은 과목 칸을 합쳤어요')
+      setDraft(null)
+      return
+    }
     await store.saveSlot({ id: d.id, subjectId: subj.id, weekday: d.weekday, start: toHM(d.a), end: toHM(d.b), room: d.room.trim() })
     setDraft(null)
   }
@@ -182,7 +235,7 @@ export function Timetable({ store, now, knotRef, className = '' }: { store: Time
                     <button
                       type="button"
                       key={s.id}
-                      className="wg-slot tt-slot"
+                      className={`wg-slot tt-slot${draftClash.includes(s.id) ? ' is-clash' : ''}${shake.includes(s.id) ? ' is-shake' : ''}`}
                       style={{ top: `${((hm(s.start) - startH * 60) / span) * 100}%`, height: `${((hm(s.end) - hm(s.start)) / span) * 100}%`, ['--c' as string]: subj ? `var(--s-${subj.color})` : 'var(--text-3)' }}
                       aria-label={`${subj?.name ?? '과목'} ${s.start}–${s.end} ${s.room}, 고치기`}
                       data-tip={[s.room, `${s.start}–${s.end}`].filter(Boolean)[0]}
@@ -194,7 +247,7 @@ export function Timetable({ store, now, knotRef, className = '' }: { store: Time
                   )
                 })}
                 {dr && (
-                  <div className="wg-slot tt-draft" style={{ top: `${((dr.a - startH * 60) / span) * 100}%`, height: `${((dr.b - dr.a) / span) * 100}%`, ['--c' as string]: `var(--s-${dr.color})` }}>
+                  <div className={`wg-slot tt-draft${draftClash.length ? ' is-clash' : ''}`} style={{ top: `${((dr.a - startH * 60) / span) * 100}%`, height: `${((dr.b - dr.a) / span) * 100}%`, ['--c' as string]: `var(--s-${dr.color})` }}>
                     <b>{dr.name || `${toHM(dr.a)}`}</b>
                     <small className="mono">{toHM(dr.a)}–{toHM(dr.b)}</small>
                     {phone && (

@@ -70,7 +70,14 @@ export function StarPress() {
   async function resolve(id: string, layer: string): Promise<StarInfo | null> {
     const ui = useUi.getState()
     if (layer === 'today' || layer === 'focus') {
-      const s = await db.focusSessions.get(id)
+      // 하늘이 개수만으로 만든 오늘의 별은 'today:N'(N번째 세트) — 오늘(학습일) 끝난 집중을 시작 순으로 세어 찾는다 (QA #27)
+      const m = id.match(/^today:(\d+)$/)
+      let s = m ? undefined : await db.focusSessions.get(id)
+      if (m) {
+        const [a, b] = studyDayRange(new Date())
+        const list = (await db.focusSessions.where('startedAt').between(a, b).filter((x) => x.completed).toArray()).sort((x, y) => x.startedAt - y.startedAt)
+        s = list[Number(m[1])] ?? list[list.length - 1]
+      }
       if (!s) return null
       const note = s.subjectId ? (await db.notes.where('subjectId').equals(s.subjectId).reverse().sortBy('updatedAt'))[0] : undefined
       return {

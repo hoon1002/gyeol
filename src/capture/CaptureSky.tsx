@@ -11,6 +11,22 @@ export function CaptureSky(): null {
   const inbox = useLiveQuery(() => db.memos.where('state').equals('inbox').count(), [])
   // 고정된 별가루(시작할 때 · 바뀔 때 상태를 맞춘다 — pinDust는 멱등)
   const pinned = useLiveQuery(async () => (await db.memos.where('state').equals('inbox').filter((m) => !!m.pinned).primaryKeys()).join(','), [])
+  // 펜이 처음 보이면(호버·누름) 잉크 코드를 미리 받는다 — 첫 펜 메모의 획이 로드 중에 빠지지 않게(QA #25)
+  useEffect(() => {
+    const pre = (e: PointerEvent) => {
+      if (e.pointerType !== 'pen') return
+      off()
+      void import('@/ink').catch(() => {})
+    }
+    const off = () => {
+      window.removeEventListener('pointerover', pre, true)
+      window.removeEventListener('pointerdown', pre, true)
+    }
+    window.addEventListener('pointerover', pre, true)
+    window.addEventListener('pointerdown', pre, true)
+    return off
+  }, [])
+
   // 7일 지난 빈 손글씨 초안 쪽은 시작할 때 지운다(M3-7)
   useEffect(() => {
     const t = setTimeout(() => void sweepInkDrafts().catch(() => {}), 4000)

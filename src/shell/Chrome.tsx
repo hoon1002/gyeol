@@ -197,7 +197,7 @@ export function Dock() {
   const nav = useLinkNav()
   const here = rail ? path : (PHONE_HOME[path] ?? path)
   const plus = (
-    <button key="plus" type="button" className="dock-item dock-plus" {...tip('메모', { kbd: 'N' })} onClick={(e) => openMemoFromButton(e.currentTarget, (e.nativeEvent as PointerEvent).pointerType)}>
+    <button key="plus" type="button" className="dock-item dock-plus" {...tip('메모', { kbd: 'N' })} onPointerDown={(e) => { if (e.pointerType === 'pen') void import('@/ink').catch(() => {}) }} onClick={(e) => openMemoFromButton(e.currentTarget, (e.nativeEvent as PointerEvent).pointerType)}>
       <IconPlus size={22} />
       <Hint id="H7" art={plusArt} />
     </button>

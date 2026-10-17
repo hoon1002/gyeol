@@ -263,3 +263,8 @@ kbd.memo-hint { font: 400 11px var(--f-mono); color: var(--text-3); border: 1px 
 .memo-ink { position: relative; flex: 1 1 100%; overflow: hidden; border-radius: 10px; background: color-mix(in srgb, var(--text-1) 3%, transparent); touch-action: none; }
 .memo-ink-wait { width: 100%; height: 100%; }
 .dust-ink { display: block; max-width: 100%; color: var(--text-1); }
+/* 시간표 겹침 (QA #28) */
+.tt .tt-draft.is-clash, .tt .tt-slot.is-clash { outline: 1.5px dashed var(--danger); outline-offset: -1px; }
+.tt .tt-slot.is-shake { animation: ttshake 400ms var(--ease-out); }
+@keyframes ttshake { 20% { translate: -4px 0; } 40% { translate: 4px 0; } 60% { translate: -3px 0; } 80% { translate: 2px 0; } }
+:root[data-motion="off"] .tt .tt-slot.is-shake { animation: none; }
