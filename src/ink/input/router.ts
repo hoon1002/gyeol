@@ -113,9 +113,12 @@ export class InputRouter {
 
   private toPt(e: PointerEvent): InPt {
     const r = this.rect ?? (this.rect = this.host.getBoundingClientRect())
+    // transform(열리는 중의 scale 등)이 걸려 있으면 화면 좌표를 레이아웃 좌표로 되돌린다 — 엔진 크기는 레이아웃 기준
+    const sx = r.width > 0 ? (this.host.clientWidth || r.width) / r.width : 1
+    const sy = r.height > 0 ? (this.host.clientHeight || r.height) / r.height : 1
     return {
-      x: e.clientX - r.left,
-      y: e.clientY - r.top,
+      x: (e.clientX - r.left) * sx,
+      y: (e.clientY - r.top) * sy,
       p: e.pressure,
       t: performance.timeOrigin + e.timeStamp,
       ts: e.timeStamp,

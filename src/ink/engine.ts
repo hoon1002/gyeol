@@ -243,9 +243,11 @@ export class InkEngine {
   /* ---------- 크기 · 보기 ---------- */
 
   private measure(): void {
+    // 레이아웃 크기로 잰다: 종이가 열리는 중(scale .96 등 transform)에 재면 getBoundingClientRect가 줄어든 크기를 줘서
+    // 그 뒤로 펜촉과 잉크가 어긋났다(갤럭시탭 보고). clientWidth/Height는 transform의 영향을 받지 않는다.
     const r = this.host.getBoundingClientRect()
     const dpr = Math.min(3, window.devicePixelRatio || 1)
-    this.view.setSize(Math.round(r.width) || 1, Math.round(r.height) || 1, dpr)
+    this.view.setSize(this.host.clientWidth || Math.round(r.width) || 1, this.host.clientHeight || Math.round(r.height) || 1, dpr)
     this.r.resize()
     this.live.resize(this.view.W, this.view.H, dpr)
   }
