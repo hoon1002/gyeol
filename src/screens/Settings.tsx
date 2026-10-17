@@ -4,7 +4,7 @@
  */
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useMotionPrefs, useSeal, type MotionLevel } from '@/fx'
-import { ActiveMood as FieldMood } from '@/app/keepAlive'
+import { ActiveMood as FieldMood, useActive } from '@/app/keepAlive'
 import { db } from '@/db/schema'
 import { seedSample } from '@/db/seed'
 import { switchTheme } from '@/lib/theme'
@@ -61,6 +61,19 @@ function Row({ title, hint, children }: { title: string; hint?: ReactNode; child
   )
 }
 
+/**
+ * '지금 A · 30fps' — 하늘이 매초 fps를 알리므로 이 잎만 다시 그린다(전에는 설정 화면 전체가 숨은 채로 매초 다시 그려졌다).
+ * 숨은 공간이면 마지막 글을 그대로 둔다.
+ */
+function TierHint() {
+  const prefs = useMotionPrefs()
+  const active = useActive()
+  const text = `지금 ${prefs.tier} · ${Math.round(prefs.fps)}fps`
+  const last = useRef(text)
+  if (active) last.current = text
+  return <>{last.current}</>
+}
+
 function useStorageInfo() {
   const [info, setInfo] = useState<{ usage: number | null; persisted: boolean | null; counts: string }>({ usage: null, persisted: null, counts: '' })
   useEffect(() => {
@@ -114,7 +127,6 @@ export function SettingsScreen() {
   const setFps = useSettings((s) => s.setFps)
   const osReduced = useOsReducedMotion()
   const level = useEffectiveMotion()
-  const prefs = useMotionPrefs()
   const storage = useStorageInfo()
   const showToast = useUi((s) => s.showToast)
   const seal = useSeal()
@@ -201,7 +213,7 @@ export function SettingsScreen() {
                 ))}
               </select>
             </Row>
-            <Row title="필드 등급" hint={`지금 ${prefs.tier} · ${Math.round(prefs.fps)}fps`}>
+            <Row title="필드 등급" hint={<TierHint />}>
               <Segmented<'auto' | 'A' | 'B' | 'C'> label="필드 등급" value={tier} options={[['auto', '자동'], ['A', 'A'], ['B', 'B'], ['C', 'C']]} onChange={(v) => setTier(v)} />
             </Row>
             <Row title="FPS 표시">
