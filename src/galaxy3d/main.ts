@@ -59,17 +59,11 @@ const norm = (a: V3): V3 => {
   const l = Math.hypot(a[0], a[1], a[2]) || 1
   return [a[0] / l, a[1] / l, a[2] / l]
 }
-function viewProj(eye: V3, target: V3, fovY: number, aspect: number, near: number, far: number) {
-  const f = norm(sub(target, eye))
-  const s0 = norm(cross(f, [0, 1, 0]))
-  const u0 = cross(s0, f)
-  const ca = Math.cos(TILT * DEG)
-  const sa = Math.sin(TILT * DEG)
-  const s: V3 = [s0[0] * ca + u0[0] * sa, s0[1] * ca + u0[1] * sa, s0[2] * ca + u0[2] * sa]
-  const u: V3 = [-s0[0] * sa + u0[0] * ca, -s0[1] * sa + u0[1] * ca, -s0[2] * sa + u0[2] * ca]
+function viewProj(eye: V3, s: V3, u: V3, f: V3, fovY: number, aspect: number, near: number, far: number) {
   const view = [s[0], u[0], -f[0], 0, s[1], u[1], -f[1], 0, s[2], u[2], -f[2], 0, -(s[0] * eye[0] + s[1] * eye[1] + s[2] * eye[2]), -(u[0] * eye[0] + u[1] * eye[1] + u[2] * eye[2]), f[0] * eye[0] + f[1] * eye[1] + f[2] * eye[2], 1]
   const t = 1 / Math.tan(fovY / 2)
   const p = [t / aspect, 0, 0, 0, 0, t, 0, 0, 0, 0, (far + near) / (near - far), -1, 0, 0, (2 * far * near) / (near - far), 0]
+  // 렌즈 이동: 바라보는 점(은하 중심·장소)이 화면 SEAT에 온다 (FOV 고정)
   p[8] = -(SEAT[0]! - 0.5) * 2
   p[9] = (SEAT[1]! - 0.5) * 2
   const m = new Float32Array(16)
@@ -81,12 +75,88 @@ function viewProj(eye: V3, target: V3, fovY: number, aspect: number, near: numbe
     }
   return { m, right: s, up: u }
 }
+
+/* ---------- 쿼터니언 (x, y, z, w) — 오일러각을 쓰지 않아 극을 넘어도 짐벌 락·뒤집힘이 없다 ---------- */
+type Q = [number, number, number, number]
+const qMul = (a: Q, b: Q): Q => [
+  a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+  a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+  a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+  a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+]
+const qAxis = (ax: V3, ang: number): Q => {
+  const n = norm(ax)
+  const h = Math.sin(ang / 2)
+  return [n[0] * h, n[1] * h, n[2] * h, Math.cos(ang / 2)]
+}
+const qNorm = (q: Q): Q => {
+  const l = Math.hypot(q[0], q[1], q[2], q[3]) || 1
+  return [q[0] / l, q[1] / l, q[2] / l, q[3] / l]
+}
+function qRot(q: Q, v: V3): V3 {
+  const [x, y, z, w] = q
+  const tx = 2 * (y * v[2] - z * v[1])
+  const ty = 2 * (z * v[0] - x * v[2])
+  const tz = 2 * (x * v[1] - y * v[0])
+  return [v[0] + w * tx + (y * tz - z * ty), v[1] + w * ty + (z * tx - x * tz), v[2] + w * tz + (x * ty - y * tx)]
+}
+const qDot = (a: Q, b: Q) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
+/** 두 자세 사이 최단 회전각(라디안) */
+const qAngle = (a: Q, b: Q) => 2 * Math.acos(Math.min(1, Math.abs(qDot(a, b))))
+function qSlerp(a: Q, b: Q, t: number): Q {
+  let d = qDot(a, b)
+  const c: Q = d < 0 ? [-b[0], -b[1], -b[2], -b[3]] : b // 최단 경로
+  d = Math.abs(d)
+  if (d > 0.9995) return qNorm([a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t, a[2] + (c[2] - a[2]) * t, a[3] + (c[3] - a[3]) * t])
+  const th = Math.acos(d)
+  const sn = Math.sin(th)
+  const wa = Math.sin((1 - t) * th) / sn
+  const wb = Math.sin(t * th) / sn
+  return [a[0] * wa + c[0] * wb, a[1] * wa + c[1] * wb, a[2] * wa + c[2] * wb, a[3] * wa + c[3] * wb]
+}
+/** 기저(오른쪽 s · 위 u · 뒤 b = 바라보는 점에서 눈 쪽) → 쿼터니언 */
+function qBasis(s: V3, u: V3, b: V3): Q {
+  const [m00, m10, m20] = s
+  const [m01, m11, m21] = u
+  const [m02, m12, m22] = b
+  const tr = m00 + m11 + m22
+  let q: Q
+  if (tr > 0) {
+    const S = Math.sqrt(tr + 1) * 2
+    q = [(m21 - m12) / S, (m02 - m20) / S, (m10 - m01) / S, 0.25 * S]
+  } else if (m00 > m11 && m00 > m22) {
+    const S = Math.sqrt(1 + m00 - m11 - m22) * 2
+    q = [0.25 * S, (m01 + m10) / S, (m02 + m20) / S, (m21 - m12) / S]
+  } else if (m11 > m22) {
+    const S = Math.sqrt(1 + m11 - m00 - m22) * 2
+    q = [(m01 + m10) / S, 0.25 * S, (m12 + m21) / S, (m02 - m20) / S]
+  } else {
+    const S = Math.sqrt(1 + m22 - m00 - m11) * 2
+    q = [(m02 + m20) / S, (m12 + m21) / S, 0.25 * S, (m10 - m01) / S]
+  }
+  return qNorm(q)
+}
+/** 바라보는 점을 향한 자세: 눈이 있는 방위·고도(°) + 화면 기울기(롤, 기본 −57°: 원반 장축이 57° 대각선) */
+function orientAzEl(azDeg: number, elDeg: number, rollDeg = TILT): Q {
+  const az = azDeg * DEG
+  const el = elDeg * DEG
+  const dir: V3 = [Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az)]
+  const f: V3 = [-dir[0], -dir[1], -dir[2]]
+  const hint: V3 = Math.abs(elDeg) > 85 ? [-Math.cos(az), 0, -Math.sin(az)] : [0, 1, 0]
+  const s0 = norm(cross(f, hint))
+  const u0 = cross(s0, f)
+  const ca = Math.cos(rollDeg * DEG)
+  const sa = Math.sin(rollDeg * DEG)
+  const sv: V3 = [s0[0] * ca + u0[0] * sa, s0[1] * ca + u0[1] * sa, s0[2] * ca + u0[2] * sa]
+  const uv: V3 = [-s0[0] * sa + u0[0] * ca, -s0[1] * sa + u0[1] * ca, -s0[2] * sa + u0[2] * ca]
+  return qBasis(sv, uv, dir)
+}
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 const smooth01 = (t: number) => {
   const x = Math.min(1, Math.max(0, t))
   return x * x * (3 - 2 * x)
 }
-const wrapPi = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
+const easeS = (p: number) => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, p))) // 사인 inout: 최고 속도 = 평균 × π/2
 
 /* ---------- GL ---------- */
 const qs = new URLSearchParams(location.search)
@@ -323,92 +393,114 @@ function resize(vw = innerWidth, vh = innerHeight, vdpr = Math.min(devicePixelRa
   updateMask(vw, vh, !document.body.classList.contains('clean'))
 }
 
-/* ---------- 카메라 ---------- */
-interface Cam {
-  tx: number
-  ty: number
-  tz: number
+/* ---------- 카메라: 은하 중심(바라보는 점) 둘레 구 위의 자유 회전 — 쿼터니언 아크볼 ----------
+   orient = 장소 프레임(구조물 장소는 패턴과 함께 돈다) 안의 카메라 자세. 눈 = 바라보는 점 + orient·(0, 0, 거리).
+   고도 제한 없음: 위·아래·극을 넘어 어디로든 굴린다. 롤은 사용자가 굴린 만큼만 생기고, 자동으로는 바꾸지 않는다. */
+interface CamS {
+  t: V3
   dist: number
-  yaw: number
-  pitch: number
+  q: Q
   expo: number
 }
+const YAX: V3 = [0, 1, 0]
 let simT = 0 // 은하 시계
-function placeCam(pl: Place, t: number): Cam {
-  // 구조물에 붙은 장소는 패턴(Ωp)과 함께 돈다 — 머무는 동안 성단·성운은 그대로, 늙은 별은 차등 회전으로 흐른다
-  const r = Math.hypot(pl.t[0], pl.t[2])
-  const th0 = Math.atan2(pl.t[2], pl.t[0])
-  const rotA = r < 0.01 ? 0 : OMEGA_P * t
-  const th = th0 + rotA
-  return { tx: r * Math.cos(th), ty: pl.t[1], tz: r * Math.sin(th), dist: pl.dist, yaw: pl.az * DEG + rotA, pitch: pl.el * DEG, expo: pl.expo }
-}
 void omega
+const frameRot = (pl: Place, t: number) => (Math.hypot(pl.t[0], pl.t[2]) < 0.01 ? 0 : OMEGA_P * t)
+function placeTarget(pl: Place, t: number): V3 {
+  const r = Math.hypot(pl.t[0], pl.t[2])
+  const th = Math.atan2(pl.t[2], pl.t[0]) + frameRot(pl, t)
+  return [r * Math.cos(th), pl.t[1], r * Math.sin(th)]
+}
+/** 장소 프레임 자세 → 세계 자세 (은하 θ가 늘어나는 쪽으로 함께 돈다) */
+const worldQ = (pl: Place, t: number, o: Q) => qMul(qAxis(YAX, -frameRot(pl, t)), o)
+const homeOrient = (pl: Place) => orientAzEl(pl.az, pl.el)
 let place = PLACES.find((p) => p.id === qs.get('place')) ?? PLACES[0]!
-let cam: Cam = placeCam(place, 0)
-let flight: { from: Cam; to: Place; t0: number; dur: number; v0: number } | null = null
-let user = { yaw: 0, pitch: 0, zoom: 1, vy: 0, vp: 0 }
+let orient: Q = homeOrient(place)
+/** zoom: 핀치·휠 거리 배율 · wv: 관성 각속도(카메라 좌표의 축 × rad/ms, 은하가 굴러가는 쪽) */
+let user = { zoom: 1, wv: [0, 0, 0] as V3 }
+let flight: { from: CamS; to: Place; o: Q; t0: number; dur: number; ang: number } | null = null
 let flightMax = 0
+let flightPeak = 0
+let prevFlightQ: Q | null = null
 let flightFrames: number[] = []
-const flightLog: Array<{ to: string; ms: number; maxFrame: number; p95: number }> = []
-
-function lerpCam(a: Cam, b: Cam, e: number, p: number): Cam {
-  const dy = wrapPi(b.yaw - a.yaw)
-  const far = Math.abs(Math.log(b.dist / a.dist)) + Math.hypot(b.tx - a.tx, b.tz - a.tz) / 6
+const flightLog: Array<{ to: string; ms: number; maxFrame: number; p95: number; angDeg: number; peakDegS: number }> = []
+const camNow = (): CamS => ({ t: placeTarget(place, simT), dist: place.dist, q: worldQ(place, simT, orient), expo: place.expo })
+function curCam(now: number): { c: CamS; flying: boolean } {
+  if (!flight) return { c: camNow(), flying: false }
+  const p = Math.min(1, (now - flight.t0) / flight.dur)
+  const e = easeS(p) // 이동·회전 같은 이징
+  const a = flight.from
+  const b: CamS = { t: placeTarget(flight.to, simT), dist: flight.to.dist, q: worldQ(flight.to, simT, flight.o), expo: flight.to.expo }
+  const far = Math.abs(Math.log(b.dist / a.dist)) + Math.hypot(b.t[0] - a.t[0], b.t[2] - a.t[2]) / 6
   const arc = Math.sin(Math.PI * p)
+  if (p >= 1) {
+    const st = flightFrames.slice().sort((x, y) => x - y)
+    flightLog.push({ to: flight.to.id, ms: flight.dur, maxFrame: flightMax, p95: st[Math.floor(0.95 * (st.length - 1))] ?? 0, angDeg: flight.ang, peakDegS: flightPeak })
+    orient = flight.o
+    flight = null
+    return { c: camNow(), flying: false }
+  }
   return {
-    tx: a.tx + (b.tx - a.tx) * e,
-    ty: a.ty + (b.ty - a.ty) * e,
-    tz: a.tz + (b.tz - a.tz) * e,
-    dist: Math.exp(Math.log(a.dist) + (Math.log(b.dist) - Math.log(a.dist)) * e) * (1 + Math.min(0.12, 0.04 * far) * arc),
-    yaw: a.yaw + dy * e,
-    pitch: a.pitch + (b.pitch - a.pitch) * e + Math.min(3, 1.5 * far) * DEG * arc,
-    expo: a.expo + (b.expo - a.expo) * e,
+    c: {
+      t: [a.t[0] + (b.t[0] - a.t[0]) * e, a.t[1] + (b.t[1] - a.t[1]) * e, a.t[2] + (b.t[2] - a.t[2]) * e],
+      dist: Math.exp(Math.log(a.dist) + (Math.log(b.dist) - Math.log(a.dist)) * e) * (1 + Math.min(0.12, 0.04 * far) * arc),
+      // 최단 회전(slerp): 롤도 비행 전체에 고르게 나뉘어 끝에서 목적지 up에 맞는다(급한 롤 없음)
+      q: qSlerp(a.q, b.q, e),
+      expo: a.expo + (b.expo - a.expo) * e,
+    },
+    flying: true,
   }
 }
-function curCam(now: number): { c: Cam; flying: boolean; v: number } {
-  if (!flight) return { c: placeCam(place, simT), flying: false, v: 0 }
-  const p = Math.min(1, (now - flight.t0) / flight.dur)
-  let e: number
-  let v: number
-  if (flight.v0 > 0) {
-    e = -2 * p ** 3 + 3 * p * p + flight.v0 * (p ** 3 - 2 * p * p + p)
-    v = -6 * p * p + 6 * p + flight.v0 * (3 * p * p - 4 * p + 1)
-  } else {
-    e = easeInOut(p)
-    v = (easeInOut(Math.min(1, p + 0.01)) - e) / 0.01
-  }
-  const c = lerpCam(flight.from, placeCam(flight.to, simT), Math.min(1, Math.max(0, e)), p)
-  if (p >= 1) {
-    const st = flightFrames.slice().sort((a, b) => a - b)
-    flightLog.push({ to: flight.to.id, ms: flight.dur, maxFrame: flightMax, p95: st[Math.floor(0.95 * (st.length - 1))] ?? 0 })
+function startFlight(pl: Place, o: Q, home: boolean) {
+  const now = performance.now()
+  touch(now)
+  const cur = curCam(now)
+  const from: CamS = { ...cur.c, dist: cur.c.dist * user.zoom }
+  user = { zoom: 1, wv: [0, 0, 0] }
+  const toQ = worldQ(pl, simT, o)
+  const ang = qAngle(from.q, toQ) / DEG
+  const tt = placeTarget(pl, simT)
+  const dz = Math.abs(Math.log(pl.dist / from.dist))
+  const dp = Math.hypot(tt[0] - from.t[0], tt[2] - from.t[2])
+  let dur: number
+  // 리더 결정(2026-10-17): 처음 자리로·장소 비행 모두 최고 각속도 60°/s를 지키되 길이는 3.0s에서 자른다.
+  // 115°까지는 60°/s 안, 그보다 큰 회전(뒤집힌 자세에서 출발)은 최고 94°/s까지 허용 — 사용자가 직접 누른 이동이라서.
+  dur = home ? Math.min(2000, 1200 + (ang / 90) * 800) : Math.min(2400, 1200 + (ang / 90) * 800)
+  if (!home) dur = Math.max(dur, Math.min(1800, 1200 + ((200 * dz) / Math.LN2) * 0.7 + 25 * dp))
+  dur = Math.min(3000, Math.max(dur, ((Math.PI / 2) * ang * 1000) / 60))
+  place = pl
+  flightMax = 0
+  flightPeak = 0
+  prevFlightQ = null
+  flightFrames = []
+  if (reducedOS) {
+    orient = o
     flight = null
-    return { c: placeCam(place, simT), flying: false, v: 0 }
-  }
-  return { c, flying: true, v }
+  } else flight = { from, to: pl, o, t0: now, dur, ang }
+  setTitle()
+  updateButtons()
 }
 function flyTo(id: string) {
   const pl = PLACES.find((p) => p.id === id)
   if (!pl || pl === place) return
-  const now = performance.now()
-  touch(now)
-  const cur = curCam(now)
-  // design-v4 §7-1: 장소 방위는 '지금 방위 + 장소 오프셋' — 은하를 어디까지 돌려 놓았든 비행 한 번의 방위 변화는 오프셋 차이(≤ 30°)뿐
-  const keepYaw = user.yaw
-  const from: Cam = { ...cur.c, yaw: cur.c.yaw + user.yaw, pitch: cur.c.pitch + user.pitch, dist: cur.c.dist * user.zoom }
-  user = { yaw: keepYaw, pitch: 0, zoom: 1, vy: 0, vp: 0 }
-  from.yaw -= keepYaw
-  const to = placeCam(pl, simT)
-  const dz = Math.abs(Math.log(to.dist / from.dist))
-  const dp = Math.hypot(to.tx - from.tx, to.tz - from.tz)
-  const dur = reducedOS ? 0 : Math.min(1800, Math.max(1200, 1200 + ((200 * dz) / Math.LN2) * 0.7 + 25 * dp))
-  place = pl
-  flightMax = 0
-  flightFrames = []
-  flight = dur ? { from, to: pl, t0: now, dur, v0: cur.flying ? Math.min(1.5, cur.v) : 0 } : null
-  if (!dur) cam = to
-  setTitle()
-  updateButtons()
+  // 목적지 자세: 장소의 기본 구도를 은하 축 둘레로 돌린 것 가운데 지금 자세와 가장 가까운 것 → 비행 회전 최소
+  // (design-v4 §7-1 '지금 방위 + 장소 오프셋'의 구형 버전)
+  const cur = curCam(performance.now()).c.q
+  const base = homeOrient(pl)
+  let best = base
+  let bestA = 9
+  for (let k = 0; k < 72; k++) {
+    const o = qMul(qAxis(YAX, k * 5 * DEG), base)
+    const a = qAngle(cur, worldQ(pl, simT, o))
+    if (a < bestA) {
+      bestA = a
+      best = o
+    }
+  }
+  startFlight(pl, best, false)
 }
+/** 처음 자리로: 장소의 기본 3/4 구도로 slerp (더블클릭 · 더블탭 · 버튼) */
+const goHome = () => startFlight(place, homeOrient(place), true)
 const reduced = () => reducedOS || rot === 'off'
 
 /* ---------- 전력 상태 (design-v4 §7-4) ----------
@@ -438,7 +530,7 @@ function powerState(now: number): Power {
   if (forced) return forced
   const idle = now - lastInput
   const low = lowPower || now < thermalUntil
-  const moving = !!flight || !!drag || Math.abs(user.vy) + Math.abs(user.vp) > 1e-6 || idle < 2000
+  const moving = !!flight || !!drag || Math.hypot(user.wv[0], user.wv[1], user.wv[2]) > 1e-9 || idle < 2000
   if (moving) return low ? 'normal' : 'active'
   if (reduced() || low || idle > 300_000) return 'rest'
   if (idle > 60_000) return 'deep'
@@ -516,43 +608,57 @@ document.addEventListener('visibilitychange', () => {
   }
 })
 
-/* ---------- 입력: 드래그 360°(관성) · 휠 거리 ---------- */
+/* ---------- 입력: 아크볼 드래그(구 위 자유 회전, 관성) · 더블클릭/더블탭 처음 자리로 · 휠 거리 ---------- */
+/** 화면에서 (dx, dy)px 끌면 은하가 손가락 방향으로 굴러간다(카메라는 반대로) — 0.15°/px, 최대 180°/s */
+function applyDrag(dx: number, dy: number, dt: number) {
+  const len = Math.hypot(dx, dy)
+  if (len < 1e-6) return
+  const ang = Math.min(len * 0.15 * DEG, 0.18 * DEG * dt)
+  const ax: V3 = [dy / len, dx / len, 0] // 카메라 좌표: 오른쪽 끌기 = 위 축 둘레, 아래로 끌기 = 오른쪽 축 둘레
+  orient = qNorm(qMul(orient, qAxis(ax, -ang)))
+  user.wv = [(ax[0] * ang) / dt, (ax[1] * ang) / dt, 0]
+}
+let lastTap = { t: 0, x: 0, y: 0 }
 canvas.addEventListener('pointerdown', (e) => {
-  touch()
-  drag = { x: e.clientX, y: e.clientY, t: performance.now() }
-  user.vy = 0
-  user.vp = 0
+  const now = performance.now()
+  touch(now)
+  if (e.pointerType !== 'mouse') {
+    if (now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+      lastTap.t = 0
+      goHome()
+      return
+    }
+    lastTap = { t: now, x: e.clientX, y: e.clientY }
+  }
+  if (flight) return // 비행 중엔 잡지 않는다(비행이 끝나면 그 자세에서 이어서)
+  drag = { x: e.clientX, y: e.clientY, t: now }
+  user.wv = [0, 0, 0]
   canvas.setPointerCapture(e.pointerId)
 })
 canvas.addEventListener('pointermove', (e) => {
   if (!drag) return
   const now = performance.now()
-  const dx = e.clientX - drag.x
-  const dy = e.clientY - drag.y
-  const dt = Math.max(1, now - drag.t)
-  // design-v4 §7-1: 손가락을 그대로 따르고 최대 180°/s, 방위 360° 무제한, 고도 8–55°
-  const cap = (v: number) => Math.max(-0.18 * DEG, Math.min(0.18 * DEG, v))
-  user.vy = cap((-dx * 0.15 * DEG) / dt)
-  user.vp = cap((dy * 0.15 * DEG) / dt)
-  user.yaw += user.vy * dt
-  user.pitch = clampEl(user.pitch + user.vp * dt)
+  applyDrag(e.clientX - drag.x, e.clientY - drag.y, Math.max(1, now - drag.t))
   releasedAt = 0
   touch(now)
   drag = { x: e.clientX, y: e.clientY, t: now }
 })
-const clampEl = (up: number) => Math.max(8 * DEG - cam.pitch, Math.min(55 * DEG - cam.pitch, up))
 const endDrag = () => {
   if (!drag) return
   drag = null
   releasedAt = performance.now()
   // 관성 시작 속도 ≤ 90°/s, 동작 줄이기면 0
+  const w = Math.hypot(user.wv[0], user.wv[1], user.wv[2])
   const lim = reducedOS ? 0 : 0.09 * DEG
-  user.vy = Math.max(-lim, Math.min(lim, user.vy))
-  user.vp = Math.max(-lim, Math.min(lim, user.vp))
+  if (w > lim) user.wv = w > 0 ? [(user.wv[0] * lim) / w, (user.wv[1] * lim) / w, 0] : [0, 0, 0]
   touch()
 }
 canvas.addEventListener('pointerup', endDrag)
 canvas.addEventListener('pointercancel', endDrag)
+canvas.addEventListener('dblclick', (e) => {
+  e.preventDefault()
+  goHome()
+})
 canvas.addEventListener(
   'wheel',
   (e) => {
@@ -576,6 +682,7 @@ function btn(label: string, key: string, on: () => void) {
   btns.set(key, b)
 }
 PLACES.forEach((p) => btn(p.name, 'p:' + p.id, () => flyTo(p.id)))
+btn('처음 자리로', 'home', () => goHome())
 ui.appendChild(Object.assign(document.createElement('span'), { className: 'sep' }))
 ;(['on', 'slow', 'off'] as Rot[]).forEach((r) =>
   btn({ on: '회전 켬', slow: '느리게', off: '끔' }[r], 'r:' + r, () => {
@@ -676,41 +783,40 @@ function draw(now: number, opt: DrawOpt = {}) {
   const spd = (1 - smooth01(restK)) * (opt.capture ? 1 : ramp)
   // 은하 시계: 회전 켬 1 · 느리게 ⅓ · 끔 0
   simT += (dt / 1000) * ROT[rot] * spd
-  // 관성 (τ 0.5s, 느리게 0.25s, 최대 1.2s, 멈춘 자리 유지)
+  // 관성 (τ 0.5s, 느리게 0.25s, 최대 1.2s): 구 위에서 그 축으로 계속 구르다 멈춘 자세에 머문다
   if (!drag) {
-    if (reducedOS || now - releasedAt > 1200) {
-      user.vy = 0
-      user.vp = 0
+    if (reducedOS || now - releasedAt > 1200) user.wv = [0, 0, 0]
+    const w = Math.hypot(user.wv[0], user.wv[1], user.wv[2])
+    if (w > 1e-9 && !flight) {
+      orient = qNorm(qMul(orient, qAxis(user.wv, -w * dt)))
+      const k = Math.exp(-dt / (rot === 'slow' ? 250 : 500))
+      user.wv = w * k < 2e-7 ? [0, 0, 0] : [user.wv[0] * k, user.wv[1] * k, user.wv[2] * k]
     }
-    const tau = rot === 'slow' ? 250 : 500
-    const k = Math.exp(-dt / tau)
-    user.yaw += user.vy * dt
-    user.pitch = clampEl(user.pitch + user.vp * dt)
-    user.vy *= k
-    user.vp *= k
-    if (Math.abs(user.vy) + Math.abs(user.vp) < 2e-7) user.vy = user.vp = 0
     // 자동 공전 (design-v4 §7-1): 마지막 입력 3s 뒤 4s inout, 입력이 오면 300ms 안에 0. 깊은 대기 0.3°/s(5s 이즈)
     const want = !reduced() && !flight && now - lastInput > 3000 ? 1 : 0
     orbitK += want > orbitK ? Math.min(want - orbitK, dt / 4000) : Math.max(want - orbitK, -dt / 300)
     const base = power === 'deep' ? 0.3 : rot === 'slow' ? 0.4 : 1.0
     const tgt = (place.orbit === 0 ? 0 : Math.min(base, place.orbit)) * DEG // 장소·상태가 바뀌면 2s(깊은 대기 5s)에 걸쳐
     orbitRate += (tgt - orbitRate) * Math.min(1, dt / (power === 'deep' ? 1700 : 700))
-    user.yaw += (orbitRate * easeInOut(orbitK) * spd * dt) / 1000
+    // 사용자가 만든 지금 자세에서 이어서, 은하 축 둘레로(은하 자전과 같은 방향) 아주 느리게
+    if (!flight && orbitK > 0) orient = qNorm(qMul(qAxis(YAX, -(orbitRate * easeInOut(orbitK) * spd * dt) / 1000), orient))
   } else orbitK = Math.max(0, orbitK - dt / 300)
   const st = curCam(now)
-  cam = st.c
-  // 카메라 호흡: 방위 ±3° · 고도 ±1.5° · 거리 ±2% — 동작 줄이기·회전 끔이면 없음
+  if (st.flying && prevFlightQ && dt > 0) flightPeak = Math.max(flightPeak, (qAngle(prevFlightQ, st.c.q) / DEG / dt) * 1000)
+  prevFlightQ = st.flying ? st.c.q : null
+  // 카메라 호흡: 은하 축 둘레 ±3° · 카메라 가로축 ±1.5° · 거리 ±2% — 동작 줄이기·회전 끔이면 없음
   const bk = (reduced() ? 0 : 1) * spd
   const tt = (now - t0) / 1000
   const settle = opt.capture ? 1 : 1 + (1 / 0.84 - 1) * Math.pow(1 - Math.min(1, (now - readyAt) / 1300), 3)
-  const dist = cam.dist * user.zoom * (1 + 0.02 * bk * Math.sin((tt / 24) * Math.PI * 2)) * (reducedOS ? 1 : settle)
-  const yaw = cam.yaw + user.yaw + 3 * DEG * bk * Math.sin((tt / 40) * Math.PI * 2)
-  const pitch = Math.max(-80 * DEG, Math.min(85 * DEG, cam.pitch + user.pitch + 1.5 * DEG * bk * Math.sin((tt / 31) * Math.PI * 2 + 1)))
-  const target: V3 = [cam.tx, cam.ty, cam.tz]
-  const eye: V3 = [target[0] + dist * Math.cos(pitch) * Math.cos(yaw), target[1] + dist * Math.sin(pitch), target[2] + dist * Math.cos(pitch) * Math.sin(yaw)]
-  const vp = viewProj(eye, target, FOV * DEG, W / H, 0.02, 3000)
+  const dist = st.c.dist * user.zoom * (1 + 0.02 * bk * Math.sin((tt / 24) * Math.PI * 2)) * (reducedOS ? 1 : settle)
+  let cq = qMul(qAxis(YAX, -3 * DEG * bk * Math.sin((tt / 40) * Math.PI * 2)), st.c.q)
+  cq = qMul(cq, qAxis([1, 0, 0], 1.5 * DEG * bk * Math.sin((tt / 31) * Math.PI * 2 + 1)))
+  const target = st.c.t
+  const back = qRot(cq, [0, 0, 1])
+  const eye: V3 = [target[0] + back[0] * dist, target[1] + back[1] * dist, target[2] + back[2] * dist]
+  const vp = viewProj(eye, qRot(cq, [1, 0, 0]), qRot(cq, [0, 1, 0]), [-back[0], -back[1], -back[2]], FOV * DEG, W / H, 0.02, 3000)
   const entrance = opt.capture ? 1 : Math.min(1, (now - readyAt) / 1400)
-  const expo = cam.expo * (0.55 + 0.45 * (1 - Math.pow(1 - entrance, 3)))
+  const expo = st.c.expo * (0.55 + 0.45 * (1 - Math.pow(1 - entrance, 3)))
 
   // 상태별 해상도: 타깃 안의 일부만 쓴다
   // 비행 중 동적 해상도 ×0.8 (움직임이 가려 준다 — 원반 가까이 채우기 비용 ↓)
@@ -751,7 +857,7 @@ function draw(now: number, opt: DrawOpt = {}) {
   gl.bindVertexArray(starVao)
   gl.drawArrays(gl.POINTS, 0, starN)
   // 1b) 4층 전경 별
-  fgUpdate(dt, eye, vp.m, sdpr, st.flying || !!drag || Math.abs(user.vy) > 1e-6, opt.capture ? 1 : spd)
+  fgUpdate(dt, eye, vp.m, sdpr, st.flying || !!drag || Math.hypot(user.wv[0], user.wv[1]) > 1e-9, opt.capture ? 1 : spd)
   {
     const F = P.fg
     gl.useProgram(F.p)
@@ -805,7 +911,9 @@ function draw(now: number, opt: DrawOpt = {}) {
   gl.uniform3f(P.blit.u.uFloor!, 0, 0, 0)
   gl.blendFunc(gl.ONE, gl.ONE)
   gl.drawArrays(gl.TRIANGLES, 0, 3)
-  gl.uniform3f(P.blit.u.uFloor!, 0.4, 0.3, 0.24)
+  // 먼지 투과율 하한: 비스듬히 볼 땐 짙은 갈색(0.40), 옆(edge-on)에서는 원반을 가르는 진한 먼지띠(0.16)
+  const edgeCam = 1 - smooth01((Math.abs(eye[1] - target[1]) / dist - 0.08) / 0.27)
+  gl.uniform3f(P.blit.u.uFloor!, 0.4 - 0.24 * edgeCam, 0.3 - 0.19 * edgeCam, 0.24 - 0.16 * edgeCam)
   gl.bindTexture(gl.TEXTURE_2D, dustRT.tex)
   gl.blendFunc(gl.DST_COLOR, gl.ZERO)
   gl.drawArrays(gl.TRIANGLES, 0, 3)
@@ -1078,7 +1186,7 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
   },
   stats: () => {
     const s = frames.slice().sort((a, b) => a - b)
-    return { power, fps, wakes: wake.rate, p95: s[Math.floor(0.95 * (s.length - 1))] ?? 0, jsMs, gpuMs: tq ? gpuMs : null, stars: starN, clouds: cloudN, tier, W, H, genMs, uploadMs, fg: { ...fgStat }, flights: flightLog.slice(), simT, yawDeg: (user.yaw / DEG) % 360, timerQuery: !!tq, wakeAll, drawnAll, restK, stopped }
+    return { power, fps, wakes: wake.rate, p95: s[Math.floor(0.95 * (s.length - 1))] ?? 0, jsMs, gpuMs: tq ? gpuMs : null, stars: starN, clouds: cloudN, tier, W, H, genMs, uploadMs, fg: { ...fgStat }, flights: flightLog.slice(), simT, orient, timerQuery: !!tq, wakeAll, drawnAll, restK, stopped }
   },
   clean: (on: boolean) => {
     document.body.classList.toggle('clean', on)
@@ -1090,12 +1198,25 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
     if (armBase !== undefined && armAmp !== undefined) ARM = [armBase, armAmp]
     touch()
   },
-  orbit: (dyawDeg: number, dpitchDeg: number, zoom = 1) => {
-    user.yaw += dyawDeg * DEG
-    user.pitch = clampEl(user.pitch + dpitchDeg * DEG)
-    user.zoom = zoom
+  /** 드래그 흉내: (dx, dy)px를 steps번에 나눠 굴리고, 매 걸음 카메라 up·시선의 변화(튐·뒤집힘 검사)를 잰다 */
+  drag: (dx: number, dy: number, steps = 60, zoom?: number) => {
+    let maxStep = 0
+    let maxUp = 0
+    for (let k = 0; k < steps; k++) {
+      const q0 = orient
+      applyDrag(dx / steps, dy / steps, 16)
+      maxStep = Math.max(maxStep, qAngle(q0, orient) / DEG)
+      const u0 = qRot(q0, [0, 1, 0])
+      const u1 = qRot(orient, [0, 1, 0])
+      maxUp = Math.max(maxUp, Math.acos(Math.min(1, u0[0] * u1[0] + u0[1] * u1[1] + u0[2] * u1[2])) / DEG)
+    }
+    user.wv = [0, 0, 0]
+    if (zoom !== undefined) user.zoom = zoom
     touch()
+    const back = qRot(orient, [0, 0, 1])
+    return { stepDeg: Math.hypot(dx, dy) / steps * 0.15, maxStepDeg: maxStep, maxUpChangeDeg: maxUp, elevationDeg: (Math.asin(Math.max(-1, Math.min(1, back[1]))) / DEG) }
   },
+  home: () => goHome(),
   setTime: (t: number) => {
     simT = t
     touch()
@@ -1156,8 +1277,8 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
     return res
   },
   /** 가상 화면 렌더: w×h CSS · DPR 2로 오프스크린 크기를 바꿔 한 장 그리고 PNG를 로컬 저장 도우미로 보낸다 */
-  capture: async (name: string, w: number, h: number, setup?: { yaw?: number; pitch?: number; zoom?: number; t?: number; fg?: boolean }) => {
-    const keep = { yaw: user.yaw, pitch: user.pitch, zoom: user.zoom, simT, clean: document.body.classList.contains('clean') }
+  capture: async (name: string, w: number, h: number, setup?: { az?: number; el?: number; roll?: number; zoom?: number; t?: number; fg?: boolean }) => {
+    const keep = { orient, zoom: user.zoom, simT, clean: document.body.classList.contains('clean') }
     document.body.classList.add('clean')
     clearTimeout(timerId)
     cancelAnimationFrame(rafId)
@@ -1165,22 +1286,21 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
     resize(w, h, 2)
     updateMask(w, h, false)
     if (setup?.t !== undefined) simT = setup.t
-    if (setup?.yaw !== undefined) user.yaw = setup.yaw * DEG
-    if (setup?.pitch !== undefined) user.pitch = clampEl(setup.pitch * DEG)
+    if (setup?.az !== undefined) orient = orientAzEl(setup.az, setup.el ?? 30, setup.roll ?? TILT)
     if (setup?.zoom !== undefined) user.zoom = setup.zoom
     orbitK = setup?.fg ? 1 : 0
     const tnow = performance.now()
     // 전경 별 가중치를 차오르게 몇 번 그린다 (같은 자리)
     const st0 = simT
-    const y0 = user.yaw
+    const o0 = orient
     for (let k = 0; k < 12; k++) {
       simT = st0
-      user.yaw = y0
+      orient = o0
       last = 0
       draw(tnow + k * 100, { capture: true })
     }
     simT = st0
-    user.yaw = y0
+    orient = o0
     last = 0
     draw(tnow + 1300, { capture: true })
     const blob: Blob = await new Promise((r) => canvas.toBlob((b) => r(b!), 'image/png'))
@@ -1191,7 +1311,8 @@ const SAVE = 'http://127.0.0.1:5199/save' // 로컬 전용 저장 도우미(작�
     } catch {
       saved = 'no-server'
     }
-    Object.assign(user, { yaw: keep.yaw, pitch: keep.pitch, zoom: keep.zoom })
+    orient = keep.orient
+    user.zoom = keep.zoom
     simT = keep.simT
     document.body.classList.toggle('clean', keep.clean)
     resize()

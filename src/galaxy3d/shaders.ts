@@ -115,6 +115,7 @@ void main() {
   }
   vec3 c = patPos(c0.x, c0.y, c0.z); // 먼지·팔 빛·HII·막대 빛: 모두 패턴과 함께(밀도파)
   float s = c0.w;
+  float vCol0 = 1.0;
   vec3 p;
   if (kind < 1.5) {
     float th = atan(c.z, c.x);
@@ -123,14 +124,21 @@ void main() {
     // 팔 방향(접선)으로 1.8배 길게, 팔 피치만큼 비스듬히
     vec3 along = normalize(tan_ - rad * 0.32); // 끌리는 팔(피치 18°) 방향
     vec3 across = normalize(cross(vec3(0.0, 1.0, 0.0), along));
-    p = c + along * q.x * s * (kind < 0.5 ? 3.2 : 1.15) + across * q.y * s; // 먼지는 가늘고 긴 실, 빛은 거의 둥글게
+    // 시선 각 보정: 원반을 옆(edge-on)에서 보면 눕힌 사각형이 선이 되어 사라진다 → 시선이 원반면에 가까울수록
+    // 가로축을 원반 법선 쪽으로 세워 얇은 두께(먼지띠·원반 빛)를 남기고, 빛은 겹쳐 쌓이는 만큼 낮춘다
+    float mu = abs(normalize(c - uCam).y);
+    float edge = 1.0 - smoothstep(0.08, 0.42, mu);
+    vec3 across2 = normalize(mix(across, vec3(0.0, 1.0, 0.0), edge));
+    float thick = mix(1.0, kind < 0.5 ? 0.32 : 0.5, edge);
+    p = c + along * q.x * s * (kind < 0.5 ? 3.2 : 1.15) + across2 * q.y * s * thick; // 먼지는 가늘고 긴 실, 빛은 거의 둥글게
+    vCol0 = kind > 0.5 ? mix(1.0, 0.4, edge) : mix(1.0, 2.2, edge); // 옆에서 보면 먼지 기둥 밀도가 커져 원반을 가르는 먼지띠가 된다
   } else {
     p = c + (uRight * q.x + uUp * q.y) * s;
   }
   float d = length(c - uCam);
   // 카메라 바로 앞의 큰 구름은 흐려 사라진다(화면을 덮지 않게)
   float near = smoothstep(s * 1.5, s * 6.0, d);
-  vCol = c1.rgb * near;
+  vCol = c1.rgb * near * vCol0;
   gl_Position = uVP * vec4(p, 1.0);
 }
 `
