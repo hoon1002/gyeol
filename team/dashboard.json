@@ -1,6 +1,6 @@
 {
   "project": "결 GYEOL · M0 3D 품질 관문",
-  "subtitle": "M4 기억 엔진 구현 완료 → 흐름 시험·캡처",
+  "subtitle": "M4 완료 · FSRS 복습·카드 자동 추출·테이프 카드·떠올리기·시험 역산·기억 밝기·시험 별자리 → 다음 M5 리듬",
   "phases": [
     {
       "name": "v4 · 3D · M0–M3",
@@ -25,7 +25,7 @@
     },
     {
       "name": "M4 검수 · 보고",
-      "status": "active",
+      "status": "done",
       "members": [
         "ad",
         "qa"
@@ -100,8 +100,8 @@
       },
       {
         "phase": "M4",
-        "label": "M4 기억 엔진 (FSRS · 카드 추출 · 시험 역산)",
-        "estimate": 1000000
+        "label": "M4 기억 엔진 (완료)",
+        "estimate": 629658
       },
       {
         "phase": "M5",
