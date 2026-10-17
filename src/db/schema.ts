@@ -4,7 +4,9 @@
  *
  * 모든 시각은 epoch ms(number). 요일은 Date#getDay() 기준(0 = 일요일).
  *
- * M1 예고(아직 테이블 없음):
+ * v2(M2): noteBodies · links · memos · assets 추가, notes에 classKey·title 인덱스.
+ *
+ * 이후 예고(아직 테이블 없음):
  *  - strokes: 'id, pageId, [pageId+layer], updatedAt'
  *    획 1개 = 행 1개, points는 ArrayBuffer(Float32: x, y, pressure, t).
  *    ※ 획의 '점마다' 절대 시각 t(ms)를 저장한다 — 녹음–필기 싱크(필기 되감기)용. 빼먹지 말 것.
@@ -72,6 +74,10 @@ export interface Note {
   createdAt: number
   updatedAt: number
   deletedAt?: number | null
+  /** M2: 오늘 수업 노트면 '과목id|YYYY-MM-DD' (학습일 기준) */
+  classKey?: string | null
+  /** M2: 템플릿으로 만들었으면 그 이름 */
+  template?: 'class' | 'concept' | null
 }
 
 export type CardState = 'new' | 'learning' | 'review' | 'relearning'
@@ -117,6 +123,53 @@ export interface Meta {
   value: unknown
 }
 
+/* ---------- M2 (v2): 노트 본문 · 링크 · 1초 메모 · 첨부 ---------- */
+
+/** 노트 본문 (목록 조회를 가볍게 하려고 notes와 나눔). doc = 편집기(ProseMirror) JSON */
+export interface NoteBody {
+  noteId: string
+  doc: unknown
+  /** 검색·발췌용 평문 (블록 사이 줄바꿈) */
+  text: string
+  /** 저장마다 +1 (가져오기·충돌 확인용) */
+  version: number
+  updatedAt: number
+}
+
+/** [[링크]] 한 개 = 행 하나. to가 null이면 아직 없는 노트(제목만 기억) */
+export interface NoteLink {
+  id: string
+  from: string
+  to: string | null
+  toTitle: string
+  createdAt: number
+}
+
+export type MemoState = 'inbox' | 'filed' | 'archived'
+
+/** 1초 메모 (별가루). 밤에 노트·할 일·카드로 나눈다 */
+export interface Memo {
+  id: string
+  text: string
+  /** 사진 메모면 assets id */
+  assetId?: string | null
+  subjectId?: string | null
+  state: MemoState
+  /** 나눈 곳 */
+  filedTo?: { type: 'note' | 'task' | 'card'; id: string } | null
+  createdAt: number
+  updatedAt: number
+}
+
+/** 사진 등 첨부 (Blob) */
+export interface Asset {
+  id: string
+  ownerId: string | null
+  mime: string
+  blob: Blob
+  createdAt: number
+}
+
 export class GyeolDB extends Dexie {
   subjects!: EntityTable<Subject, 'id'>
   courseSlots!: EntityTable<CourseSlot, 'id'>
@@ -126,6 +179,10 @@ export class GyeolDB extends Dexie {
   focusSessions!: EntityTable<FocusSession, 'id'>
   dailyStats!: EntityTable<DailyStat, 'day'>
   meta!: EntityTable<Meta, 'key'>
+  noteBodies!: EntityTable<NoteBody, 'noteId'>
+  links!: EntityTable<NoteLink, 'id'>
+  memos!: EntityTable<Memo, 'id'>
+  assets!: EntityTable<Asset, 'id'>
 
   constructor() {
     super('gyeol')
@@ -138,6 +195,14 @@ export class GyeolDB extends Dexie {
       focusSessions: 'id, startedAt, endedAt, subjectId',
       dailyStats: 'day',
       meta: 'key',
+    })
+    // M2: 노트 본문·링크·메모·첨부. notes에 classKey('과목id|YYYY-MM-DD', 오늘 수업 노트 중복 막기)와 title 인덱스
+    this.version(2).stores({
+      notes: 'id, subjectId, kind, updatedAt, classKey, title',
+      noteBodies: 'noteId, updatedAt',
+      links: 'id, from, to, toTitle, [from+to]',
+      memos: 'id, state, createdAt, subjectId',
+      assets: 'id, ownerId, createdAt',
     })
   }
 }
