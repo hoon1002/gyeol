@@ -1275,6 +1275,7 @@ export class FieldEngine {
       this.selected = id
       this.uploadNotes()
       this.uploadNoteLinks()
+      this.pushStars()
     }
     this.selected = id
     for (const s of this.stars.values()) if (s.layer === 'graph') this.animTo(s, this.visTarget(s), 0.3)
@@ -1941,11 +1942,13 @@ export class FieldEngine {
     return sj
   }
   /** 과목 가지 중심: 지도 성운 + 1.5u × 방향 k (6방향) */
-  private branchCenter(k: number): [number, number, number] {
+  /** 과목 가지 중심: 지도 성운 + (1.5u + 가지 퍼짐) × 방향 k (6방향). 과목 없음(k −1)은 한가운데 */
+  private branchCenter(k: number, spread = 0.5): [number, number, number] {
     const g = LANDMARKS.graph
     if (k < 0) return [g[0], g[1], g[2]]
     const a = (k / 6) * Math.PI * 2
-    return [g[0] + 1.5 * Math.cos(a), g[1], g[2] + 1.5 * Math.sin(a)]
+    const d = 1.5 + Math.max(0, spread - 0.5)
+    return [g[0] + d * Math.cos(a), g[1], g[2] + d * Math.sin(a)]
   }
   /** useSkyStars({ notes, noteLinks?, subjects? }) — 노트 별 자리는 id 해시로 고정, 정적 버퍼 1회 올리기 */
   private syncNotes(list: Array<{ id: string; subjectId: string; links: number }>, pairs?: Array<[string, string]>, subjects?: Array<{ id: string; color: string }>) {
@@ -1962,7 +1965,8 @@ export class FieldEngine {
     for (const n of list) {
       const sj = this.subjectOf(n.subjectId)
       const cnt = perSubject.get(n.subjectId) ?? 1
-      const sig = 0.5 * (cnt > 150 ? Math.sqrt(cnt / 150) : 1)
+      // 퍼짐: 노트 수에 따라 가지를 넓히고 팔 방향(바깥)으로 길게 — 1,000개여도 별 사이가 화면에서 몇 px 떨어지게
+      const sig = Math.min(3, 0.5 + 0.06 * Math.sqrt(cnt))
       // 자리는 (id, 과목 가지, σ)에만 달려 있다 → 바뀌지 않았으면 다시 계산하지 않는다
       const ck = n.subjectId + '|' + sj.k + '|' + sig.toFixed(3)
       let pc = this.posCache.get(n.id)
@@ -1972,9 +1976,16 @@ export class FieldEngine {
         const u1 = ((h & 0xffff) + 0.5) / 65536
         const u2 = (((h >>> 16) & 0xffff) + 0.5) / 65536
         const u3 = (h2 & 0xffff) / 65536
-        const rr = Math.sqrt(-2 * Math.log(u1)) * sig
-        const c = this.branchCenter(sj.k)
-        pc = { key: ck, pos: [c[0] + rr * Math.cos(2 * Math.PI * u2), c[1] + (u3 - 0.5) * 0.2, c[2] + rr * Math.sin(2 * Math.PI * u2)], s: ((h2 >>> 16) / 65536) * 1.8 - 0.9 }
+        const g1 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2)
+        const g2 = Math.sqrt(-2 * Math.log(u1)) * Math.sin(2 * Math.PI * u2)
+        const across = Math.min(1.2, 0.4 + 0.025 * Math.sqrt(cnt))
+        const c = this.branchCenter(sj.k, sig)
+        const a = sj.k < 0 ? 0 : (sj.k / 6) * Math.PI * 2
+        const ux = Math.cos(a)
+        const uz = Math.sin(a)
+        const al = sj.k < 0 ? g1 * across : g1 * sig // 가지 방향(바깥)으로 σ, 옆으로 across
+        const ac = g2 * across
+        pc = { key: ck, pos: [c[0] + ux * al - uz * ac, c[1] + (u3 - 0.5) * 0.3, c[2] + uz * al + ux * ac], s: ((h2 >>> 16) / 65536) * 1.8 - 0.9 }
         this.posCache.set(n.id, pc)
       }
       const tL = Math.min(1, Math.log(1 + Math.max(0, n.links)) * 0.45512 /* 1 / ln 9 */)
@@ -2031,11 +2042,13 @@ export class FieldEngine {
     }
     let i = 0
     const sel = this.selected
+    // 밀도 상한: 별 하나의 세기 × min(1, 7/√N) — 30개 안팎이면 그대로, 1,000개면 ≈ 0.22. 고른 별·검색 결과는 예외
+    const dens = Math.min(1, 7 / Math.sqrt(Math.max(1, n)))
     for (const id of this.noteOrder) {
       const r = this.notes.get(id)!
-      let lv = r.level
-      if (this.search) lv *= this.search.has(id) ? 1.25 : 0.5
-      if (sel && this.notes.has(sel)) lv *= id === sel ? 1.3 : 0.5
+      let lv = r.level * dens
+      if (this.search) lv = this.search.has(id) ? Math.max(lv, r.level) * 1.25 : lv * 0.5
+      if (sel && this.notes.has(sel)) lv = id === sel ? 1 : lv * 0.5
       const o = i * 8
       this.noteArr[o] = r.pos[0]
       this.noteArr[o + 1] = r.pos[1]
@@ -2269,6 +2282,9 @@ export class FieldEngine {
         })
       }
     }
+    // 고른 노트 별: 노트 층(35%에서 잘림) 밖에서 금빛 3.2px로 따로 — 예외로 밝게
+    if ((p === 'map' || p === 'graph') && this.selected && this.notes.has(this.selected))
+      out.push({ id: 'selnote:' + this.selected, group: 'nebula', pos: this.notes.get(this.selected)!.pos, L: 1, color: GOLD, size: 3.2, from: 1, to: 1, t0: 0, dur: 0 })
     // 과목 성운: 첫 실행 · 지도 · 오늘
     const nebVis = p === 'onboarding' || p === 'map' || p === 'graph' || p === 'today' || p === 'landing'
     if (nebVis)

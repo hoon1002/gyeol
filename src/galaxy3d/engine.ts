@@ -1827,8 +1827,9 @@ function drawEvents(m: Float32Array, now: number) {
     gl.bindVertexArray(segVao)
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, ns)
   }
-  if (nl && dustRT) {
-    // 빛줄기: 반 해상도 층(먼지 투과율 버퍼를 다시 씀)에 더한 뒤 한 픽셀 35%에서 잘라 얹는다 (design-m2 4-3)
+  if ((nl || nn) && dustRT) {
+    // 노트 층(빛줄기 + 노트 별): 반 해상도 층(먼지 투과율 버퍼를 다시 씀)에 더한 뒤 한 픽셀 35%에서 잘라 얹는다 (design-m2 4-3)
+    // — 노트가 수백·수천 개여도 지도 가운데가 하얀 덩어리가 되지 않게
     const lw = Math.max(1, W >> 1)
     const lh = Math.max(1, H >> 1)
     gl.bindFramebuffer(gl.FRAMEBUFFER, dustRT.fb)
@@ -1836,19 +1837,59 @@ function drawEvents(m: Float32Array, now: number) {
     gl.clearColor(0, 0, 0, 1)
     gl.clear(gl.COLOR_BUFFER_BIT)
     gl.blendFunc(gl.ONE, gl.ONE)
-    const L = P.seg
-    gl.useProgram(L.p)
-    gl.uniformMatrix4fv(L.u.uVP!, false, m)
-    gl.uniform1f(L.u.uTime!, simT)
-    gl.uniform4fv(L.u['uZone[0]']!, zoneUv)
-    gl.uniform3f(L.u.uZoneP!, cssW, cssH, featherPx)
-    gl.uniform2f(L.u.uView!, lw, lh)
-    gl.uniform1f(L.u.uWidth!, Math.max(0.5, 0.1875 * dpr)) // 0.75px (반 해상도)
-    gl.uniform1f(L.u.uDay!, day)
-    gl.uniform1f(L.u.uSegK!, noteViewK.lines)
-    gl.uniform1f(L.u.uCart!, 1)
-    gl.bindVertexArray(nlinkVao)
-    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nlinkN)
+    if (nl) {
+      const L = P.seg
+      gl.useProgram(L.p)
+      gl.uniformMatrix4fv(L.u.uVP!, false, m)
+      gl.uniform1f(L.u.uTime!, simT)
+      gl.uniform4fv(L.u['uZone[0]']!, zoneUv)
+      gl.uniform3f(L.u.uZoneP!, cssW, cssH, featherPx)
+      gl.uniform2f(L.u.uView!, lw, lh)
+      gl.uniform1f(L.u.uWidth!, Math.max(0.5, 0.1875 * dpr)) // 0.75px (반 해상도)
+      gl.uniform1f(L.u.uDay!, day)
+      gl.uniform1f(L.u.uSegK!, noteViewK.lines)
+      gl.uniform1f(L.u.uCart!, 1)
+      gl.bindVertexArray(nlinkVao)
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nlinkN)
+    }
+    if (nn) {
+      const D = P.dot
+      gl.useProgram(D.p)
+      gl.uniformMatrix4fv(D.u.uVP!, false, m)
+      gl.uniform1f(D.u.uTime!, simT)
+      gl.uniform4fv(D.u['uZone[0]']!, zoneUv)
+      gl.uniform3f(D.u.uZoneP!, cssW, cssH, featherPx)
+      gl.uniform1f(D.u.uDpr!, dpr * 0.5) // 반 해상도 층
+      gl.uniform1f(D.u.uDay!, day)
+      gl.uniform1f(D.u.uDotK!, noteViewK.stars)
+      gl.uniform1f(D.u.uCart!, 1)
+      if (place.id === 'notes' && spineSrc) {
+        // 노트 장소: 같은 별을 책등 위 점으로 (원반 긴 축, 높이 = id 해시) — 시선이 바뀔 때만 다시 계산
+        const B = lastBasis
+        const key = B ? B.f.map((x) => x.toFixed(3)).join(',') + '|' + simT.toFixed(0) : ''
+        if (B && key !== spineKey) {
+          spineKey = key
+          const ax = norm([B.f[2], 0, -B.f[0]])
+          if (!spineArr || spineArr.length !== spineSrc.length) spineArr = new Float32Array(spineSrc.length)
+          spineArr.set(spineSrc)
+          // 세계 → 패턴 좌표(직교): 자전 −Ωp·t만큼 되돌린다
+          const ca = Math.cos(-OMEGA_P * simT)
+          const sa = Math.sin(-OMEGA_P * simT)
+          for (let i = 0; i < noteN; i++) {
+            const sv = spineSrc[i * 8 + 2]! // 원본 z 칸에 s(−1..1)를 둔 사본
+            const wx = ax[0] * sv * 11
+            const wz = ax[2] * sv * 11
+            spineArr[i * 8] = wx * ca - wz * sa
+            spineArr[i * 8 + 1] = 0.15
+            spineArr[i * 8 + 2] = wx * sa + wz * ca
+          }
+          gl.bindBuffer(gl.ARRAY_BUFFER, spineBuf)
+          gl.bufferData(gl.ARRAY_BUFFER, spineArr, gl.DYNAMIC_DRAW)
+        }
+        gl.bindVertexArray(spineVao)
+      } else gl.bindVertexArray(noteVao)
+      gl.drawArrays(gl.POINTS, 0, noteN)
+    }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     gl.viewport(0, 0, W, H)
     if (day) gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_COLOR)
@@ -1860,44 +1901,6 @@ function drawEvents(m: Float32Array, now: number) {
     gl.uniform1i(P.lclamp.u.uTex!, 0)
     gl.uniform4f(P.lclamp.u.uSrc!, lw / dustRT.w, lh / dustRT.h, (lw - 0.5) / dustRT.w, (lh - 0.5) / dustRT.h)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
-  }
-  if (nn) {
-    const D = P.dot
-    gl.useProgram(D.p)
-    gl.uniformMatrix4fv(D.u.uVP!, false, m)
-    gl.uniform1f(D.u.uTime!, simT)
-    gl.uniform4fv(D.u['uZone[0]']!, zoneUv)
-    gl.uniform3f(D.u.uZoneP!, cssW, cssH, featherPx)
-    gl.uniform1f(D.u.uDpr!, dpr)
-    gl.uniform1f(D.u.uDay!, day)
-    gl.uniform1f(D.u.uDotK!, noteViewK.stars)
-    gl.uniform1f(D.u.uCart!, 1)
-    if (place.id === 'notes' && spineSrc) {
-      // 노트 장소: 같은 별을 책등 위 점으로 (원반 긴 축, 높이 = id 해시) — 시선이 바뀔 때만 다시 계산
-      const B = lastBasis
-      const key = B ? B.f.map((x) => x.toFixed(3)).join(',') + '|' + simT.toFixed(0) : ''
-      if (B && key !== spineKey) {
-        spineKey = key
-        const ax = norm([B.f[2], 0, -B.f[0]])
-        if (!spineArr || spineArr.length !== spineSrc.length) spineArr = new Float32Array(spineSrc.length)
-        spineArr.set(spineSrc)
-        // 세계 → 패턴 좌표(직교): 자전 −Ωp·t만큼 되돌린다
-        const ca = Math.cos(-OMEGA_P * simT)
-        const sa = Math.sin(-OMEGA_P * simT)
-        for (let i = 0; i < noteN; i++) {
-          const sv = spineSrc[i * 8 + 2]! // 원본 z 칸에 s(−1..1)를 둔 사본
-          const wx = ax[0] * sv * 11
-          const wz = ax[2] * sv * 11
-          spineArr[i * 8] = wx * ca - wz * sa
-          spineArr[i * 8 + 1] = 0.15
-          spineArr[i * 8 + 2] = wx * sa + wz * ca
-        }
-        gl.bindBuffer(gl.ARRAY_BUFFER, spineBuf)
-        gl.bufferData(gl.ARRAY_BUFFER, spineArr, gl.DYNAMIC_DRAW)
-      }
-      gl.bindVertexArray(spineVao)
-    } else gl.bindVertexArray(noteVao)
-    gl.drawArrays(gl.POINTS, 0, noteN)
   }
   if (nd) {
     const D = P.dot
