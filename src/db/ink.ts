@@ -53,6 +53,8 @@ export function openInkLabDB(name = 'gyeol-inklab'): InkDB {
     strokes: 'id, pageId, [pageId+layer], updatedAt',
     pageItems: 'id, pageId, updatedAt',
   })
+  // M4: 카드 후보 (테이프 → 후보 시험)
+  d.version(2).stores({ cardCandidates: 'id, noteId, status, createdAt' })
   return d as InkDB
 }
 

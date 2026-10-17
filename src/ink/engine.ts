@@ -612,6 +612,28 @@ export class InkEngine {
     return null
   }
 
+  /**
+   * 밖에서 받은 점으로 획을 쓴다 (메모 칸 첫 펜 버퍼 · 시험). 점은 화면 좌표(clientX/Y).
+   * 끝난 획은 injectStroke, 아직 누르고 있는 획은 externalStroke로 이어 받는다.
+   */
+  externalStroke(first: { clientX: number; clientY: number; pressure: number; t: number; type: string }): { move(p: typeof first): void; up(p: typeof first | null): void } | null {
+    const conv = (p: typeof first): InPt => {
+      const [x, y] = this.toLocal(p.clientX, p.clientY, true)
+      return { x, y, p: p.pressure, t: p.t, ts: p.t - performance.timeOrigin, type: p.type, alt: Math.PI / 2 }
+    }
+    const s = this.beginSession(conv(first))
+    if (!s) return null
+    return { move: (p) => s.move([conv(p)], null), up: (p) => s.up(p ? conv(p) : null) }
+  }
+
+  injectStroke(pts: Array<{ clientX: number; clientY: number; pressure: number; t: number; type: string }>): void {
+    if (!pts.length) return
+    const h = this.externalStroke(pts[0]!)
+    if (!h) return
+    for (let i = 1; i < pts.length - 1; i++) h.move(pts[i]!)
+    h.up(pts.length > 1 ? pts[pts.length - 1]! : null)
+  }
+
   /** 펜·마우스 길게 누르기(빈 곳) → 둥근 메뉴: 같은 포인터를 메뉴 세션으로 */
   becomePie(down: InPt, pm: PageModel, box: PageBox): void {
     const px = this.view.vx + down.x / this.view.s - box.x

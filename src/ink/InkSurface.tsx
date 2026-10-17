@@ -15,6 +15,7 @@ import type { InkDB } from '@/db/ink'
 import type { PageTemplate } from '@/db/schema'
 import { createInkEngine, type InkEngine } from './engine'
 import { InkToolbar } from './ui/InkToolbar'
+import { syncTapeCandidates } from './region'
 import './ink.css'
 
 export interface InkSurfaceProps {
@@ -79,8 +80,24 @@ export function InkSurface(props: InkSurfaceProps) {
     // 테마 → 밤 종이
     const mo = new MutationObserver(() => eng.setNight(themeNight()))
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    // 테이프 → 카드 후보 (테이프가 바뀌면 2초 뒤, 닫을 때 한 번 더)
+    let tapeSig = ''
+    let tapeTimer = 0
+    offs.push(
+      eng.on('pages', (ps) => {
+        const sig = ps.map((p) => `${p.id}:${p.tapes.total}`).join(',')
+        if (sig === tapeSig) return
+        const first = tapeSig === ''
+        tapeSig = sig
+        if (first) return
+        clearTimeout(tapeTimer)
+        tapeTimer = window.setTimeout(() => void syncTapeCandidates(noteId, eng.db).catch(() => {}), 2000)
+      }),
+    )
     return () => {
       alive = false
+      clearTimeout(tapeTimer)
+      void syncTapeCandidates(noteId, eng.db).catch(() => {})
       mo.disconnect()
       offs.forEach((f) => f())
       cb.current.onPagesWritten?.(touched.size, eng.strokesAdded)

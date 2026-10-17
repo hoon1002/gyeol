@@ -11,12 +11,15 @@ import { useFieldPause } from '@/fx'
 import { appInkDB, type InkDB } from '@/db/ink'
 import { createInkEngine, type InkEngine } from './engine'
 import { PEN_SLOTS } from './palette'
+import type { InkPadBuffer } from './padbuffer'
 import './ink.css'
 
 export interface InkPadProps {
   memoId: string
   /** 이미 있는 쪽 (memo.pageId). 주면 그 쪽의 노트 id로 연다(없으면 'memo:<memoId>') */
   pageId?: string | null
+  /** 준비되기 전에 닿은 점 (new InkPadBuffer(메모 칸)) — 준비되면 받아서 쓴다 (QA #25) */
+  pending?: InkPadBuffer | null
   /** 칸 크기 (pt = CSS px) */
   width: number
   height: number
@@ -50,6 +53,16 @@ export function InkPad(props: InkPadProps) {
       offs = [e.on('active', setInking), e.on('change', () => cb.current.onChange?.(e.doc.strokeCount))]
       await e.ready
       if (dead) return
+      // 준비 전에 받은 획: 끝난 것은 그대로 쓰고, 아직 누르고 있으면 이어 받는다
+      const buf = cb.current.pending
+      if (buf) {
+        for (const st of buf.handoff((pts) => {
+          const h = e.externalStroke(pts[0]!)
+          if (h) for (const q of pts.slice(1)) h.move(q)
+          return h
+        }))
+          e.injectStroke(st)
+      }
       cb.current.onReady?.(e)
       cb.current.onChange?.(e.doc.strokeCount)
     })()
