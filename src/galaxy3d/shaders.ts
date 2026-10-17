@@ -246,12 +246,27 @@ uniform float uAspect;
 uniform float uRest;
 uniform float uPlate; // 낮 테마 '3D 건판' 0 밤 → 1 낮 (design-m1 3-1)
 uniform vec4 uZone[3]; // 글 구역 (uv, 아래가 0) — 안전 마스크
-uniform vec2 uZoneF;   // 페더 (uv)
+uniform vec3 uZoneP;   // 화면 CSS px (폭, 높이) · 페더 px
 uniform vec3 uBg;      // 배경 바탕색 (시간대)
 uniform vec4 uTint;    // 과목 렌즈 반사 성운: rgb, 세기(≤ 0.10)
 uniform vec3 uTintC;   // 그 자리 uv 중심 · 반지름
 out vec4 o;
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+/* 글 구역 안전 마스크: 둥근 모서리(반지름 64px) 사각형 거리장 — 글 바로 뒤는 꽉, 바깥으로 uZoneP.z px에 걸쳐 부드럽게(상자가 읽히지 않게) */
+float zoneMask(vec2 uv) {
+  vec2 p = uv * uZoneP.xy;
+  float z = 0.0;
+  for (int i = 0; i < 3; i++) {
+    vec4 r = uZone[i];
+    if (r.x < -1.0) break;
+    vec2 lo = r.xy * uZoneP.xy;
+    vec2 hi = r.zw * uZoneP.xy;
+    vec2 q = abs(p - (lo + hi) * 0.5) - (hi - lo) * 0.5 + 64.0;
+    float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 64.0;
+    z = max(z, 1.0 - smoothstep(-24.0, uZoneP.z, d));
+  }
+  return z;
+}
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 void main() {
   vec3 bloomLow = texture(uBloom, min(vUv * uSrcB.xy, uSrcB.zw)).rgb;
@@ -259,13 +274,7 @@ void main() {
   c *= uExposure;
   vec3 hdr = c;
   // 안전 마스크 (design-m1 2-2): 글 구역 안은 은하 휘도 상한 #161C2C, 페더 120px(폰 64px)
-  float zone = 0.0;
-  for (int i = 0; i < 3; i++) {
-    vec4 z = uZone[i];
-    if (z.x < -1.0) break; // 빈 칸(대부분 장소는 1–2개)
-    vec2 a = smoothstep(z.xy - uZoneF, z.xy, vUv) * (1.0 - smoothstep(z.zw, z.zw + uZoneF, vUv));
-    zone = max(zone, a.x * a.y);
-  }
+  float zone = zoneMask(vUv);
   c = 0.18 * pow(max(c, 0.0) / 0.18, vec3(1.0 + 0.06 * uRest)); // 정지 장면: 대비 +6% (중간 회색 고정 → 밝기 그대로)
   // 바탕: 아주 깊은 남색
   c += uBg; // 시간대 위상(design-m1 #40): 배경 구 색조만 푸른 밤 ↔ 깊은 밤 ↔ 새벽
@@ -279,7 +288,7 @@ void main() {
   // 과목 렌즈(V10): 그 장소 자리 둘레 반사 성운에 과목색 ≤ 10%
   if (uTint.a > 0.0) t = mix(t, t * (0.55 + 0.9 * uTint.rgb), uTint.a * (1.0 - smoothstep(0.0, uTintC.z, length((vUv - uTintC.xy) * vec2(uAspect, 1.0)))))
   ;
-  t = mix(t, min(t, vec3(0.086, 0.110, 0.173)), zone);
+  t = mix(t, min(t, vec3(0.086, 0.110, 0.173)), zone * 0.72); // 글 바로 뒤만 충분히 — 구역 전체를 꽉 누르면 어두운 얼룩이 읽힌다
   // 낮 '3D 건판' (design-m1 3-1): 장면은 밤과 같고 여기서만 음화 — 종이 위 먹
   if (uPlate > 0.001) {
     // 우리 장면의 HDR 값은 노출 0.55 기준이라 작다 → 필름 농도 곡선 앞에서 ×4 (밤 톤매핑 전 밝기와 맞춤)
@@ -416,16 +425,21 @@ const EV_COMMON = /* glsl */ `
 uniform mat4 uVP;
 uniform float uTime;
 uniform vec4 uZone[3];
-uniform vec2 uZoneF;
+uniform vec3 uZoneP; // 화면 CSS px (폭, 높이) · 페더 px
 const float OMEGA_PE = ${0.006981317};
 vec3 patW(vec3 a) { float th = a.y + OMEGA_PE * uTime; return vec3(a.x * cos(th), a.z, a.x * sin(th)); }
+/* 글 구역 안전 마스크: 둥근 모서리(반지름 64px) 사각형 거리장 — 글 바로 뒤는 꽉, 바깥으로 uZoneP.z px에 걸쳐 부드럽게(상자가 읽히지 않게) */
 float zoneAt(vec2 uv) {
+  vec2 p = uv * uZoneP.xy;
   float z = 0.0;
   for (int i = 0; i < 3; i++) {
     vec4 r = uZone[i];
     if (r.x < -1.0) break;
-    vec2 a = smoothstep(r.xy - uZoneF, r.xy, uv) * (1.0 - smoothstep(r.zw, r.zw + uZoneF, uv));
-    z = max(z, a.x * a.y);
+    vec2 lo = r.xy * uZoneP.xy;
+    vec2 hi = r.zw * uZoneP.xy;
+    vec2 q = abs(p - (lo + hi) * 0.5) - (hi - lo) * 0.5 + 64.0;
+    float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 64.0;
+    z = max(z, 1.0 - smoothstep(-24.0, uZoneP.z, d));
   }
   return z;
 }

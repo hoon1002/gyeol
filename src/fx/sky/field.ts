@@ -415,7 +415,12 @@ export class FieldEngine {
             else window.setTimeout(() => this.revealData(false), 700)
           },
         }).mount(canvas)
-        svg.style.display = 'none' // 별자리 선(SVG)은 3D 자리 표(design-m1) 전까지 그리지 않는다
+        svg.style.display = 'none' // 별자리 선은 3D 사건 층이 그린다
+        for (const n of ['core', 'focus-disk'] as AnchorName[])
+          this.g3d.anchors(n, (a) => {
+            this.anchorLast.set(n, a)
+            this.anchorCbs.get(n)?.forEach((f) => f(a))
+          })
         this.config3d()
       } catch {
         this.g3d = null
@@ -1771,12 +1776,21 @@ export class FieldEngine {
   }
   /** useSkyAnchor: 은하의 화면 위치(CSS px). 3D만 정확하고, 2.5D 대체에서는 화면 비율 근사 */
   onAnchor(name: AnchorName, cb: (a: Anchor) => void): () => void {
-    if (this.g3d) return this.g3d.anchors(name, cb)
-    const w = this.vw
-    const h = this.vh
-    cb(name === 'core' ? { x: w * 0.64, y: h * 0.42, r: h * 0.35, visible: true } : { x: w * 0.5, y: h * 0.46, r: Math.min(w, h) * 0.36, visible: this.preset === 'focus' })
-    return () => {}
+    // 화면이 FieldProvider보다 먼저 구독할 수 있다(자식 effect가 먼저) → 여기서 받아 두고 3D가 붙으면 그 값으로 알린다
+    let set = this.anchorCbs.get(name)
+    if (!set) this.anchorCbs.set(name, (set = new Set()))
+    set.add(cb)
+    const last = this.anchorLast.get(name)
+    if (last) cb(last)
+    else if (this.host && !this.g3d) {
+      const w = this.vw
+      const h = this.vh
+      cb(name === 'core' ? { x: w * 0.64, y: h * 0.42, r: h * 0.35, visible: true } : { x: w * 0.5, y: h * 0.46, r: Math.min(w, h) * 0.33, visible: this.preset === 'focus' })
+    }
+    return () => set!.delete(cb)
   }
+  private anchorCbs = new Map<AnchorName, Set<(a: Anchor) => void>>()
+  private anchorLast = new Map<AnchorName, Anchor>()
   /** useSkyClock: 집중 시계 (null이면 0.24°/s 공전) */
   setClock(c: { startedAt: number; durationMs: number; elapsedMs: number; paused: boolean } | null): void {
     this.g3d?.raw?.setClock(c)

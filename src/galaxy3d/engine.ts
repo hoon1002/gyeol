@@ -59,10 +59,10 @@ export const PLACES: Place[] = [
   // design-v4 §8: 장소마다 은하의 실루엣이 다르다. 글·조작이 놓이는 자리는 어둡게 비운다
   { id: 'today', name: '오늘', sub: '위 3/4 — 비스듬한 타원', t: C0, az: 210, el: 30, dist: 25, expo: 1, orbit: 1, roll: -57, seat: [0.62, 0.46], seatP: [0.54, 0.4], fit: { m: 'long', frac: 0.8, of: 'h' }, fitP: { m: 'xext', frac: 0.92, of: 'w' } },
   { id: 'planner', name: '플래너', sub: '거의 옆 — 화면을 가로지르는 시간의 띠', t: C0, az: 200, el: 8, dist: 40, expo: 0.95, orbit: 0.4, roll: 0, rsK: 0.85, seat: [0.5, 0.66], seatP: [0.5, 0.72], seatPh: [0.5, 0.74], fit: { m: 'long', frac: 1.15, of: 'w' }, fitP: { m: 'long', frac: 1.3, of: 'w' } },
-  { id: 'notes', name: '노트', sub: '정확히 옆 — 오른쪽에 선 책등', t: C0, az: 225, el: 2, dist: 30, expo: 0.9, orbit: 0, roll: -90, seat: [0.86, 0.5], seatP: [0.8, 0.5], seatPh: [0.95, 0.5], fit: { m: 'long', frac: 1.2, of: 'h' }, fitP: { m: 'long', frac: 1.1, of: 'h' } },
+  { id: 'notes', name: '노트', sub: '정확히 옆 — 오른쪽에 선 책등', t: C0, az: 225, el: 2, dist: 30, expo: 0.9, orbit: 0, roll: -90, seat: [0.86, 0.5], seatP: [0.9, 0.5], seatPh: [0.95, 0.5], fit: { m: 'long', frac: 1.2, of: 'h' }, fitP: { m: 'long', frac: 1.1, of: 'h' } },
   { id: 'review', name: '복습', sub: '아래에서 — 뒤집힌 은하, 다시 꺼내 보는 기억', t: C0, az: 195, el: -35, dist: 25, expo: 1, orbit: 0.3, roll: 40, seat: [0.62, 0.5], seatT: [0.66, 0.5], seatP: [0.5, 0.32], seatPh: [0.5, 0.27], fit: { m: 'long', frac: 0.8, of: 'h' }, fitP: { m: 'long', frac: 0.85, of: 'w' }, fitPh: { m: 'long', frac: 0.95, of: 'w' } },
   { id: 'graph', name: '그래프', sub: '팔 속, 낮게 — 별 하나하나가 생각', t: LANDMARKS.graph, az: 72, el: 25, dist: 11.5, expo: 1, orbit: 0, roll: -30, rsK: 0.9, seat: [0.6, 0.5], seatP: [0.5, 0.45] },
-  { id: 'focus', name: '집중', sub: '정면 — 시계판처럼 25분에 한 바퀴', t: C0, az: 210, el: 90, dist: 25, expo: 0.95, orbit: 0, roll: 0, rsK: 0.9, seat: [0.6, 0.5], seatT: [0.62, 0.5], seatP: [0.54, 0.4], seatPh: [0.5, 0.36], fit: { m: 'long', frac: 0.66, of: 'short' }, fitP: { m: 'long', frac: 0.66, of: 'short' } }, // 링(베젤)까지 짧은 변의 ≈ 80%, 세로 좌우 여백 ≥ 6%
+  { id: 'focus', name: '집중', sub: '정면 — 시계판처럼 25분에 한 바퀴', t: C0, az: 210, el: 90, dist: 25, expo: 0.95, orbit: 0, roll: 0, rsK: 0.9, seat: [0.6, 0.5], seatT: [0.62, 0.5], seatP: [0.54, 0.4], seatPh: [0.5, 0.36], fit: { m: 'long', frac: 0.64, of: 'short' }, fitP: { m: 'long', frac: 0.66, of: 'short' } }, // 가로: 링 R ≈ 짧은 변 0.40 (design-m1 2-3) // 링(베젤)까지 짧은 변의 ≈ 80%, 세로 좌우 여백 ≥ 6%
   { id: 'settings', name: '설정', sub: '집 안, 어둡게', t: C0, az: 210, el: 30, dist: 25, expo: 0.65, orbit: 1, roll: -57, seat: [0.62, 0.46], seatP: [0.54, 0.4], fit: { m: 'long', frac: 0.8, of: 'h' }, fitP: { m: 'xext', frac: 0.92, of: 'w' } },
 ]
 /** 화면에서 바라보는 점의 자리 (design-v4: 0.66, 0.44) · 원반 장축 57° 대각선 고정 기울기(롤 변화 0) */
@@ -683,7 +683,9 @@ function flyTo(id: string) {
 function graphOk(q: Q) {
   const b = qRot(q, [0, 0, 1])
   const a = BAR_ANGLE + OMEGA_P * simT
-  return barLook(q) <= Math.cos(30 * DEG) && b[0] * Math.cos(a) + b[2] * Math.sin(a) >= 0.2
+  const c = barLook(q)
+  // 막대와 시선 30–55°(끝에서 보지도, 옆으로 길게 보지도 않게) + 눈이 막대 끝 바깥쪽 → 막대는 뒤로 물러난 작은 금빛 타원
+  return c <= Math.cos(30 * DEG) && c >= Math.cos(55 * DEG) && b[0] * Math.cos(a) + b[2] * Math.sin(a) >= 0.45
 }
 /** |cos(막대 축, 시선)| — 1이면 막대를 끝에서 본다 */
 function barLook(q: Q) {
@@ -1025,15 +1027,18 @@ function frame(now: number, timed = false) {
   if (!timed) rafSeenAt = performance.now()
   power = powerState(now)
   const iv = FRAME_MS[power]
-  if (!timed && now - lastDraw < iv - 4) {
+  // rAF 박자 판단은 rAF 타임스탬프끼리(vsync 정렬) — 그리기 시각(performance.now)과 섞으면 앞 프레임이 늦을 때 vsync 하나를 건너뛴다(25ms)
+  if (!timed && now - lastRafDraw < iv - 4) {
     schedule()
     return
   }
+  if (!timed) lastRafDraw = now
   draw(now)
   drawnAll++
   schedule()
 }
 let drawnAll = 0
+let lastRafDraw = 0
 let skipMask = 0
 let rsOverride = 0 // 측정용: 해상도 배율 고정
 
@@ -1282,7 +1287,7 @@ function draw(now: number, opt: DrawOpt = {}) {
   gl.uniform4f(P.comp.u.uTint!, tint[0], tint[1], tint[2], tint[3] * (1 - lightK))
   gl.uniform3f(P.comp.u.uTintC!, SEAT[0], 1 - SEAT[1], 0.38)
   gl.uniform4fv(P.comp.u['uZone[0]']!, zoneUv)
-  gl.uniform2f(P.comp.u.uZoneF!, (cssW < 600 ? 64 : 120) / cssW, (cssW < 600 ? 64 : 120) / cssH)
+  gl.uniform3f(P.comp.u.uZoneP!, cssW, cssH, cssW < 600 ? 64 : 96)
   gl.drawArrays(gl.TRIANGLES, 0, 3)
   gl.activeTexture(gl.TEXTURE0)
   // 사건 층: 데이터 별 · 반짝 · 선 (캔버스에 바로, 화면 px 고정)
@@ -1762,14 +1767,14 @@ function drawEvents(m: Float32Array, now: number) {
   gl.enable(gl.BLEND)
   if (day) gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_COLOR)
   else gl.blendFunc(gl.ONE, gl.ONE)
-  const feather: [number, number] = [(cssW < 600 ? 64 : 120) / cssW, (cssW < 600 ? 64 : 120) / cssH]
+  const featherPx = cssW < 600 ? 64 : 96
   if (ns) {
     const L = P.seg
     gl.useProgram(L.p)
     gl.uniformMatrix4fv(L.u.uVP!, false, m)
     gl.uniform1f(L.u.uTime!, simT)
     gl.uniform4fv(L.u['uZone[0]']!, zoneUv)
-    gl.uniform2f(L.u.uZoneF!, feather[0], feather[1])
+    gl.uniform3f(L.u.uZoneP!, cssW, cssH, featherPx)
     gl.uniform2f(L.u.uView!, W, H)
     gl.uniform1f(L.u.uWidth!, 0.6 * dpr)
     gl.uniform3f(L.u.uLineCol!, day ? 0.271 : 0.95, day ? 0.294 : 0.86, day ? 0.345 : 0.68)
@@ -1785,7 +1790,7 @@ function drawEvents(m: Float32Array, now: number) {
     gl.uniformMatrix4fv(D.u.uVP!, false, m)
     gl.uniform1f(D.u.uTime!, simT)
     gl.uniform4fv(D.u['uZone[0]']!, zoneUv)
-    gl.uniform2f(D.u.uZoneF!, feather[0], feather[1])
+    gl.uniform3f(D.u.uZoneP!, cssW, cssH, featherPx)
     gl.uniform1f(D.u.uDpr!, dpr)
     gl.uniform1f(D.u.uDay!, day)
     gl.bindBuffer(gl.ARRAY_BUFFER, dataBuf)
