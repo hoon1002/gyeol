@@ -139,7 +139,15 @@ declare global {
   }
 }
 
+const SHRINK = new URLSearchParams(location.search).has('shrink')
 function Lab() {
+  // 종이가 열리는 전환 흉내: 처음 900ms 동안 scale(.96) — 엔진은 이 사이에 붙는다
+  const [shrinkStyle, setShrinkStyle] = useState<React.CSSProperties | undefined>(SHRINK ? { transform: 'scale(.96)', transformOrigin: '50% 40%' } : undefined)
+  useEffect(() => {
+    if (!SHRINK) return
+    const t = setTimeout(() => setShrinkStyle({ transform: 'none', transition: 'transform 300ms' }), 900)
+    return () => clearTimeout(t)
+  }, [])
   const [eng, setEng] = useState<InkEngine | null>(null)
   const [tool, setTool] = useState<ToolName>('pen')
   const [pages, setPages] = useState<PageInfo[]>([])
@@ -410,7 +418,7 @@ function Lab() {
         <pre className="stats">{stats}</pre>
         <div className="msg">{msg}</div>
       </div>
-      <div className="lab-paper">
+      <div className="lab-paper" style={shrinkStyle}>
         <InkSurface noteId={NOTE} db={db} ui={new URLSearchParams(location.search).has('ui')} onReady={setEng} />
       </div>
     </div>

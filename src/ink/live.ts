@@ -26,9 +26,9 @@ export class LiveLayer {
     this.b = document.createElement('canvas')
     this.wrap.append(this.a, this.b)
     stage.appendChild(this.wrap)
-    const opt = { desynchronized: true } as CanvasRenderingContext2DSettings
-    this.actx = this.a.getContext('2d', opt)!
-    this.bctx = this.b.getContext('2d', opt)!
+    // desynchronized(저지연 앞 버퍼)는 쓰지 않는다: 안드로이드 크롬에서 조상 transform · 섞기와 어긋나 잉크가 펜촉에서 떨어져 보일 수 있다
+    this.actx = this.a.getContext('2d')!
+    this.bctx = this.b.getContext('2d')!
     this.setMode('ink')
   }
 

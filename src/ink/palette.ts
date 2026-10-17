@@ -85,7 +85,7 @@ export interface PaperSpec {
 }
 
 export const PAPERS: Record<PaperKind, PaperSpec> = {
-  night: { kind: 'night', bg: '#0E1322', border: 'rgba(220,228,255,.08)', line: 'rgba(220,228,255,.075)', dot: 'rgba(220,228,255,.16)', shadow: 'var(--shadow-3)', hlBlend: 'screen', hlOpacity: 0.45, dark: true },
+  night: { kind: 'night', bg: '#0E1322', border: 'rgba(220,228,255,.14)', line: 'rgba(220,228,255,.115)', dot: 'rgba(220,228,255,.24)', shadow: 'var(--shadow-3)', hlBlend: 'screen', hlOpacity: 0.45, dark: true },
   day: { kind: 'day', bg: '#FBFAF7', border: 'var(--border)', line: 'rgba(20,23,32,.085)', dot: 'rgba(20,23,32,.18)', shadow: 'var(--shadow-2)', hlBlend: 'multiply', hlOpacity: 0.38, dark: false },
   white: { kind: 'white', bg: '#FFFFFF', border: 'var(--border)', line: 'rgba(20,23,32,.085)', dot: 'rgba(20,23,32,.18)', shadow: 'var(--shadow-2)', hlBlend: 'multiply', hlOpacity: 0.38, dark: false },
 }

@@ -345,10 +345,9 @@ export class ItemsLayer {
       grip.setPointerCapture(ev.pointerId)
       const v = this.eng.view
       const b = v.boxes.find((x) => x.id === pageId)
-      const host = this.eng.host.getBoundingClientRect()
       const move = (m: PointerEvent) => {
         if (!b || !this.editing) return
-        const px = v.vx + (m.clientX - host.left) / v.s - b.x
+        const px = v.vx + this.eng.toLocal(m.clientX, m.clientY)[0] / v.s - b.x
         const w = Math.max(40, Math.min(b.w - it.x, px - it.x))
         this.editing.w = w
         ta.style.width = w + 'px'

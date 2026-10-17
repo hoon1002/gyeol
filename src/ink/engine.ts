@@ -28,6 +28,18 @@ import { INK_COMMANDS, matchKey } from './commands'
 
 type Listener<K extends keyof InkEvents> = (v: InkEvents[K]) => void
 
+export interface InkDiag {
+  /** [clientWidth, clientHeight, rect.width, rect.height] */
+  host: [number, number, number, number]
+  dpr: number
+  slots: number
+  slotMP: number
+  budgetMP: number
+  ctxLost: number
+  /** [clientX, clientY, 호스트 x, 호스트 y] (펜) */
+  lastPen: [number, number, number, number]
+}
+
 export interface Selection {
   pageId: string
   strokes: Set<string>
@@ -242,14 +254,38 @@ export class InkEngine {
 
   /* ---------- 크기 · 보기 ---------- */
 
+  private rectCache: { r: DOMRect; at: number; sx: number; sy: number } | null = null
+
+  /**
+   * 화면 좌표(clientX/Y) → 호스트 레이아웃 CSS px. 조상에 transform(열리는 중 scale .96 등)이 있어도 맞다.
+   * 사각형은 50ms 동안만 캐시한다(전환 중에도 따라가게).
+   */
+  toLocal(cx: number, cy: number, fresh = false): [number, number] {
+    const now = performance.now()
+    let c = this.rectCache
+    if (!c || fresh || now - c.at > 50) {
+      const r = this.host.getBoundingClientRect()
+      c = this.rectCache = { r, at: now, sx: r.width > 0 ? (this.host.clientWidth || r.width) / r.width : 1, sy: r.height > 0 ? (this.host.clientHeight || r.height) / r.height : 1 }
+    }
+    return [(cx - c.r.left) * c.sx, (cy - c.r.top) * c.sy]
+  }
+
+  /** 진단 칸(?diag=1)용: 마지막 값만 덮어쓴다 */
+  diag(patch: Partial<InkDiag>): void {
+    const w = window as Window & { __inkDiag?: InkDiag }
+    w.__inkDiag = Object.assign(w.__inkDiag ?? ({} as InkDiag), patch)
+  }
+
   private measure(): void {
     // 레이아웃 크기로 잰다: 종이가 열리는 중(scale .96 등 transform)에 재면 getBoundingClientRect가 줄어든 크기를 줘서
     // 그 뒤로 펜촉과 잉크가 어긋났다(갤럭시탭 보고). clientWidth/Height는 transform의 영향을 받지 않는다.
     const r = this.host.getBoundingClientRect()
     const dpr = Math.min(3, window.devicePixelRatio || 1)
     this.view.setSize(this.host.clientWidth || Math.round(r.width) || 1, this.host.clientHeight || Math.round(r.height) || 1, dpr)
+    this.rectCache = null
     this.r.resize()
     this.live.resize(this.view.W, this.view.H, dpr)
+    this.diag({ host: [this.host.clientWidth, this.host.clientHeight, Math.round(r.width), Math.round(r.height)], dpr })
   }
 
   private onResize(): void {
@@ -331,6 +367,7 @@ export class InkEngine {
       this.drawFades(now)
       more = true
     }
+    if (this.r.diagDirty) this.diag(this.r.diagInfo())
     const fw = performance.now() - t0
     this.st.fwSum += fw
     this.st.fwN++

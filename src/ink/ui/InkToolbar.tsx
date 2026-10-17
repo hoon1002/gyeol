@@ -128,10 +128,12 @@ export function InkToolbar({ engine: e, title, onRename, onExport }: InkToolbarP
         const tryOpen = () => {
           if (e.isActive && e.input.penDown) return
           const r = pillRef.current?.getBoundingClientRect()
-          const host = e.host.getBoundingClientRect()
           if (r) {
-            const px = s.lastEnd[0] + host.left, py = s.lastEnd[1] + host.top
-            const dx = Math.max(r.left - px, 0, px - r.right), dy = Math.max(r.top - py, 0, py - r.bottom)
+            // 호스트 좌표로 맞춰 잰다 (조상 transform이 있어도)
+            const [l, t] = e.toLocal(r.left, r.top)
+            const [rr, b] = e.toLocal(r.right, r.bottom)
+            const [px, py] = s.lastEnd
+            const dx = Math.max(l - px, 0, px - rr), dy = Math.max(t - py, 0, py - b)
             if (Math.hypot(dx, dy) < 160) return
           }
           if (s.collapsedPin) return
@@ -143,8 +145,8 @@ export function InkToolbar({ engine: e, title, onRename, onExport }: InkToolbarP
       e.on('hover', (h) => {
         if (!h || !bead || !pillRef.current) return
         const r = pillRef.current.getBoundingClientRect()
-        const host = e.host.getBoundingClientRect()
-        const d = Math.hypot(h.x + host.left - (r.left + r.width / 2), h.y + host.top - (r.top + r.height / 2))
+        const [cx, cy] = e.toLocal(r.left + r.width / 2, r.top + r.height / 2)
+        const d = Math.hypot(h.x - cx, h.y - cy)
         if (h.type === 'pen' && d < 96) setBead(false)
       }),
       e.on('ui', ({ id }) => {
@@ -211,17 +213,17 @@ export function InkToolbar({ engine: e, title, onRename, onExport }: InkToolbarP
     dragRef.current = null
     if (!d?.on) return
     ev.preventDefault()
-    const host = e.host.getBoundingClientRect()
-    const x = ev.clientX - host.left, y = ev.clientY - host.top
+    const [x, y] = e.toLocal(ev.clientX, ev.clientY)
+    const HW = e.host.clientWidth || 1, HH = e.host.clientHeight || 1
     const dists: Array<[Edge, number]> = [
       ['top', y],
-      ['bottom', host.height - y],
+      ['bottom', HH - y],
       ['left', phone() ? 1e9 : x],
-      ['right', phone() ? 1e9 : host.width - x],
+      ['right', phone() ? 1e9 : HW - x],
     ]
     dists.sort((a, b) => a[1] - b[1])
     const edge = dists[0]![0]
-    const t = edge === 'top' || edge === 'bottom' ? x / host.width : y / host.height
+    const t = edge === 'top' || edge === 'bottom' ? x / HW : y / HH
     const nd = { edge, t: Math.max(0.08, Math.min(0.92, t)) }
     setDock(nd)
     setDrag(null)
@@ -239,7 +241,7 @@ export function InkToolbar({ engine: e, title, onRename, onExport }: InkToolbarP
   const narrow = e.view.W < 480 && !vertical
 
   const style: React.CSSProperties = drag
-    ? { left: drag.x - e.host.getBoundingClientRect().left, top: drag.y - e.host.getBoundingClientRect().top, transform: 'translate(-50%, -50%) scale(1.04)' }
+    ? { left: e.toLocal(drag.x, drag.y)[0], top: e.toLocal(drag.x, drag.y)[1], transform: 'translate(-50%, -50%) scale(1.04)' }
     : dock.edge === 'top'
       ? { left: `${dock.t * 100}%`, top: 10, transform: 'translateX(-50%)' }
       : dock.edge === 'bottom'
@@ -567,9 +569,8 @@ function RadialMenu({ engine: e }: { engine: InkEngine }) {
   useEffect(
     () =>
       e.on('pie', (p) => {
-        const host = e.host.getBoundingClientRect()
         if (p.phase === 'open') {
-          const x = Math.max(R + 12, Math.min(host.width - R - 12, p.x)), y = Math.max(R + 12, Math.min(host.height - R - 12, p.y))
+          const x = Math.max(R + 12, Math.min(e.view.W - R - 12, p.x)), y = Math.max(R + 12, Math.min(e.view.H - R - 12, p.y))
           setM({ x, y, at: p, pinned: p.pointerType === 'mouse', hot: -1 })
         } else if (p.phase === 'move') setM((cur) => (cur ? { ...cur, hot: wedge(p.x, p.y, cur.x, cur.y) } : cur))
         else if (p.phase === 'up')
@@ -1274,9 +1275,9 @@ function PenOnlyMark({ engine: e, pill }: { engine: InkEngine; pill: RefObject<H
           return
         }
         const r = pill.current?.getBoundingClientRect()
-        const h = e.host.getBoundingClientRect()
         if (!r) return
-        setAt({ x: r.right - h.left + 8, y: r.top - h.top + r.height / 2 })
+        const [x, y] = e.toLocal(r.right, r.top + r.height / 2)
+        setAt({ x: x + 8, y })
         setTimeout(() => setAt(null), 1400)
       }),
     [e, pill],

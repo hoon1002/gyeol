@@ -41,7 +41,6 @@ export class InputRouter {
   private lastPenUp = -1e9
   private lastPenPt: [number, number] = [0, 0]
   gest: Gestures
-  private rect: DOMRect | null = null
   spaceHeld = false
   private off: Array<() => void> = []
 
@@ -85,9 +84,9 @@ export class InputRouter {
     const gchange = (e: Event) => {
       e.preventDefault()
       const ge = e as Event & { scale: number; clientX: number; clientY: number }
-      const r = this.host.getBoundingClientRect()
       const v = this.eng.view
-      v.zoomAt(Math.max(v.fit, v.s * (ge.scale / gs)), ge.clientX - r.left, ge.clientY - r.top)
+      const [lx, ly] = this.eng.toLocal(ge.clientX, ge.clientY)
+      v.zoomAt(Math.max(v.fit, v.s * (ge.scale / gs)), lx, ly)
       gs = ge.scale
       this.eng.viewChanged(true)
     }
@@ -112,13 +111,12 @@ export class InputRouter {
   }
 
   private toPt(e: PointerEvent): InPt {
-    const r = this.rect ?? (this.rect = this.host.getBoundingClientRect())
-    // transform(열리는 중의 scale 등)이 걸려 있으면 화면 좌표를 레이아웃 좌표로 되돌린다 — 엔진 크기는 레이아웃 기준
-    const sx = r.width > 0 ? (this.host.clientWidth || r.width) / r.width : 1
-    const sy = r.height > 0 ? (this.host.clientHeight || r.height) / r.height : 1
+    // transform(열리는 중의 scale 등)이 걸려 있어도 레이아웃 좌표로 (엔진 크기는 레이아웃 기준, 사각형은 50ms 캐시)
+    const [x, y] = this.eng.toLocal(e.clientX, e.clientY)
+    if (e.pointerType === 'pen') this.eng.diag({ lastPen: [Math.round(e.clientX), Math.round(e.clientY), Math.round(x), Math.round(y)] })
     return {
-      x: (e.clientX - r.left) * sx,
-      y: (e.clientY - r.top) * sy,
+      x,
+      y,
       p: e.pressure,
       t: performance.timeOrigin + e.timeStamp,
       ts: e.timeStamp,
@@ -141,7 +139,7 @@ export class InputRouter {
       return
     }
     if (this.eng.blocked) return
-    this.rect = this.host.getBoundingClientRect()
+    this.eng.toLocal(e.clientX, e.clientY, true)
     const p = this.toPt(e)
     this.eng.focusEngine()
     const type = e.pointerType
@@ -235,7 +233,6 @@ export class InputRouter {
     const q = this.ptrs.get(e.pointerId)
     if (!q) {
       if (e.pointerType !== 'touch' && !e.buttons) {
-        this.rect = this.rect ?? this.host.getBoundingClientRect()
         this.eng.hover(this.toPt(e))
       }
       return
@@ -272,7 +269,6 @@ export class InputRouter {
     } else if (q.role === 'gesture') {
       this.gest.up(e.pointerId, p, cancel)
     }
-    if (!this.ptrs.size) this.rect = null
   }
 
   private endSession(cancel: boolean): void {
@@ -287,12 +283,12 @@ export class InputRouter {
   private onWheel(e: WheelEvent): void {
     if (isEditable(e.target)) return
     e.preventDefault()
-    const r = this.host.getBoundingClientRect()
+    const [lx, ly] = this.eng.toLocal(e.clientX, e.clientY)
     const v = this.eng.view
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? v.H : 1
     if (e.ctrlKey || e.metaKey) {
       const f = Math.exp(Math.max(-0.25, Math.min(0.25, -e.deltaY * unit * 0.01)))
-      v.zoomAt(Math.max(v.fit, v.s * f), e.clientX - r.left, e.clientY - r.top)
+      v.zoomAt(Math.max(v.fit, v.s * f), lx, ly)
       this.eng.viewChanged(true)
       this.eng.settleSoon()
     } else {

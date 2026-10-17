@@ -20,9 +20,22 @@ import { ItemsLayer } from './items'
 import type { InkEngine } from './engine'
 import { renderPdfRegion } from './pdf'
 
-const FULL_PX = 6e6
-const DETAIL_PX = 8e6
-const BUDGET_PX = 44e6
+/**
+ * 캔버스 예산 (기기마다). 터치 기기 · 메모리 ≤ 4GB = 12MPx, 그 밖 모바일 16MPx, 데스크톱 44MPx.
+ * full = 쪽 하나 통째 슬롯 상한, detail = 확대 시 보이는 곳 슬롯 상한, detailAt = 이만큼 넘게 확대해야 detail을 만든다.
+ */
+export function inkLimits(env: { coarse?: boolean; memory?: number; mobile?: boolean } = {}): { budget: number; full: number; detail: number; detailAt: number } {
+  const coarse = env.coarse ?? (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)
+  const memory = env.memory ?? (navigator as Navigator & { deviceMemory?: number }).deviceMemory
+  const mobile = env.mobile ?? /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+  if (coarse || (memory !== undefined && memory <= 4)) return { budget: 12e6, full: 4.5e6, detail: 4e6, detailAt: 1.25 }
+  if (mobile) return { budget: 16e6, full: 5e6, detail: 5e6, detailAt: 1.15 }
+  return { budget: 44e6, full: 6e6, detail: 8e6, detailAt: 1.0001 }
+}
+const LIM = inkLimits()
+const FULL_PX = LIM.full
+const DETAIL_PX = LIM.detail
+const BUDGET_PX = LIM.budget
 const PREFETCH = 0.75
 const SETTLE_MS = 140
 
@@ -47,6 +60,8 @@ export interface Slot {
   X: number
   Y: number
   stale: boolean
+  /** 요청한 배율 (메모리 때문에 낮춰 만들었어도 같은 요청이면 다시 만들지 않는다) */
+  reqK?: number
 }
 
 interface Job {
@@ -81,12 +96,17 @@ export class PageView {
   }
 }
 
-function makeCanvas(cw: number, ch: number, opaque = false): { el: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
+function makeCanvas(cw: number, ch: number, opaque = false): { el: HTMLCanvasElement; ctx: CanvasRenderingContext2D | null } {
   const el = document.createElement('canvas')
   el.width = cw
   el.height = ch
   el.className = 'ink-slot'
-  const ctx = el.getContext('2d', { alpha: !opaque })!
+  let ctx: CanvasRenderingContext2D | null = null
+  try {
+    ctx = el.getContext('2d', { alpha: !opaque })
+  } catch {
+    ctx = null
+  }
   return { el, ctx }
 }
 
@@ -200,7 +220,8 @@ export class Renderer {
     st.background = this.eng.mode === 'pad' ? 'transparent' : sp.bg
     st.borderRadius = r + 'px'
     // 테두리 1px + 얕은 그림자 (세계 좌표라 확대와 함께 커진다 — 큰 blur는 확대 때 비싸서 쓰지 않는다)
-    st.boxShadow = this.eng.mode === 'pad' ? 'none' : `0 0 0 ${u}px ${sp.border}, 0 ${2 * u}px ${10 * u}px rgba(0,0,0,${sp.dark ? 0.35 : 0.1})`
+    // 밤 종이: 아주 옅은 빛 테두리로 '종이'로 읽히게 (어두운 바탕에서는 검은 그림자가 안 보인다)
+    st.boxShadow = this.eng.mode === 'pad' ? 'none' : sp.dark ? `0 0 0 ${u}px ${sp.border}, 0 0 ${14 * u}px rgba(220,228,255,.06)` : `0 0 0 ${u}px ${sp.border}, 0 ${2 * u}px ${10 * u}px rgba(0,0,0,.1)`
     pv.paper.dataset.paper = sp.kind
     this.items.place(pv)
   }
@@ -416,13 +437,13 @@ export class Renderer {
     const base = st.base
     // 확대 중에는 지금 base를 늘여 쓰고(없을 때만 새로), 멈추면 새 배율로
     const want = settled || !base ? fullK : base.k
-    const fits = (s: Slot | null | undefined) => !!s && !s.stale && Math.abs(s.k - want) < 1e-6 && s.X === pv.box.x && s.Y === pv.box.y
+    const fits = (s: Slot | null | undefined) => !!s && !s.stale && Math.abs((s.reqK ?? s.k) - want) < 1e-6 && s.X === pv.box.x && s.Y === pv.box.y
     if (!fits(base) && !fits(pv.jobs.get(l + 'base')?.slot) && (settled || !base)) this.schedule(pv, l, 'base', want, full)
-    if (k > fullK * 1.0001) {
+    if (k > fullK * LIM.detailAt) {
       if (!visible || !settled) return
       const need = this.visiblePart(pv, 0)
       if (!need) return
-      const covers = (s: Slot | null | undefined) => !!s && !s.stale && Math.abs(s.k - k) < 1e-6 && s.X === pv.box.x && s.Y === pv.box.y && contains(s.region, need)
+      const covers = (s: Slot | null | undefined) => !!s && !s.stale && Math.abs((s.reqK ?? s.k) - k) < 1e-6 && s.X === pv.box.x && s.Y === pv.box.y && contains(s.region, need)
       if (covers(st.detail) || covers(pv.jobs.get(l + 'detail')?.slot)) return
       if (!still) {
         this.detailWait = true
@@ -453,20 +474,44 @@ export class Renderer {
   }
 
   private schedule(pv: PageView, l: LayerName, level: Level, k: number, region: BBox): void {
+    this.diagDirty = true
     const old = pv.jobs.get(l + level)
     if (old) this.kill(old)
     const X = pv.box.x, Y = pv.box.y
-    const dx0 = Math.floor((X + region[0]) * k), dy0 = Math.floor((Y + region[1]) * k)
-    const dx1 = Math.ceil((X + region[2]) * k), dy1 = Math.ceil((Y + region[3]) * k)
-    const cw = Math.max(1, dx1 - dx0), ch = Math.max(1, dy1 - dy0)
-    // 예산: 넘으면 먼 쪽부터 놓는다
-    this.evictFor(cw * ch, pv)
-    const { el, ctx } = makeCanvas(cw, ch, l === 'pdf')
+    const reqK = k
+    let dx0 = 0, dy0 = 0, cw = 1, ch = 1
+    let made: { el: HTMLCanvasElement; ctx: CanvasRenderingContext2D | null } | null = null
+    // 캔버스를 못 만들면(폭·높이 0, 문맥 없음 — 모바일 메모리) 배율을 낮춰 다시 (최대 3번)
+    for (let tryN = 0; tryN < 4; tryN++, k *= 0.7) {
+      dx0 = Math.floor((X + region[0]) * k)
+      dy0 = Math.floor((Y + region[1]) * k)
+      cw = Math.max(1, Math.ceil((X + region[2]) * k) - dx0)
+      ch = Math.max(1, Math.ceil((Y + region[3]) * k) - dy0)
+      // 예산: 넘으면 먼 쪽부터 놓는다
+      this.evictFor(cw * ch, pv)
+      made = makeCanvas(cw, ch, l === 'pdf')
+      if (made.ctx && made.el.width === cw && made.el.height === ch) break
+      freeCanvas(made.el)
+      made = null
+    }
+    if (!made?.ctx) return
+    const el = made.el
+    const ctx = made.ctx
     const dpr = this.view.dpr
     el.style.width = cw / dpr + 'px'
     el.style.height = ch / dpr + 'px'
     const rx0 = dx0 / k - X, ry0 = dy0 / k - Y
-    const slot: Slot = { el, ctx, s: k / dpr, k, dx0, dy0, cw, ch, region: [rx0, ry0, rx0 + cw / k, ry0 + ch / k], X, Y, stale: false }
+    const slot: Slot = { el, ctx, s: k / dpr, k, dx0, dy0, cw, ch, region: [rx0, ry0, rx0 + cw / k, ry0 + ch / k], X, Y, stale: false, reqK }
+    // 2D 문맥을 잃으면(크롬: 메모리 압박 · GPU 재시작) 그 슬롯을 다시 그린다
+    el.addEventListener('contextlost', () => {
+      this.ctxLost++
+      this.diagDirty = true
+    })
+    el.addEventListener('contextrestored', () => {
+      slot.stale = true
+      this.dirtyView = true
+      this.eng.requestFrame()
+    })
     ctx.setTransform(k, 0, 0, k, X * k - dx0, Y * k - dy0)
     const layerKind = l === 'hl' ? 'highlight' : 'ink'
     const list = l === 'pdf' ? [] : pv.pm.sorted().filter((m) => m.row.layer === layerKind && !m.hidden && bboxOverlap(m.bbox, slot.region))
@@ -570,6 +615,7 @@ export class Renderer {
     }
     pv.slots[j.layer][j.level] = j.slot
     this.px += j.slot.cw * j.slot.ch
+    this.diagDirty = true
     const host = j.layer === 'pdf' ? this.L.pdf : j.layer === 'ink' ? this.L.ink : pv.spec.hlBlend === 'multiply' ? this.L.hlm : this.L.hln
     // detail은 base 위
     host.appendChild(j.slot.el)
@@ -604,7 +650,8 @@ export class Renderer {
       }
       for (const lv of ['base', 'detail'] as const) {
         const s = pv.slots[l][lv]
-        if (s && !s.stale && bboxOverlap(m.bbox, s.region)) {
+        // 낡은(stale) 슬롯에도 그린다: 새 슬롯이 준비될 때까지 화면에 남아 있으니 잉크가 잠깐이라도 사라지지 않게
+        if (s && bboxOverlap(m.bbox, s.region)) {
           const ctx = s.ctx
           ctx.save()
           ctx.setTransform(s.k, 0, 0, s.k, s.X * s.k - s.dx0, s.Y * s.k - s.dy0)
@@ -699,6 +746,16 @@ export class Renderer {
   }
 
   /* ---------- 계측 ---------- */
+
+  diagDirty = true
+  ctxLost = 0
+
+  diagInfo(): { slots: number; slotMP: number; budgetMP: number; ctxLost: number } {
+    this.diagDirty = false
+    let n = 0
+    for (const pv of this.views.values()) for (const l of ['pdf', 'hl', 'ink'] as const) for (const lv of ['base', 'detail'] as const) if (pv.slots[l][lv]) n++
+    return { slots: n, slotMP: Math.round(this.px / 1e4) / 100, budgetMP: BUDGET_PX / 1e6, ctxLost: this.ctxLost }
+  }
 
   get canvasPx(): number {
     return this.px + this.tpl.width * this.tpl.height
