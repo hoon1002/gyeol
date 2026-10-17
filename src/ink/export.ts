@@ -2,7 +2,7 @@
  * 손글씨 엔진 — 내보내기 (design-ink 5-4): PDF(pdf-lib, 획은 벡터 경로) · 쪽 그림(PNG) · 썸네일.
  * 종이는 언제나 흰 종이, 잉크는 저장 색(밤 변환 없음). 테이프: 'none' = 뺌(기본), 'hidden' = 붙어 있는 것만.
  */
-import type { InkItem } from '@/db/ink'
+import type { InkDB, InkItem } from '@/db/ink'
 import { getAssetBlob } from '@/db/ink'
 import type { PageModel } from './doc'
 import type { InkEngine } from './engine'
@@ -10,15 +10,24 @@ import { itemMatrix, tapePath } from './items'
 import { inkColor, PAPERS, paperOf, rgbOf, tapeColor, type PaperSpec } from './palette'
 import { drawTemplate, TEMPLATE_SPEC } from './render'
 import { drawStroke, hlComposite, outlineOfModel, PENCIL_ALPHA } from './stroke'
-import { renderPdfPage } from './pdf'
+import { renderPdfRegion } from './pdf'
 import { mul, type Mat } from './geom'
 
 export type TapeExport = 'none' | 'hidden'
 
 export interface RenderOpts {
-  /** 'white' = 흰 종이 · 저장 색(내보내기), 'theme' = 지금 화면처럼(썸네일) */
-  paper: 'white' | 'theme'
+  /** 'white' = 흰 종이 · 저장 색(내보내기), 'theme' = 지금 화면처럼(썸네일), 'none' = 종이 없음(메모 칸) */
+  paper: 'white' | 'theme' | 'none'
   tapes: TapeExport | 'all'
+  /** 이 쪽 좌표 상자만 (없으면 쪽 전체) */
+  crop?: [number, number, number, number] | null
+}
+
+/** 그리기에 필요한 것만 (엔진이 아니어도 된다: 썸네일 API) */
+export interface RenderCtx {
+  db: InkDB
+  night: boolean
+  doc: { load(pm: PageModel): Promise<void> }
 }
 
 async function loadImage(blob: Blob): Promise<CanvasImageSource | null> {
@@ -93,29 +102,33 @@ function tapeFill(ctx: CanvasRenderingContext2D, it: InkItem, color: string): vo
 /**
  * 쪽 하나를 캔버스에 그린다 (k = 장치 px / pt). 쪽 획·물건을 읽어 둔 뒤에 부른다.
  */
-export async function renderPageCanvas(eng: InkEngine, pm: PageModel, k: number, o: RenderOpts): Promise<HTMLCanvasElement> {
+export async function renderPageCanvas(eng: RenderCtx, pm: PageModel, k: number, o: RenderOpts): Promise<HTMLCanvasElement> {
   await eng.doc.load(pm)
-  const { w, h } = pm.page
+  const cr = o.crop ?? [0, 0, pm.page.w, pm.page.h]
+  const w = cr[2] - cr[0], h = cr[3] - cr[1]
   const c = document.createElement('canvas')
   c.width = Math.max(1, Math.round(w * k))
   c.height = Math.max(1, Math.round(h * k))
   const ctx = c.getContext('2d')!
   const spec: PaperSpec = o.paper === 'white' ? PAPERS.white : paperOf(pm.page, eng.night)
   const look = { dark: spec.dark }
+  ctx.translate(-cr[0] * k, -cr[1] * k)
   // 1 종이 · PDF · 틀
-  if (pm.page.pdf) {
+  if (o.paper === 'none') {
+    /* 메모 칸: 종이 없음 */
+  } else if (pm.page.pdf) {
     try {
-      await renderPdfPage(eng.db, pm.page.pdf.assetId, pm.page.pdf.pageNo, ctx, k)
+      await renderPdfRegion(eng.db, pm.page.pdf.assetId, pm.page.pdf.pageNo, ctx, k, cr[0], cr[1]).promise
     } catch {
       ctx.fillStyle = '#FFFFFF'
       ctx.fillRect(0, 0, c.width, c.height)
     }
   } else {
-    ctx.fillStyle = spec.bg
-    ctx.fillRect(0, 0, c.width, c.height)
-    if (pm.page.template !== 'blank') drawTemplate(ctx, pm.page.template, { x: 0, y: 0, w, h }, k, 0, 0, Math.max(1, Math.round(k / 2)), spec, c.width, c.height)
+    ctx.fillStyle = spec.bg.startsWith('var') ? '#FBFAF7' : spec.bg
+    ctx.fillRect(0, 0, pm.page.w * k, pm.page.h * k)
+    if (pm.page.template !== 'blank') drawTemplate(ctx, pm.page.template, { x: 0, y: 0, w: pm.page.w, h: pm.page.h }, k, 0, 0, Math.max(1, Math.round(k / 2)), spec, pm.page.w * k, pm.page.h * k)
   }
-  ctx.setTransform(k, 0, 0, k, 0, 0)
+  ctx.setTransform(k, 0, 0, k, -cr[0] * k, -cr[1] * k)
   const items = pm.itemsSorted()
   // 2 사진 · 글 상자
   for (const it of items) {
@@ -139,7 +152,7 @@ export async function renderPageCanvas(eng: InkEngine, pm: PageModel, k: number,
     t.width = c.width
     t.height = c.height
     const tc = t.getContext('2d')!
-    tc.setTransform(k, 0, 0, k, 0, 0)
+    tc.setTransform(k, 0, 0, k, -cr[0] * k, -cr[1] * k)
     tc.globalCompositeOperation = hlComposite(spec)
     for (const m of hls) drawStroke(tc, m, look, k)
     ctx.save()

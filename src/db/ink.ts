@@ -191,13 +191,28 @@ export async function listPages(d: InkDB, noteId: string): Promise<Page[]> {
   return rows.filter((p) => !p.deletedAt).sort((a, b) => a.index - b.index || (a.id < b.id ? -1 : 1))
 }
 
-/** 쪽이 하나도 없으면 첫 쪽을 만든다 */
-export async function ensurePages(d: InkDB, noteId: string, init: { template?: PageTemplate; w?: number; h?: number } = {}): Promise<Page[]> {
-  const pages = await listPages(d, noteId)
-  if (pages.length) return pages
-  const first = newPageRow(noteId, 0, init)
-  await d.pages.put(first)
-  return [first]
+const ensuring = new WeakMap<InkDB, Map<string, Promise<Page[]>>>()
+
+/**
+ * 쪽이 하나도 없으면 첫 쪽을 만든다. 겹쳐 불려도(StrictMode 두 번 마운트 · 엔진 둘 · createNote와 동시) 하나만 생긴다:
+ * 같은 noteId의 진행 중인 약속을 나눠 쓰고, rw 트랜잭션 안에서 다시 확인한다(IndexedDB가 같은 표의 rw를 차례로 돌린다).
+ */
+export function ensurePages(d: InkDB, noteId: string, init: { template?: PageTemplate; w?: number; h?: number } = {}): Promise<Page[]> {
+  let per = ensuring.get(d)
+  if (!per) ensuring.set(d, (per = new Map()))
+  const hit = per.get(noteId)
+  if (hit) return hit
+  const p = d
+    .transaction('rw', d.pages, async () => {
+      const rows = (await d.pages.where('noteId').equals(noteId).toArray()).filter((x) => !x.deletedAt)
+      if (rows.length) return rows.sort((a, b) => a.index - b.index || (a.id < b.id ? -1 : 1))
+      const first = newPageRow(noteId, 0, init)
+      await d.pages.put(first)
+      return [first]
+    })
+    .finally(() => per!.delete(noteId))
+  per.set(noteId, p)
+  return p
 }
 
 /* ---------- 획 · 물건 읽기 ---------- */
