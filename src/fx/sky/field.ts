@@ -78,6 +78,8 @@ export const SKY_TIMING = {
 } as const
 
 const GOLD: [number, number, number] = [0.953, 0.824, 0.604]
+/** 별가루 ↔ 오늘의 별자리 최소 거리(u): 오늘 장소에서 화면 18px 이상 */
+const DUST_GAP = 0.55
 const SEAL: [number, number, number] = [1.0, 0.561, 0.471]
 
 /** 공간 → 하늘 장면 + 노출 (50–100%, 한 번에 45%p 이하) */
@@ -244,7 +246,7 @@ function place3d(m: MoodName): PlaceId | null {
 /** 데이터 별 층 → 은하 속 자리(패턴 좌표) · 넓이(u). 하늘 좌표(집 화면 비율 0..1)를 그 둘레에 펼친다 — 사건 51개 표(design-m1) 전 임시 배치 */
 const LAYER3D: Record<Layer, { c: [number, number, number]; span: number; group: string }> = {
   // design-m1 0-1: seat 나의 자리(반지름 0.8u) · cluster 복습 성단(0.6u) · nebula 지도 성운(1.5u) · exam 시험 별
-  today: { c: LANDMARKS.focus, span: 1.6, group: 'seat' },
+  today: { c: LANDMARKS.focus, span: 1.6, group: 'seat' }, // 오늘의 별자리는 pos3에서 따로 (반지름 1.4u, review-m2)
   focus: { c: LANDMARKS.focus, span: 1.6, group: 'seat' },
   review: { c: LANDMARKS.review, span: 1.2, group: 'cluster' },
   graph: { c: LANDMARKS.graph, span: 3, group: 'nebula' },
@@ -260,6 +262,13 @@ function branchPos(k: number): [number, number, number] {
 }
 const pos3 = (s: { layer: Layer; x: number; y: number }): [number, number, number] => {
   const z = LAYER3D[s.layer]
+  if (s.layer === 'today') {
+    // 오늘의 별자리 (review-m2): 별자리 상자(scenes todayStarPositions) 가운데를 나의 자리에 두고 반지름 1.4u로 편다.
+    // 상자 안 걸음 28–64px → 0.3u 이상 → 오늘 3/4 시점(약 35–40px/u)에서 별 사이 10px 이상
+    const phone = typeof window !== 'undefined' && Math.min(window.innerWidth, window.innerHeight) < 600
+    const [cx, cy, S] = phone ? [0.25, 0.29, 8.2] : [0.48, 0.25, 9.3]
+    return [z.c[0] + (s.x - cx) * S, z.c[1] + 0.12, z.c[2] + (s.y - cy) * S]
+  }
   return [z.c[0] + (s.x - 0.5) * z.span, z.c[1] + 0.12, z.c[2] + (s.y - 0.5) * z.span]
 }
 /** 빈 하늘 드래그 기본값 (m1-brief 계약): 오늘·지도·집중은 켬, 노트·복습·계획은 끔 */
@@ -665,6 +674,7 @@ export class FieldEngine {
     const preset = forced ?? spec?.preset ?? this.preset
     const changed = preset !== this.preset
     this.preset = preset
+    this.applyStage()
     if (this.g3d) {
       const dim3 = spec?.preset === preset ? spec?.override?.dim : undefined
       this.g3d.setExposure(typeof dim3 === 'number' ? Math.max(0.5, Math.min(1, dim3)) : 1)
@@ -1916,6 +1926,11 @@ export class FieldEngine {
   private subjects = new Map<string, { color: [number, number, number]; k: number; bloomed: boolean }>()
   private noteArr = new Float32Array(0)
   private spineArr = new Float32Array(0)
+  private stageArr: Float32Array | null = null
+  /** 지도(노트 성운이 주인공)에서만 둘레 은하 별 ×0.6 */
+  private applyStage(): void {
+    this.g3d?.setStage((this.preset === 'map' || this.preset === 'graph') && this.mode !== 'off' ? this.stageArr : null)
+  }
   private search: Set<string> | null = null
   private dusts: Array<{ id: string; subjectId?: string; t0: number; gone?: boolean; path?: { to: [number, number, number]; t0: number; dur: number }; fadeT0?: number }> = []
   private dustN = 0
@@ -1966,6 +1981,16 @@ export class FieldEngine {
     }
     const perSubject = new Map<string, number>()
     for (const n of list) perSubject.set(n.subjectId, (perSubject.get(n.subjectId) ?? 0) + 1)
+    // 노트 무대 조명(지도): 과목 성운마다 중심 · 반지름(둘레 2u + 퍼짐 σ) — 최대 8
+    const stage: number[] = []
+    for (const [sid, cnt] of perSubject) {
+      if (stage.length >= 32) break
+      const sg = Math.min(3, 0.5 + 0.06 * Math.sqrt(cnt))
+      const c = this.branchCenter(this.subjectOf(sid).k, sg)
+      stage.push(c[0], c[1], c[2], 2 + sg)
+    }
+    this.stageArr = stage.length ? new Float32Array(stage) : null
+    this.applyStage()
     this.notes.clear()
     this.noteOrder = []
     for (const n of list) {
@@ -1999,7 +2024,7 @@ export class FieldEngine {
       const col = sj.color
       const lum = 0.3 * col[0] + 0.59 * col[1] + 0.11 * col[2]
       const color: [number, number, number] = sj.k < 0 ? [0.86, 0.89, 1] : [0.12 + 0.88 * (lum + (col[0] - lum) * 0.45 / Math.max(0.35, this.satOf(col))), 0.12 + 0.88 * (lum + (col[1] - lum) * 0.45 / Math.max(0.35, this.satOf(col))), 0.12 + 0.88 * (lum + (col[2] - lum) * 0.45 / Math.max(0.35, this.satOf(col)))]
-      this.notes.set(n.id, { subjectId: n.subjectId, links: n.links, pos: pc.pos, s: pc.s, level: 0.35 + 0.45 * tL, size: 1.6 + 0.6 * tL, color })
+      this.notes.set(n.id, { subjectId: n.subjectId, links: n.links, pos: pc.pos, s: pc.s, level: 0.35 + 0.45 * tL, size: 2.0 + 0.4 * tL, color }) // 하한 2.0px (review-m2)
       this.noteOrder.push(n.id)
     }
     if (pairs) {
@@ -2088,7 +2113,8 @@ export class FieldEngine {
     if (!g) return
     const all = this.noteLinkPairs
     const M = all.length
-    const base = Math.min(0.14, 2.2 / Math.sqrt(Math.max(1, M)))
+    const base = M <= 100 ? 0.18 : Math.min(0.14, 2.2 / Math.sqrt(Math.max(1, M))) // 링크 100개 이하: 1px · 18% (review-m2)
+    if (onlyLast && M === 101) onlyLast = false // 18% → 14% 경계: 전부 다시
     if (onlyLast && (this.segCount + 8) * 12 > this.segBuf.length) onlyLast = false
     if (!onlyLast && this.segBuf.length < Math.max(1, M * 8) * 12) this.segBuf = new Float32Array(Math.ceil(Math.max(1, M * 8) * 12 * 1.25))
     const pairs = onlyLast ? all.slice(-1) : all
@@ -2188,11 +2214,30 @@ export class FieldEngine {
     }, 2000)
   }
   private dustPos(d: { id: string }): [number, number, number] {
-    const h = hashStr(d.id)
+    // FNV 해시는 끝 글자만 다른 id('dust:0'…'dust:9')에서 위 16비트가 거의 같아 점이 한 방향으로 뭉쳤다 → 섞어서 쓴다
+    let h = hashStr(d.id)
+    h = Math.imul(h ^ (h >>> 16), 0x85ebca6b) >>> 0
+    h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0
+    h = (h ^ (h >>> 16)) >>> 0
     const c = LANDMARKS.focus
-    const r = 0.9 + 0.7 * ((h & 0xffff) / 65536)
+    const r = 1.5 + 0.8 * ((h & 0xffff) / 65536) // 별자리(1.4u) 바깥 고리
     const a = (((h >>> 16) & 0xffff) / 65536) * Math.PI * 2
-    return [c[0] + r * Math.cos(a), c[1] + 0.2, c[2] + r * Math.sin(a)]
+    const q: [number, number, number] = [c[0] + r * Math.cos(a), c[1] + 0.2, c[2] + r * Math.sin(a)]
+    // 오늘의 별자리 별에서 화면 18px 이상: 세계 거리 DUST_GAP(오늘 장소 기준)보다 가까우면 바깥으로 민다
+    for (let it = 0; it < 2; it++)
+      for (const st of this.stars.values()) {
+        if (st.layer !== 'today') continue
+        const P = pos3(st)
+        const dx = q[0] - P[0]
+        const dz = q[2] - P[2]
+        const dd = Math.hypot(dx, dz)
+        if (dd >= DUST_GAP) continue
+        const ux = dd > 1e-4 ? dx / dd : Math.cos(a)
+        const uz = dd > 1e-4 ? dz / dd : Math.sin(a)
+        q[0] = P[0] + ux * DUST_GAP
+        q[2] = P[2] + uz * DUST_GAP
+      }
+    return q
   }
   /** D8 검색: 앞 12개 반짝(40ms 간격) 뒤 결과 +25% · 나머지 별·선 ×0.5로 고정. []이면 원래대로 */
   glintNotes(ids: string[]): void {
@@ -2278,17 +2323,19 @@ export class FieldEngine {
         const vis = d.path ? 1 : dustVis
         const h = hashStr(d.id)
         const fading = d.fadeT0 !== undefined
+        const fresh = !fading && !d.path && t - d.t0 < 3 && t - d.t0 >= 0
         out.push({
           id: 'dust:' + d.id,
           group: 'dust',
           pos: this.dustPos(d),
           L: 1,
           color: col,
-          size: d.path ? 2 : 1 + 0.4 * ((h >>> 8) % 100) / 100,
-          from: fading ? 0.45 * vis : 0,
-          to: fading ? 0 : 0.45 * vis,
+          size: d.path ? 2 : 1.6,
+          // 1.6px · 55% (review-m2). 새 점은 처음 3초 85% → 55%로 내려앉아 저장 전후가 구별된다
+          from: fading ? 0.55 * vis : fresh ? 0.85 * vis : 0,
+          to: fading ? 0 : 0.55 * vis,
           t0: fading ? d.fadeT0! : d.t0,
-          dur: fading ? 0.6 : this.mode === 'off' ? 0 : 0.6,
+          dur: fading ? 0.6 : this.mode === 'off' ? 0 : fresh ? 3 : 0.6,
           drift: ((h >>> 3) % 628) / 100,
           path: d.path,
         })
@@ -2304,8 +2351,11 @@ export class FieldEngine {
         const sj = this.subjects.get(id)
         if (!sj) continue
         const k = (t - nb.t0) * (1.6 / nb.dur) // 절제판(800ms)은 같은 곡선을 두 배 빠르게
-        const lv = k < 0.6 ? 0.22 * (1 - Math.pow(1 - k / 0.6, 3)) : k < 1.6 ? 0.22 - 0.1 * (0.5 - 0.5 * Math.cos(Math.PI * (k - 0.6))) : 0.12
-        out.push({ id: 'neb:' + id, group: 'nebula', pos: this.branchCenter(sj.k), L: 1, color: sj.color, wr: 0.9 * Math.min(1, k / 0.6 + 0.001), from: lv, to: k < 1.6 ? 0.12 : lv, t0: t, dur: k < 1.6 ? (1.6 - k) * (nb.dur / 1.6) : 0 })
+        // 쉬는 밝기 16% · 핀 반지름 1.1u · 채도 −10% (review-m2: 12%에서는 분홍 HII와 구별되지 않았다)
+        const lv = k < 0.6 ? 0.22 * (1 - Math.pow(1 - k / 0.6, 3)) : k < 1.6 ? 0.22 - 0.06 * (0.5 - 0.5 * Math.cos(Math.PI * (k - 0.6))) : 0.16
+        const nl = 0.3 * sj.color[0] + 0.59 * sj.color[1] + 0.11 * sj.color[2]
+        const ncol: [number, number, number] = [nl + (sj.color[0] - nl) * 0.9, nl + (sj.color[1] - nl) * 0.9, nl + (sj.color[2] - nl) * 0.9]
+        out.push({ id: 'neb:' + id, group: 'nebula', pos: this.branchCenter(sj.k), L: 1, color: ncol, wr: 1.1 * Math.min(1, k / 0.6 + 0.001), from: lv, to: k < 1.6 ? 0.16 : lv, t0: t, dur: k < 1.6 ? (1.6 - k) * (nb.dur / 1.6) : 0 })
         if (k < 1.6 && !this.nebTimer)
           this.nebTimer = window.setTimeout(() => {
             this.nebTimer = 0
