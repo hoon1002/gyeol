@@ -304,6 +304,9 @@ button.peri-item:hover, .peri-item[aria-expanded="true"] { color: var(--text-1);
 }
 @media (min-width: 1200px) { .focus-stage { padding-bottom: 64px; } }
 .focus-stage.is-running { padding-top: 40px; padding-bottom: 40px; }
+/* 전력: 집중 실행 중 진행선은 1초마다 0.1–0.3px씩만 나아간다(25–90분 ÷ 480px). 1초 linear 전환이 매초 다시 걸리면
+   'left'(배치) 전환이 화면 주사율로 끝없이 돈다 → 실행 중에만 전환을 끈다(한 걸음이 1px 미만이라 보이는 결과 같음) */
+.focus-stage.is-running .gx-progress-fill, .focus-stage.is-running .gx-progress-now { transition: none; }
 .subject-pill {
   display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: var(--r-pill);
   border: 1px solid var(--border); background: var(--glass); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);

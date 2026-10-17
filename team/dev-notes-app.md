@@ -1,5 +1,39 @@
 # 개발 노트 — 앱
 
+## 전력 최적화 (성능 엔지니어, 2026-10-17)
+
+예산·근거는 `team/power-budget.md`에 있다. 동작·시각 결과는 바꾸지 않았다.
+
+**계측 도구 `src/perf/**` (개발 빌드 전용)**
+- `power.ts`: `main.tsx`가 `import.meta.env.DEV`일 때만 동적 import 하고 `install()`이 끝난 뒤 렌더한다. 프로덕션 번들에서 `__gyeolPower`·타이머 쿼리 문자열 0인 것을 확인했고, 청크도 늘지 않았다.
+  - rAF·setTimeout·setInterval·WebGL2 draw를 감싸서 잰다: 그린 프레임/초, 깨우기/초(등록한 곳별), rAF JS ms.
+  - `EXT_disjoint_timer_query_webgl2`로 GPU ms를 잰다(`measure()` 동안만).
+  - 그 밖에 긴 작업, 리소스 요청, JS 힙, CSS·WAAPI 애니메이션(합성 / 메인 스레드) 표본도 남긴다.
+- `probe.tsx`: `Probe`는 개발 빌드에서 `<Profiler>`, 프로덕션에서는 children 그대로다. 루트(`root`)와 7개 공간(`/`, `/notes` …)에 붙였고, 숨은 공간의 커밋을 따로 센다.
+- 콘솔 명령:
+  - `await __gyeolPower.measure(10)` · `.report()` · `.reset()` · `.snapshot()`
+  - 3D 시제품에서는 `(await import('/src/perf/power.ts')).install()`을 먼저 실행한다.
+
+**고친 것 (전 → 후, 1180×820 · DPR 2 · 120Hz)**
+
+| 파일 | 바꾼 것 | 전 → 후 |
+|---|---|---|
+| `src/styles/screens.css` | `.focus-stage.is-running`의 진행선 `transition: none`. 매초 다시 걸리던 `left 1s linear`(배치)·`transform 1s linear`을 끈다. 한 걸음이 0.1–0.3px라 결과는 같다. 멈춤·끝·초기화 때의 전환은 그대로 | 메인 스레드 애니메이션이 돈 초 7/7 → 0/8 |
+| `src/screens/Focus.tsx` | 1초 틱에서 이 공간이 비활성(keep-alive로 숨음)이면 `force` 재렌더를 생략한다. `growStar`·끝 감지는 그대로. 다시 보일 때는 활성 컨텍스트 변경으로 새 값이 그려진다 | 숨은 커밋 1/초 → 0, 숨은 진행선 전환 7/7초 → 0 |
+| `src/app/RootLayout.tsx` `useClockTicker` | 탭이 숨으면 분 타이머를 멈춘다. 보이면 즉시 `bump` + 분 경계에 다시 맞춘다 | 숨김 중 깨우기 1/분 → 0, 7개 공간 재렌더·DB 재조회 → 0 |
+| `src/main.tsx`, `RootLayout.Space` | 계측 붙이기(`Probe`), 개발 빌드만 | — |
+
+**측정 요약:**
+- 정지 화면은 React 커밋 0, 타이머 0, 네트워크 0이다. **전력의 거의 전부는 하늘이다**: 120fps, GPU 2.7–4.8ms/프레임, 초당 0.32–0.58초.
+- 집중 실행 중: GPU 373–520ms/초, React 1커밋/초(≈1ms dev).
+- 하늘 쪽 낭비(120fps 상한 없음, rAF 건너뛰기 상한, ProgressLine 전환)는 모션 개발자 몫으로 power-budget §4에 적었다.
+
+**고치지 않은 것:** keep-alive 숨은 공간이 분 시계마다 다시 그려진다(≈15ms/분 dev). 활성 컨텍스트를 구독하게 바꾸면 전환 커밋 프레임에 일이 늘어서 그대로 두었다.
+
+**검증:** `npm run build` 통과(타입 오류 0). 콘솔 오류 0. 집중 시작·이동·초기화 확인. 측정 뒤 타이머는 기록 없이 초기화했다(`reset`).
+
+---
+
 ## 검수 반영 (team/review.md, 2026-10-17)
 
 | # | 반영 |

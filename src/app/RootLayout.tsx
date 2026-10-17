@@ -16,6 +16,7 @@ import { useSettings } from '@/stores/settings'
 import { StarPress } from '@/shell/StarPress'
 import { SPACES } from '@/shell/spaces'
 import { ActiveContext } from './keepAlive'
+import { Probe } from '@/perf/probe'
 import { TodayScreen } from '@/screens/Today'
 import { NotesScreen } from '@/screens/Notes'
 import { GraphScreen } from '@/screens/Graph'
@@ -25,22 +26,38 @@ import { FocusScreen } from '@/screens/Focus'
 import { SettingsScreen } from '@/screens/Settings'
 import { useUi } from '@/stores/ui'
 
-/** 1분마다(분 경계에 맞춰) + 앱이 다시 보일 때 시계를 갱신 → 상황 엔진 재평가 */
+/**
+ * 1분마다(분 경계에 맞춰) + 앱이 다시 보일 때 시계를 갱신 → 상황 엔진 재평가.
+ * 전력: 탭이 숨으면 타이머를 멈춘다(숨은 동안 7개 공간 재렌더·DB 재조회 0, 깨우기 0). 다시 보이면 바로 갱신하고 분 경계에 다시 맞춘다.
+ */
 function useClockTicker() {
   const bump = useUi((s) => s.bumpTick)
   useEffect(() => {
     let iv = 0
-    const t = window.setTimeout(() => {
-      bump()
-      iv = window.setInterval(bump, 60_000)
-    }, 60_000 - (Date.now() % 60_000) + 50)
-    const onVis = () => {
-      if (!document.hidden) bump()
-    }
-    document.addEventListener('visibilitychange', onVis)
-    return () => {
+    let t = 0
+    const stop = () => {
       clearTimeout(t)
       clearInterval(iv)
+      t = iv = 0
+    }
+    const arm = () => {
+      stop()
+      t = window.setTimeout(() => {
+        bump()
+        iv = window.setInterval(bump, 60_000)
+      }, 60_000 - (Date.now() % 60_000) + 50)
+    }
+    const onVis = () => {
+      if (document.hidden) stop()
+      else {
+        bump()
+        arm()
+      }
+    }
+    if (!document.hidden) arm()
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      stop()
       document.removeEventListener('visibilitychange', onVis)
     }
   }, [bump])
@@ -78,7 +95,7 @@ const SCREENS: Record<string, ComponentType> = {
 /** 한 공간. 비활성이면 보이지만 않게(visibility, 배치는 유지 → 다시 보일 때 레이아웃 계산 없음) + inert. memo라 활성 여부가 바뀔 때만 다시 그린다 */
 const Space = memo(function Space({ path, active }: { path: string; active: boolean }) {
   const Screen = SCREENS[path]!
-  const content = useMemo(() => <Screen />, [Screen])
+  const content = useMemo(() => <Probe id={path}><Screen /></Probe>, [Screen, path])
   return (
     <ActiveContext.Provider value={active}>
       <div className="space" data-path={path} data-inactive={!active ? '' : undefined} aria-hidden={!active || undefined} inert={!active ? true : undefined}>

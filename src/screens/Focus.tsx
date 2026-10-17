@@ -2,7 +2,7 @@
  * 집중 v3: 명사구(과목) + 큰 숫자 25:00(Fraunces 200) + 1px 진행선. 원형 링 없음.
  * 하늘의 사건: 시작 = 새 별이 희미하게 생김 · 진행 = 그 별이 자람(growStar) ·
  * 세트 끝 = 별 탄생(birthStar) + 직전 별과 선(drawLink) · 끝내기(포기) = 별이 사그라짐(fadeStar).
- * 남은 시간은 시각 차로 계산(새로고침·백그라운드에도 정확). React는 1초마다만 다시 그린다.
+ * 남은 시간은 시각 차로 계산(새로고침·백그라운드에도 정확). React는 1초마다만, 이 공간이 보일 때만 다시 그린다.
  */
 import { useEffect, useRef, useState } from 'react'
 import { ProgressLine, useSkyEvent } from '@/fx'
@@ -44,6 +44,8 @@ export function FocusScreen() {
   const live = running || timer.phase === 'paused'
 
   const active = useActive()
+  const activeRef = useRef(active)
+  activeRef.current = active
 
   // ⌘K·오늘에서 넘어온 집중 의도
   useEffect(() => {
@@ -72,7 +74,8 @@ export function FocusScreen() {
       if (r <= 0) void complete()
       else {
         sky.growStar(starId(s.startedAt), 1 - r / s.plannedMs)
-        force((n) => n + 1)
+        // 숨은 공간(keep-alive)이면 다시 그리지 않는다 — 다시 보일 때 활성 컨텍스트 변경으로 새 값으로 그려진다(전력)
+        if (activeRef.current) force((n) => n + 1)
       }
     }
     tick()
