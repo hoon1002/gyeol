@@ -438,9 +438,6 @@ function PaperSlot(props: {
               <IconBack size={20} />
             </button>
           )}
-          <button type="button" className="np-o-open" {...tip('펼치기', { kbd: '↵' })} onClick={(e) => props.onOpenNote(note.id, e.currentTarget)}>
-            {props.thumb ? <img src={props.thumb} alt="" /> : <IconPen size={22} />}
-          </button>
           <p className="np-o-t">{noteName(note)}</p>
           <p className="np-o-m">
             <i className={`sdot${s ? '' : ' is-none'}`} style={s ? { ['--c' as string]: `var(--s-${s.color})` } : undefined} {...tip(s?.name ?? '과목 없음')} />
@@ -448,6 +445,7 @@ function PaperSlot(props: {
             {note.kind === 'pdf' && note.pages ? <span className="mono">{note.page ?? 1} / {note.pages}</span> : null}
           </p>
           {note.excerpt && <p className="np-o-x">{note.excerpt}</p>}
+          {(note.kind === 'ink' || note.kind === 'pdf') && <PagePreview note={note} fallback={props.thumb} onOpen={(el) => props.onOpenNote(note.id, el)} />}
           <Backlinks noteId={note.id} title={note.title} onOpen={props.onOpenNote} />
         </div>
       </div>
@@ -458,6 +456,40 @@ function PaperSlot(props: {
     <Suspense fallback={<PaperFallback />}>
       <NotePaper {...props} />
     </Suspense>
+  )
+}
+
+/**
+ * 미리보기 칸의 첫 쪽(검수 M3-2): 칸 너비 · 남은 높이에 맞춰 크게(최대 1쪽). 그림은 엔진의 inkThumbnailURL로
+ * 실제 상자 높이(40px 단위)에 맞춰 받는다 — 잉크 청크는 필기 노트를 미리볼 때만 불러온다. 누르면 펼친다.
+ */
+function PagePreview({ note, fallback, onOpen }: { note: Note; fallback?: string; onOpen: (el: Element) => void }) {
+  const box = useRef<HTMLButtonElement>(null)
+  const [h, setH] = useState(0)
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setH(Math.max(80, Math.round(el.clientHeight / 40) * 40)))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  useEffect(() => {
+    if (!h) return
+    let alive = true
+    void import('@/ink')
+      .then((m) => m.inkThumbnailURL({ noteId: note.id, height: h }))
+      .then((u) => alive && setUrl(u))
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [note.id, note.updatedAt, h])
+  const src = url ?? fallback
+  return (
+    <button type="button" ref={box} className="np-o-page" {...tip('펼치기', { kbd: '↵' })} onClick={(e) => onOpen(e.currentTarget)}>
+      {src ? <img src={src} alt="" /> : <IconPen size={22} />}
+    </button>
   )
 }
 

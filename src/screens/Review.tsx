@@ -259,8 +259,12 @@ function ReviewSession({
                 <button type="button" className="rv-again" {...tip('다시', { kbd: '1' })} onClick={() => void rate(R(1))}>
                   <IconUndo size={24} />
                 </button>
-                {words && <span className="rv-word">다시</span>}
-                {hasKeyboard && <span className="rv-key mono">1</span>}
+                {(words || hasKeyboard) && (
+                  <span className="rv-cap" aria-hidden="true">
+                    {words && <span className="rv-word">다시</span>}
+                    {hasKeyboard && <span className="rv-key mono">1</span>}
+                  </span>
+                )}
               </div>
               <CheckRate open={fan} setOpen={setFan} words={words} hasKeyboard={hasKeyboard} onRate={(r) => void rate(r)} />
             </div>
@@ -371,9 +375,15 @@ function CheckRate({ open, setOpen, words, hasKeyboard, onRate }: { open: boolea
       >
         <IconCheck size={24} />
       </button>
-      {words && <span className="rv-word">알았음</span>}
+      {/* 펼친 동안 ✓의 글·키 숫자는 숨긴다(세 단계에 같은 숫자가 있다) */}
+      {!open && (words || hasKeyboard) && (
+        <span className="rv-cap" aria-hidden="true">
+          {words && <span className="rv-word">알았음</span>}
+          {hasKeyboard && <span className="rv-key mono">3</span>}
+        </span>
+      )}
       {!open && <Hint id="H5" side="top" />}
-      {hasKeyboard && <span className="rv-key mono">3</span>}
+
       {open && (
         <div className="rv-fan" role="menu" aria-label="세 단계">
           {fanKs.map((k, n) => (

@@ -26,8 +26,10 @@
 .rv-again:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 599px) { .rv-again { width: 52px; height: 52px; } }
 /* 처음 10장만: 버튼 아래 낱말 40% */
-.rv-word { font-size: 11px; line-height: 1; color: var(--text-2); opacity: .4; white-space: nowrap; pointer-events: none; }
-.rv-key { position: absolute; top: -4px; right: -10px; font-size: 10px; color: var(--text-3); pointer-events: none; }
+/* 버튼 아래 가운데 한 줄: 처음 10장 낱말(40%) · 키 숫자(모노) */
+.rv-cap { display: inline-flex; align-items: baseline; gap: 5px; line-height: 1; white-space: nowrap; pointer-events: none; }
+.rv-word { font-size: 11px; color: var(--text-2); opacity: .4; }
+.rv-key { font-size: 10px; color: var(--text-3); }
 .rv-check { touch-action: none; -webkit-touch-callout: none; user-select: none; }
 
 /* ✓ 길게: 세 단계가 ✓ 오른쪽으로 펼쳐진다(카드 글을 가리지 않게 같은 높이 한 줄) */
