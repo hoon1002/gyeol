@@ -2365,6 +2365,18 @@ return {
   /** 계획에서 마감까지 d일 → 시간 띠 위 점 (design-m1 0-1 band) */
   bandPoint: (days: number) => screenToDisk((0.1 + (0.8 * Math.min(Math.max(days, 0), 14)) / 14) * cssW, SEAT[1] * cssH),
   /** 별 고르기 다가감: pos(패턴 좌표)로 거리 d까지 짧게 — 자세 그대로(롤·방위 변화 0). null이면 장소 자리로 물러남. 길이(ms) */
+  /** M3-6: 그 장소 기본 자세·지금 화면 크기에서 점 p(패턴 좌표) 둘레 1u가 몇 CSS px인가(k)와 원반 면 최대 단축(fore = |시선·위|) */
+  pxPerUnitAt: (id: string, p: [number, number, number]): { k: number; fore: number } => {
+    const pl = PLACES.find((x) => x.id === id) ?? place
+    const q = worldQ(pl, simT, homeOrient(pl))
+    const t = placeTarget(pl, simT)
+    const back = qRot(q, [0, 0, 1])
+    const d0 = pdist(pl)
+    const w = lookW(p)
+    const v: V3 = [w[0] - (t[0] + back[0] * d0), w[1] - (t[1] + back[1] * d0), w[2] - (t[2] + back[2] * d0)]
+    const D = Math.max(1e-3, Math.hypot(v[0], v[1], v[2]))
+    return { k: cssH / 2 / Math.tan((FOV * DEG) / 2) / D, fore: Math.abs(v[1]) / D }
+  },
   /** 지금 회전 속도(°/s): 끌기 중이면 마지막 움직임 속도(멈춘 지 90ms가 넘으면 0), 놓은 뒤면 관성 */
   spin: (): number => (drag && performance.now() - drag.t > DRAG_STALE_MS ? 0 : (Math.hypot(user.wv[0], user.wv[1], user.wv[2]) / DEG) * 1000),
   approach: (pos: [number, number, number] | null, d = 1.6): number => {
@@ -2615,6 +2627,10 @@ export class Galaxy3D {
   }
   approach(pos: [number, number, number] | null, d?: number): number {
     return this.api?.approach(pos, d) ?? 0
+  }
+  /** M3-6: 장소 기본 자세에서 1u의 화면 px · 원반 면 단축 */
+  pxPerUnitAt(id: string, p: [number, number, number]): { k: number; fore: number } | null {
+    return this.api?.pxPerUnitAt(id, p) ?? null
   }
   /** 지금 회전 속도(°/s) — 누르기 ↔ 끌기 구분 */
   spin(): number {

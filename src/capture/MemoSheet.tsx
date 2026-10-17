@@ -19,7 +19,8 @@ const InkPad = lazy(() => loadInk().then((m) => ({ default: m.InkPad })))
 import { tip } from '@/shell/Tip'
 import { pushLayer } from '@/shell/layers'
 import { useHintCount } from '@/shell/hints'
-import { IconChecklist, IconMic, IconPen, IconPin, IconPlus, IconStop } from '@/shell/icons'
+import { IconChecklist, IconClose, IconMic, IconPen, IconPin, IconPlus, IconStop } from '@/shell/icons'
+import { discardInkDraft, findInkDraft } from './inkDraft'
 import { SubjectPicker } from './SubjectPicker'
 import '@/styles/capture.css'
 
@@ -62,6 +63,11 @@ export function MemoSheet() {
   const [inkId, setInkId] = useState<string | null>(null)
   const [inkCount, setInkCount] = useState(0)
   const [padW, setPadW] = useState(0)
+  const inkIdRef = useRef<string | null>(null)
+  inkIdRef.current = inkId
+  const discardTimer = useRef(0)
+  /** 패드가 실제 획 수를 알려 줬는가(알기 전에 닫으면 초안을 지우지 않는다) */
+  const [inkKnown, setInkKnown] = useState(false)
   const voice = useVoice()
   const ph = useHintCount('memo-ph', 3)
   const enterHint = useHintCount('memo-enter', 3)
@@ -120,6 +126,8 @@ export function MemoSheet() {
       layer.inert = true
       setOpen(false)
       setPicker(false)
+      // 펜 대기는 한 번 열 때만: 다음에 손가락으로 열면 글, 펜이면 다시 펜 대기(초안은 남는다)
+      setPenWait(false)
       const o = originRef.current as HTMLElement | null
       originRef.current = null
       if (o && o !== document.body && document.contains(o) && typeof o.focus === 'function') o.focus({ preventScroll: true })
@@ -162,12 +170,22 @@ export function MemoSheet() {
 
   // 펜 대기 = 손글씨 칸(design-ink 8-1): 칸은 처음부터 커진 크기로 깔리고 펜 아래 그림은 움직이지 않는다
   useEffect(() => {
-    if (!penWait) return
-    setInkId((x) => x ?? uid('memo-'))
+    if (!penWait || !open) return
+    // 저장하지 않은 초안(획이 있는 'memo:' 쪽)이 있으면 그것을 다시 붙인다(M3-7)
+    if (!inkIdRef.current) void findInkDraft().then((d) => setInkId((x) => x ?? d ?? uid('memo-')))
     const box = layerRef.current?.querySelector('.memo-box') as HTMLElement | null
     setPadW(Math.max(200, Math.round((box?.clientWidth ?? 360) - 32)))
     void loadInk()
-  }, [penWait])
+  }, [penWait, open])
+
+  // 비우기: 획 0으로 닫으면 초안 쪽을 정리한다
+  useEffect(() => {
+    if (open || !inkId || !inkKnown || inkCount > 0) return
+    void discardInkDraft(inkId)
+    setInkId(null)
+    setInkKnown(false)
+  }, [open, inkId, inkCount, inkKnown])
+  useEffect(() => setInkKnown(false), [inkId])
 
   // 펜 대기 중 키를 치면 글 상태로 (아직 그린 것이 없을 때만)
   useEffect(() => {
@@ -399,7 +417,7 @@ export function MemoSheet() {
           {penWait && inkId && padW > 0 && (
             <div className="memo-ink" data-ink-slot="memo" style={{ height: phone ? 200 : 220 }}>
               <Suspense fallback={<div className="memo-ink-wait" />}>
-                <InkPad memoId={inkId} width={padW} height={phone ? 200 : 220} onChange={setInkCount} />
+                <InkPad memoId={inkId} width={padW} height={phone ? 200 : 220} onChange={(n) => { setInkCount(n); setInkKnown(true) }} />
               </Suspense>
             </div>
           )}
@@ -474,6 +492,33 @@ export function MemoSheet() {
                 taRef.current?.focus({ preventScroll: true })
               }}
             />
+            {penWait && inkId && (
+              <button
+                type="button"
+                className="ibtn memo-ink-x"
+                data-radial=""
+                {...tip('닫기 · 길게 버리기')}
+                onPointerDown={(e) => {
+                  e.preventDefault()
+                  const id = inkId
+                  discardTimer.current = window.setTimeout(() => {
+                    discardTimer.current = -1
+                    void discardInkDraft(id)
+                    setInkId(null)
+                    setInkCount(0)
+                    closeNow()
+                  }, 500)
+                }}
+                onPointerUp={() => clearTimeout(discardTimer.current)}
+                onPointerLeave={() => clearTimeout(discardTimer.current)}
+                onClick={() => {
+                  if (discardTimer.current === -1) return
+                  closeNow()
+                }}
+              >
+                <IconClose size={18} />
+              </button>
+            )}
             {penWait && inkCount > 0 ? (
               <button type="button" className="memo-send" {...tip('저장', { kbd: '⌘↵' })} onPointerDown={(e) => e.preventDefault()} onClick={() => void submit()}>↑</button>
             ) : phone ? (

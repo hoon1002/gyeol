@@ -824,3 +824,4 @@
 {"t":"09:15:36.408","type":"error","text":"[vite] Failed to reload /src/capture/DustBox.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above)","at":"@vite/client:1014"}
 {"t":"09:15:36.423","type":"error","text":"[vite] SyntaxError: The requested module '/src/capture/api.ts?t=1792228536387' does not provide an export named 'formatChecklist'","at":"@vite/client:1014"}
 {"t":"09:15:36.423","type":"error","text":"[vite] Failed to reload /src/app/RootLayout.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above)","at":"@vite/client:1014"}
+{"t":"10:49:30.524","type":"error","text":"The final argument passed to %s changed size between renders. The order and size of this array must remain constant.\n\nPrevious: %s\nIncoming: %s useEffect [false] [false, false]","at":"deps/react-dom_client.js?v=31f02023:4383"}

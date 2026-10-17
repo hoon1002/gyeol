@@ -261,14 +261,19 @@ function branchPos(k: number): [number, number, number] {
   const th = Math.atan2(c[2], c[0]) - (0.25 * k * Math.cos((18 * Math.PI) / 180)) / r0
   return [rr * Math.cos(th), c[1] + 0.1, rr * Math.sin(th)]
 }
-const pos3 = (s: { layer: Layer; x: number; y: number }): [number, number, number] => {
+/** M3-6 오늘의 별자리: 별마다 밀어 둔 거리(u, x · z) — 가까운 쌍만 떨어뜨린다 */
+const todayAdj = new Map<string, [number, number]>()
+let todayInfo = { dmin: 0, k: 0, fore: 0 }
+const pos3 = (s: { layer: Layer; x: number; y: number; id?: string }): [number, number, number] => {
   const z = LAYER3D[s.layer]
   if (s.layer === 'today') {
     // 오늘의 별자리 (review-m2): 별자리 상자(scenes todayStarPositions) 가운데를 나의 자리에 두고 반지름 1.4u로 편다.
     // 상자 안 걸음 28–64px → 0.3u 이상 → 오늘 3/4 시점(약 35–40px/u)에서 별 사이 10px 이상
     const phone = typeof window !== 'undefined' && Math.min(window.innerWidth, window.innerHeight) < 600
-    const [cx, cy, S] = phone ? [0.25, 0.29, 8.2] : [0.48, 0.25, 9.3]
-    return [z.c[0] + (s.x - cx) * S, z.c[1] + 0.12, z.c[2] + (s.y - cy) * S]
+    const [cx, cy, S0] = phone ? [0.25, 0.29, 8.2] : [0.48, 0.25, 9.3]
+    // M3-6: 지금 구도에서 별 사이가 14px 이상이 되게 FieldEngine이 가까운 쌍만 밀어 둔 만큼(u) 더한다(모양은 그대로)
+    const adj = s.id ? todayAdj.get(s.id) : undefined
+    return [z.c[0] + (s.x - cx) * S0 + (adj?.[0] ?? 0), z.c[1] + 0.12, z.c[2] + (s.y - cy) * S0 + (adj?.[1] ?? 0)]
   }
   return [z.c[0] + (s.x - 0.5) * z.span, z.c[1] + 0.12, z.c[2] + (s.y - 0.5) * z.span]
 }
@@ -526,7 +531,10 @@ export class FieldEngine {
     let rz = 0
     on('resize', () => {
       cancelAnimationFrame(rz)
-      rz = requestAnimationFrame(() => this.resize())
+      rz = requestAnimationFrame(() => {
+        this.resize()
+        if (this.g3d) this.pushStars() // M3-6: 크기가 바뀌면 오늘의 별자리 넓힘 배수를 다시
+      })
     })
     on(
       'pointermove',
@@ -940,12 +948,49 @@ export class FieldEngine {
   }
 
   /** 데이터 별을 하늘에 올린다 (한 프레임에 한 번으로 모은다) */
+  /** M3-6: 오늘 장소 기본 자세 · 지금 화면 크기에서 오늘의 별자리 별 사이가 최소 14px(+15% 여유)이 되게 가까운 쌍만 밀어 낸다.
+   *  은하가 돌아 별자리를 보는 방향이 바뀌어도 되게 원반 면 최대 단축(sin 고도)으로 세계 거리를 정한다. 크기·밝기·선은 그대로 */
+  private updateTodayScale(): void {
+    todayAdj.clear()
+    const ts = [...this.stars.values()].filter((s) => s.layer === 'today')
+    const m = this.g3d?.pxPerUnitAt('today', [LANDMARKS.focus[0], LANDMARKS.focus[1] + 0.12, LANDMARKS.focus[2]])
+    if (!m || ts.length < 2) return
+    const dmin = Math.min(1.2, (14 * 1.15) / (m.k * Math.max(0.15, m.fore)))
+    todayInfo = { dmin, k: m.k, fore: m.fore }
+    const P = ts.map((s) => pos3({ layer: 'today', x: s.x, y: s.y }))
+    const B = P.map((p) => [p[0], p[2]] as [number, number])
+    for (let it = 0; it < 40; it++) {
+      let moved = false
+      for (let i = 0; i < P.length; i++)
+        for (let j = i + 1; j < P.length; j++) {
+          let dx = P[j]![0] - P[i]![0]
+          let dz = P[j]![2] - P[i]![2]
+          let d = Math.hypot(dx, dz)
+          if (d >= dmin) continue
+          if (d < 1e-4) {
+            const a = ((hashStr(ts[j]!.id) % 628) / 100)
+            dx = Math.cos(a)
+            dz = Math.sin(a)
+            d = 1
+          }
+          const push = (dmin - Math.min(d, dmin)) / 2 + 1e-4
+          P[i]![0] -= (dx / d) * push
+          P[i]![2] -= (dz / d) * push
+          P[j]![0] += (dx / d) * push
+          P[j]![2] += (dz / d) * push
+          moved = true
+        }
+      if (!moved) break
+    }
+    ts.forEach((s, i) => todayAdj.set(s.id, [P[i]![0] - B[i]![0], P[i]![2] - B[i]![1]]))
+  }
   private pushStars() {
     if (this.pushQueued) return
     this.pushQueued = true
     queueMicrotask(() => {
       this.pushQueued = false
       if (this.g3d) {
+        this.updateTodayScale()
         const list: DataStar[] = []
         for (const s of this.stars.values()) {
           if (s.to <= 0.001 && this.curLevel(s) <= 0.001) continue
@@ -1782,6 +1827,14 @@ export class FieldEngine {
     /** M2 검증: 하늘 사건을 콘솔에서 바로 (dust · fileDust · glintNotes · bloomNebula · revealGalaxy · importNotes · select) */
     events: () => this,
     /** M2 검증: 합성 노트 n개 · 링크 m개 (과목 6) */
+    /** M3-6 검증: 오늘의 별자리 별의 지금 화면 자리(CSS px)와 최소 간격 */
+    todayPx: () => {
+      const raw = this.g3d?.raw
+      const pts = [...this.stars.values()].filter((s) => s.layer === 'today').map((s) => raw?.project(pos3(s)) ?? null).filter((p): p is [number, number] => !!p)
+      let min = Infinity
+      for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) min = Math.min(min, Math.hypot(pts[i]![0] - pts[j]![0], pts[i]![1] - pts[j]![1]))
+      return { n: pts.length, minPx: Math.round(min * 10) / 10, ...todayInfo, pts: pts.map((p) => [Math.round(p[0]), Math.round(p[1])]) }
+    },
     synthNotes: (n = 1000, m = 2000) => {
       const subj = ['s0', 's1', 's2', 's3', 's4', 's5']
       const cols = ['#7FB0FF', '#F2A65A', '#9BE38B', '#E58FB0', '#C9A2FF', '#5ED6C8']

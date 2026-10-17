@@ -60,32 +60,21 @@ function VoicePlay({ assetId, ms }: { assetId: string; ms?: number | null }) {
   )
 }
 
-/** 손글씨 메모 썸네일: 그 쪽의 획을 높이 40px 띠 그림으로(엔진 썸네일 API가 없어 획 점을 직접 잇는다, 최대 80획) */
-function InkThumb({ memoId, pageId }: { memoId: string; pageId?: string | null }) {
-  const shape = useLiveQuery(async () => {
-    const page = pageId ? await db.pages.get(pageId) : await db.pages.where('noteId').equals('memo:' + memoId).first()
-    if (!page) return null
-    const rows = await db.strokes.where('pageId').equals(page.id).limit(80).toArray()
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
-    const ds: string[] = []
-    for (const r of rows) {
-      const pts = new Float32Array((r as { points: ArrayBuffer }).points)
-      let d = ''
-      for (let i = 0; i + 1 < pts.length; i += 8) {
-        const x = pts[i]!, y = pts[i + 1]!
-        x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y)
-        d += `${d ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`
-      }
-      if (d) ds.push(d)
+/** 손글씨 메모 썸네일: 엔진 썸네일 API(잉크만 잘라 높이 40px, 종이 없음). object URL은 엔진 캐시가 관리하므로 revoke하지 않는다. 없으면 펜 아이콘 */
+function InkThumb({ memoId }: { memoId: string }) {
+  const [url, setUrl] = useState<string | null | undefined>(undefined)
+  useEffect(() => {
+    let alive = true
+    void import('@/ink')
+      .then(({ inkThumbnailURL }) => inkThumbnailURL({ noteId: 'memo:' + memoId, height: 40, fit: 'ink', paper: 'none' }))
+      .then((u) => alive && setUrl(u))
+      .catch(() => alive && setUrl(null))
+    return () => {
+      alive = false
     }
-    return ds.length ? { ds, box: `${x0 - 4} ${y0 - 4} ${Math.max(8, x1 - x0 + 8)} ${Math.max(8, y1 - y0 + 8)}` } : null
-  }, [memoId, pageId])
-  if (!shape) return <IconPen size={16} />
-  return (
-    <svg className="dust-ink" viewBox={shape.box} height="40" preserveAspectRatio="xMinYMid meet" aria-hidden="true">
-      {shape.ds.map((d, i) => <path key={i} d={d} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />)}
-    </svg>
-  )
+  }, [memoId])
+  if (!url) return <IconPen size={16} />
+  return <img className="dust-ink" src={url} alt="" height={40} />
 }
 
 function Row({ memo, subjects, archive, selecting, selected, onSelect, onFocusMove }: {
@@ -207,7 +196,7 @@ function Row({ memo, subjects, archive, selecting, selected, onSelect, onFocusMo
         ) : (
           memo.text && <p className="dust-text">{memo.text}</p>
         )}
-        {memo.kind === 'ink' && <InkThumb memoId={memo.id} pageId={memo.pageId} />}
+        {memo.kind === 'ink' && <InkThumb memoId={memo.id} />}
         <p className="dust-meta">
           <span className="dust-chip-wrap">
             <button type="button" className="ibtn dust-subj" tabIndex={-1} {...tip(`${s?.name ?? '과목 없음'} · ${fmtMD(memo.createdAt)} ${when}`)} onClick={(e) => { e.stopPropagation(); setPick(true) }}>

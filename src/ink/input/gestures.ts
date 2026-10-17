@@ -82,7 +82,12 @@ export class Gestures {
       this.baseline()
       if (this.group) this.group.d0 = this.d
       if (this.touches.size === 2 && this.group && !this.group.moved) this.holdTimer = window.setTimeout(() => this.onHold(), T.holdUndoMs)
-      if (this.mode === 'pan') this.mode = 'pinch'
+      if (this.mode === 'pan') {
+        // 한 손가락 이동 중 두 번째 손가락: 배율 기준을 지금 화면 배율로 잡는다
+        // (안 잡으면 raw가 0이라 두 손가락 탭이 '0배로 오므림'이 되어 종이가 닫혔다 — QA #21)
+        this.mode = 'pinch'
+        this.raw = this.eng.view.s
+      }
     }
   }
 
@@ -175,7 +180,7 @@ export class Gestures {
       return
     }
     const v = this.eng.view
-    if (this.d > 0 && d > 0) {
+    if (this.d > 0 && d > 0 && this.raw > 0) {
       // 맞춤 아래는 고무줄: 손가락만큼 다 줄지 않는다
       this.raw *= d / this.d
       const disp = this.raw >= v.fit || v.fixed ? this.raw : v.fit * (1 - (1 - this.raw / v.fit) * T.pinchRubber)
@@ -227,7 +232,8 @@ export class Gestures {
     if (mode === 'pinch' || (mode === 'pan' && g?.pinched)) {
       const v = this.eng.view
       if (v.zoom < 1 && !v.fixed) {
-        if (v.zoom < T.pinchCloseBelow && this.eng.mode === 'note') this.eng.emit('pinchclose', { zoom: v.zoom })
+        // 진짜로 오므린 경우만 닫는다 (두·세 손가락 탭, 한 손가락 이동 뒤 붙은 손가락은 닫지 않음)
+        if (g?.pinched && v.zoom > 0.05 && v.zoom < T.pinchCloseBelow && this.eng.mode === 'note') this.eng.emit('pinchclose', { zoom: v.zoom })
         const [wx, wy] = v.toWorld(v.W / 2, v.H / 2)
         v.animateTo(v.fit, wx - v.W / (2 * v.fit), wy - v.H / (2 * v.fit), T.zoomSnapMs)
       } else v.snapZoom(this.c[0], this.c[1])
