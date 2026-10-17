@@ -1899,6 +1899,7 @@ function drawEvents(m: Float32Array, now: number) {
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, dustRT.tex)
     gl.uniform1i(P.lclamp.u.uTex!, 0)
+    gl.uniform1f(P.lclamp.u.uMax!, noteN > 0 && noteN <= 100 ? 0.5 : 0.35)
     gl.uniform4f(P.lclamp.u.uSrc!, lw / dustRT.w, lh / dustRT.h, (lw - 0.5) / dustRT.w, (lh - 0.5) / dustRT.h)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
   }

@@ -2,6 +2,8 @@
  * ⌘K 팔레트 (design-v2 4-4 → design-m2 5장 · 리더 결정 4). cmdk 기반, 거르기는 직접(shouldFilter=false).
  * 한 목록 8줄 고정: ① 장소·명령(해석된 동작 포함) ≤ 2 ② 노트 ≤ 4(제목 일치 → 본문 일치, src/search 역색인)
  * ③ 메모 ≤ 2 ④ 마지막 줄은 늘 '메모로 저장 · ‘입력어’'(B의 saveMemo). 빈 입력은 '최근' 노트 5.
+ * 노트 제목과 정확히·앞부분이 맞으면 그 노트가 늘 첫 줄. 자연어 명령은 동작 신호(parser intent)가 있을 때만 위에,
+ * 과목 별칭만 맞으면 아래쪽 제안('… ›')으로.
  * 노트를 고르면 그 별이 지도에서 반짝인다(glintNotes).
  * 한글 조합 중 Enter는 cmdk가 무시한다(isComposing / keyCode 229) — 입력창에서도 한 번 더 막는다.
  * 폰(<600)은 아래에서 올라오는 시트(입력창이 엄지 쪽 아래).
@@ -338,19 +340,23 @@ function Palette() {
     // ---- 빈 입력: 최근 노트 5 ----
     if (!q) return notes.slice(0, 5).map((n) => ({ ...noteRow(n), group: '최근' }))
 
-    // ① 장소·명령 ≤ 2 (해석된 동작이 먼저)
+    // ① 장소·명령 ≤ 2. 자연어 명령(동작)은 질의에 동작 신호(집중 · n분 · 추가 · 마감 · 복습 …, parser intent)가 있을 때만 위에 둔다.
+    //    신호 없이 과목 별칭만 맞으면('라플라스', '물리') 노트·메모가 먼저, 그 과목 명령·렌즈는 아래쪽 제안('공업수학 25분 집중 ›')으로만.
+    const signal = !!p.intent
     const actions = list.filter((it) => it.group === '동작')
-    const cmds = list
+    const scored = list
       .filter((it) => it.group !== '동작')
       .map((it) => {
         const m = matchText(it.label, q, it.keywords)
-        const bySubject = sb && it.id === 'lens-' + sb.id
-        return { it: { ...it, range: m.range }, score: m.score || (bySubject ? 1 : 0) }
+        const bySubject = !!sb && it.id === 'lens-' + sb.id
+        return { it: { ...it, range: m.range }, score: m.score || (bySubject ? 1 : 0), weak: bySubject && !signal }
       })
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score)
-      .map((x) => x.it)
-    const head = [...actions, ...cmds].slice(0, 2)
+    const strong = [...(signal ? actions : []), ...scored.filter((x) => !x.weak).map((x) => x.it)]
+    const weak = [...(signal ? [] : actions.map((a) => ({ ...a, label: a.label + ' ›' }))), ...scored.filter((x) => x.weak).map((x) => x.it)]
+    const strongHead = strong.slice(0, 2)
+    const weakHead = weak.slice(0, 2 - strongHead.length)
 
     // ② 노트 ≤ 4: 역색인(제목 일치 → 본문 일치). 색인이 아직이면 제목만
     const byId = new Map(notes.map((n) => [n.id, n]))
@@ -391,7 +397,13 @@ function Palette() {
         void saveMemo(q)
       },
     }
-    return [...head, ...noteHits, ...memoHits, save]
+    // 노트 제목과 정확히(없으면 앞부분이) 맞으면 그 노트가 늘 첫 줄
+    const ql = q.toLowerCase()
+    const titleOf = (it: Item) => (it.preview.kind === 'note' ? it.preview.note.title : it.label).trim().toLowerCase()
+    const lead = noteHits.find((it) => titleOf(it) === ql) ?? noteHits.find((it) => titleOf(it).startsWith(ql))
+    const rows = [...(lead ? [lead] : []), ...strongHead, ...noteHits.filter((it) => it !== lead), ...memoHits, ...weakHead]
+    // 8줄 고정: 마지막 줄은 늘 '메모로 저장'
+    return [...rows.slice(0, 7), save]
   }, [query, parsed, subjects, notes, now, themePref, motionLevel, indexVer, sky])
 
   const selected = items.find((it) => it.id === value) ?? items[0]

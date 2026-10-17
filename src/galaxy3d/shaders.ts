@@ -534,6 +534,7 @@ precision highp float;
 in vec2 vUv;
 uniform sampler2D uTex;
 uniform vec4 uSrc;
+uniform float uMax; // 층 상한 (0.35, 노트 100개 이하 0.5 — 별 하나 하한 45%가 보이게)
 out vec4 o;
-void main() { o = vec4(min(texture(uTex, min(vUv * uSrc.xy, uSrc.zw)).rgb, vec3(0.35)), 1.0); }
+void main() { o = vec4(min(texture(uTex, min(vUv * uSrc.xy, uSrc.zw)).rgb, vec3(uMax)), 1.0); }
 `

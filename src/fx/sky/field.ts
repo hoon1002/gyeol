@@ -1298,6 +1298,7 @@ export class FieldEngine {
     this.lens = subjectId
     this.sky?.setTint(cssColor(color))
     this.g3d?.setTint(subjectId ? cssColor(color) : null)
+    if (this.notes.size) this.uploadNotes()
     for (const s of this.stars.values()) this.animTo(s, this.visTarget(s), 0.6)
     this.pushStars()
   }
@@ -1931,6 +1932,11 @@ export class FieldEngine {
   private nebTimer = 0
 
   /** 과목 없음(null · '' · '_none'): 지도 성운 한가운데 '과목 없음' 가지, 중립 흰빛 */
+  private satOf(c: [number, number, number]): number {
+    const mx = Math.max(c[0], c[1], c[2])
+    const mn = Math.min(c[0], c[1], c[2])
+    return mx > 0 ? (mx - mn) / mx : 0
+  }
   private static NONE = { color: [0.86, 0.89, 1] as [number, number, number], k: -1, bloomed: false }
   private subjectOf(id: string | undefined | null): { color: [number, number, number]; k: number; bloomed: boolean } {
     if (!id || id === '_none') return FieldEngine.NONE
@@ -1989,9 +1995,11 @@ export class FieldEngine {
         this.posCache.set(n.id, pc)
       }
       const tL = Math.min(1, Math.log(1 + Math.max(0, n.links)) * 0.45512 /* 1 / ln 9 */)
+      // 노트 별 = '내가 쓴 별': 과목색(채도 약 45%)을 띤다. 은하 별(흰·청백·금)과 색으로 구별. 과목 없음은 중립 흰빛
       const col = sj.color
-      const color: [number, number, number] = [0.6904 + col[0] * 0.2, 0.7152 + col[1] * 0.2, 0.8 + col[2] * 0.2]
-      this.notes.set(n.id, { subjectId: n.subjectId, links: n.links, pos: pc.pos, s: pc.s, level: 0.35 + 0.45 * tL, size: 1.2 + 1.4 * tL, color })
+      const lum = 0.3 * col[0] + 0.59 * col[1] + 0.11 * col[2]
+      const color: [number, number, number] = sj.k < 0 ? [0.86, 0.89, 1] : [0.12 + 0.88 * (lum + (col[0] - lum) * 0.45 / Math.max(0.35, this.satOf(col))), 0.12 + 0.88 * (lum + (col[1] - lum) * 0.45 / Math.max(0.35, this.satOf(col))), 0.12 + 0.88 * (lum + (col[2] - lum) * 0.45 / Math.max(0.35, this.satOf(col)))]
+      this.notes.set(n.id, { subjectId: n.subjectId, links: n.links, pos: pc.pos, s: pc.s, level: 0.35 + 0.45 * tL, size: 1.6 + 0.6 * tL, color })
       this.noteOrder.push(n.id)
     }
     if (pairs) {
@@ -2044,9 +2052,13 @@ export class FieldEngine {
     const sel = this.selected
     // 밀도 상한: 별 하나의 세기 × min(1, 7/√N) — 30개 안팎이면 그대로, 1,000개면 ≈ 0.22. 고른 별·검색 결과는 예외
     const dens = Math.min(1, 7 / Math.sqrt(Math.max(1, n)))
+    const lens = this.lens
     for (const id of this.noteOrder) {
       const r = this.notes.get(id)!
-      let lv = r.level * dens
+      // 하한: 노트 100개 이하면 별 하나가 최소 45% (처음 쓰는 학생에게 '내 별'이 분명히)
+      let lv = n <= 100 ? Math.max(0.45, r.level * dens) : r.level * dens
+      // 렌즈(과목 칩): 그 과목 노트 별 +30%, 나머지 ×0.4
+      if (lens) lv *= r.subjectId === lens ? 1.3 : 0.4
       if (this.search) lv = this.search.has(id) ? Math.max(lv, r.level) * 1.25 : lv * 0.5
       if (sel && this.notes.has(sel)) lv = id === sel ? 1 : lv * 0.5
       const o = i * 8
