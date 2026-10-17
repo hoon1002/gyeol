@@ -30,6 +30,7 @@ import { TipLayer } from '@/shell/Tip'
 import { DustSheet } from '@/capture/DustBox'
 import { CaptureSky } from '@/capture/CaptureSky'
 import { Onboarding } from '@/onboarding/Onboarding'
+import { Diag } from '@/shell/Diag'
 
 /**
  * 1분마다(분 경계에 맞춰) + 앱이 다시 보일 때 시계를 갱신 → 상황 엔진 재평가.
@@ -197,6 +198,7 @@ export function RootLayout() {
           <MemoSheet />
           <DustSheet inlineOnToday={land && path === '/'} />
           <Onboarding />
+          <Diag />
           <StarPress />
           <SettingsSheet />
           <CommandPalette />

@@ -405,6 +405,18 @@ export class FieldEngine {
 
   /* ---------- DOM ---------- */
 
+  /** 하늘 모드와 그 이유 (진단 ?diag=1 · console.warn) */
+  skyMode: { mode: '3d' | '2.5d'; reason: string } = { mode: '2.5d', reason: '아직 붙지 않음' }
+  private relost = false
+  private setSkyMode(mode: '3d' | '2.5d', reason: string): void {
+    this.skyMode = { mode, reason }
+    if (mode === '2.5d') console.warn('[결] 3D 하늘 →2.5D:', reason)
+  }
+  /** 진단 칸(?diag=1)에 보일 하늘 정보 */
+  diag(): { mode: '3d' | '2.5d'; reason: string; tier: string | null; fps: number | null; power: string | null } {
+    const st = this.g3d?.stats() as { tier?: string; fps?: number; power?: string } | null | undefined
+    return { ...this.skyMode, tier: st?.tier ?? null, fps: st?.fps ?? null, power: st?.power ?? null }
+  }
   attach(host: HTMLDivElement): void {
     if (this.host) this.detach()
     this.host = host
@@ -424,7 +436,11 @@ export class FieldEngine {
     this.linkG = document.createElementNS('http://www.w3.org/2000/svg', 'g')
     svg.appendChild(this.linkG)
     // M1: 3D 은하가 기본. WebGL2가 없거나 C 등급이면 2.5D 하늘을 늦게 불러 쓴다
-    if (this.tierSetting !== 'C' && Galaxy3D.supported()) {
+    // 3D가 되는 기기는 등급이 낮아도(C) 3D — 2.5D는 WebGL2가 없거나 3D 시작이 실패했을 때만 (안드로이드 진단, ?diag=1)
+    const relost = this.relost
+    this.relost = false
+    if (!Galaxy3D.supported()) this.setSkyMode('2.5d', 'supported: WebGL2를 쓸 수 없음')
+    else {
       try {
         this.g3d = new Galaxy3D({
           tier: this.tierSetting,
@@ -447,8 +463,12 @@ export class FieldEngine {
         this.g3d.setPaper(this.paperN > 0)
         this.uploadNotes()
         this.uploadNoteLinks()
-      } catch {
+        this.setSkyMode('3d', this.g3d.hdr ? 'HDR' : 'LDR(RGBA8) — EXT_color_buffer_float 없음 또는 RGBA16F 프레임버퍼 미완성')
+      } catch (e) {
         this.g3d = null
+        const msg = String((e as Error)?.message ?? e)
+        const stage = /^(context|compile|link|worker|fbo):/.test(msg) ? '' : 'init: '
+        this.setSkyMode('2.5d', (relost ? 'lost → ' : '') + stage + msg.slice(0, 400))
       }
     }
     if (!this.g3d) this.start2D(host, canvas)
@@ -505,6 +525,7 @@ export class FieldEngine {
         const h = this.host
         if (!h) return
         this.detach()
+        this.relost = true
         this.attach(h)
       }, 2000)
     }

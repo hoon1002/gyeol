@@ -250,7 +250,7 @@ export function createGalaxy3D(canvas: HTMLCanvasElement, opts: G3DOptions = {})
 /* ---------- GL ---------- */
 const qs = new URLSearchParams(opts.query ?? '')
 const glc = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, premultipliedAlpha: false, powerPreference: 'low-power' })
-if (!glc) throw new Error('WebGL2 없음')
+if (!glc) throw new Error('context: WebGL2 컨텍스트를 만들 수 없음')
 const gl = glc
 const cleanups: Array<() => void> = []
 const listen = <E extends Event>(t: EventTarget, type: string, f: (e: E) => void, o?: AddEventListenerOptions) => {
@@ -263,7 +263,30 @@ const inputEl: EventTarget = opts.input ?? canvas
 let dragOn = opts.drag ?? true
 const dragOk = (e: Event) => dragOn && !paperOn && (!opts.dragFilter || opts.dragFilter(e))
 powerMonitor.start()
-const hdr = !!gl.getExtension('EXT_color_buffer_float')
+/** HDR(RGBA16F) 장면: 확장이 있고 실제로 그 형식 프레임버퍼가 완성될 때만 — 아니면 RGBA8로 3D를 그대로 (안드로이드 일부 GPU) */
+const hdr = !qs.has('nohdr') && !/[?&]nohdr=1/.test(location.search) && !!gl.getExtension('EXT_color_buffer_float') && probeFloatFbo()
+function probeFloatFbo(): boolean {
+  const t = gl.createTexture()
+  const f = gl.createFramebuffer()
+  let ok = false
+  try {
+    gl.bindTexture(gl.TEXTURE_2D, t)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, 4, 4, 0, gl.RGBA, gl.HALF_FLOAT, null)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, f)
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0)
+    ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE
+  } catch {
+    ok = false
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+  gl.bindTexture(gl.TEXTURE_2D, null)
+  gl.deleteFramebuffer(f)
+  gl.deleteTexture(t)
+  while (gl.getError() !== gl.NO_ERROR) {
+    /* 시험에서 난 오류는 비운다 */
+  }
+  return ok
+}
 /** GPU 시간 (가능하면): EXT_disjoint_timer_query_webgl2 */
 const tq = gl.getExtension('EXT_disjoint_timer_query_webgl2') as { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number } | null
 function guessTier(): Tier {
@@ -285,34 +308,36 @@ function applyRot() {
 }
 applyRot()
 
-function prog(vs: string, fs: string) {
+/** 셰이더 프로그램. 실패하면 'compile:이름.vs|fs: 로그 앞 300자' · 'link:이름: 로그' 예외 (진단 · 2.5D 이유) */
+function prog(vs: string, fs: string, name = '?') {
   const mk = (t: number, s: string) => {
     const sh = gl.createShader(t)!
     gl.shaderSource(sh, s)
     gl.compileShader(sh)
-    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh) ?? 'compile')
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS) && !gl.isContextLost())
+      throw new Error(`compile:${name}.${t === gl.VERTEX_SHADER ? 'vs' : 'fs'}: ${(gl.getShaderInfoLog(sh) ?? '').slice(0, 300)}`)
     return sh
   }
   const p = gl.createProgram()!
   gl.attachShader(p, mk(gl.VERTEX_SHADER, vs))
   gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs))
   gl.linkProgram(p)
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) ?? 'link')
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS) && !gl.isContextLost()) throw new Error(`link:${name}: ${(gl.getProgramInfoLog(p) ?? '').slice(0, 300)}`)
   const u = new Proxy({} as Record<string, WebGLUniformLocation | null>, { get: (c, k: string) => (k in c ? c[k] : (c[k] = gl.getUniformLocation(p, k))) })
   return { p, u }
 }
 const P = {
-  star: prog(SH.STAR_VS, SH.STAR_FS),
-  cloud: prog(SH.CLOUD_VS, SH.CLOUD_FS),
-  down: prog(SH.FULL_VS, SH.DOWN_FS),
-  up: prog(SH.FULL_VS, SH.UP_FS),
-  comp: prog(SH.FULL_VS, SH.COMPOSITE_FS),
-  blit: prog(SH.FULL_VS, SH.BLIT_FS),
-  fg: prog(SH.FG_VS, SH.FG_FS),
-  down4: prog(SH.FULL_VS, SH.DOWN4_FS),
-  dot: prog(SH.DOT_VS, SH.DOT_FS),
-  lclamp: prog(SH.FULL_VS, SH.LINECLAMP_FS),
-  seg: prog(SH.SEG_VS, SH.SEG_FS),
+  star: prog(SH.STAR_VS, SH.STAR_FS, 'star'),
+  cloud: prog(SH.CLOUD_VS, SH.CLOUD_FS, 'cloud'),
+  down: prog(SH.FULL_VS, SH.DOWN_FS, 'down'),
+  up: prog(SH.FULL_VS, SH.UP_FS, 'up'),
+  comp: prog(SH.FULL_VS, SH.COMPOSITE_FS, 'comp'),
+  blit: prog(SH.FULL_VS, SH.BLIT_FS, 'blit'),
+  fg: prog(SH.FG_VS, SH.FG_FS, 'fg'),
+  down4: prog(SH.FULL_VS, SH.DOWN4_FS, 'down4'),
+  dot: prog(SH.DOT_VS, SH.DOT_FS, 'dot'),
+  lclamp: prog(SH.FULL_VS, SH.LINECLAMP_FS, 'lclamp'),
+  seg: prog(SH.SEG_VS, SH.SEG_FS, 'seg'),
 }
 
 /* ---------- 4층 전경 별 (design-v4 §7-2) ---------- */
@@ -437,7 +462,13 @@ let genMs = 0
 let uploadMs = 0
 let readyAt = 0
 const bufs: WebGLBuffer[] = []
-const worker = new GenWorker()
+const worker = (() => {
+  try {
+    return new GenWorker()
+  } catch (e) {
+    throw new Error('worker: ' + String((e as Error)?.message ?? e).slice(0, 200))
+  }
+})()
 let genId = 0
 let dustVao: WebGLVertexArrayObject | null = null
 let dustN = 0
@@ -2470,6 +2501,8 @@ return {
     touch()
   },
   /** K0 useSkyPaper: 필기 노트를 펼치면 true — 띠가 비켜나고 노출 0.5, 520ms 뒤 쉼(rAF 0). false면 600ms 램프로 깨어나 제자리 */
+  /** 장면 형식이 RGBA16F(HDR)인가 — 아니면 RGBA8 */
+  hdr,
   setPaper: (on: boolean) => {
     if (on === paperOn) return
     if (on) {
@@ -2536,6 +2569,10 @@ return {
 /** 3D 은하 엔진 — 마운트하면 캔버스 하나에 그리기 고리 하나 */
 export class Galaxy3D {
   /** WebGL2가 되는지 (컨텍스트를 바로 돌려준다) */
+  /** 이 엔진이 쓰는 장면 형식 — 진단용 */
+  get hdr(): boolean {
+    return this.api?.hdr ?? false
+  }
   static supported(): boolean {
     try {
       const c = document.createElement('canvas')

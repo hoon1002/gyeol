@@ -593,3 +593,27 @@
   - 390×844: 20.0 / 14.6
 - 캡처: `team/figma-assets/m3-app/today-constellation-{1440x900, 1180x820, 820x1180, 390x844}.jpg`
   - 격리 프로필이 첫 실행 상태라 하늘 무드를 'today'로 강제해 찍었다. 그래서 화면 UI는 실제 오늘 화면과 다를 수 있다.
+
+### 14-5. 안드로이드 3D 진단 · 대체 경로 (갤럭시탭 S7 FE 보고, 2026-10-17)
+- 실패 이유 기록: `FieldEngine.skyMode = { mode: '3d' | '2.5d', reason }`이고, 2.5D로 갈 때 `console.warn('[결] 3D 하늘 →2.5D:', reason)`을 남긴다.
+  - 단계 접두어: `supported:` · `context:` · `compile:셰이더이름.vs|fs: 로그 앞 300자` · `link:이름:` · `worker:` · `init:`(그 밖의 예외). 컨텍스트 손실 뒤 다시 붙이다 실패하면 앞에 `lost → `가 붙는다.
+  - 엔진 `prog()`가 셰이더 이름(star · cloud · comp …)을 단 예외를 던진다.
+  - `@/fx` `getSkyDiag()`로 읽는다.
+- 대체 경로:
+  - EXT_color_buffer_float가 없거나 RGBA16F 프레임버퍼가 완성되지 않으면(시작할 때 4×4로 시험) 장면을 RGBA8(LDR)로 그린다. 3D는 유지한다.
+  - `?nohdr=1`로 이 경로를 강제할 수 있다.
+  - 설정 등급 C도 이제 3D(낮은 등급)다. 2.5D는 WebGL2가 없거나 3D 시작이 예외로 실패할 때만 쓴다.
+  - 셰이더 점검: 모두 `precision highp float`이고, 반복문은 상수 상한이며, 정수 연산은 반복 변수뿐이다. 바꿀 것이 없었다.
+- 진단 칸 `?diag=1` (`src/shell/Diag.tsx`, RootLayout에 마운트, 리더 허가): 왼쪽 위 반투명 칸, 13px 고정폭 글자로 다음을 보인다.
+  - 하늘 모드 · 이유
+  - 3D 등급 · fps · 전력
+  - GPU(WEBGL_debug_renderer_info)
+  - WebGL2 여부 · 최대 텍스처
+  - 확장 4개(EXT_color_buffer_float · EXT_color_buffer_half_float · OES_texture_float_linear · EXT_float_blend)
+  - 화면 · 창 · DPR
+  - deviceMemory · 코어 · 보안 컨텍스트
+  - UA 줄임
+  - [복사]: clipboard가 안 되면 execCommand, 그것도 안 되면 글을 골라 둔다. 1초마다 새로 읽는다.
+- 확인(헤드리스 크롬 한 번, 직접 띄운 개발 서버, 둘 다 바로 끔):
+  - 맥: 하늘 3D — HDR, 등급 A.
+  - `?nohdr=1`: 3D — LDR(RGBA8)로 계속 그림. 오류 0.

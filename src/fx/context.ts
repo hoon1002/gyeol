@@ -54,3 +54,8 @@ export function useMotionMode(): Mode {
   if (!eng) return os ? 'off' : 'rich'
   return mode
 }
+
+/** 진단(?diag=1): 지금 하늘 모드 · 이유 · 등급 · fps. 하늘이 아직 없으면 null */
+export function getSkyDiag(): { mode: '3d' | '2.5d'; reason: string; tier: string | null; fps: number | null; power: string | null } | null {
+  return getActiveEngine()?.diag() ?? null
+}
