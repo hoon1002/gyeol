@@ -494,11 +494,14 @@ button.peri-item:hover, .peri-item[aria-expanded="true"] { color: var(--text-1);
 .paper-stage.zone-b .paper-reveal { width: min(100%, calc((var(--zb-y1) - var(--zb-y0)) * 100svh / 1.28)); }
 /* 세로·폰: 종이는 목록 아래 흐름으로 (둘째 사각형이 없다) */
 @media (max-width: 599px), (max-aspect-ratio: 999/1000) {
-  .notes-hero.hero-zone > .hero-col.zone-a { height: auto; min-height: 0; }
+  .notes-hero.hero-zone > .hero-col.zone-a {
+    position: relative; left: auto; top: auto; height: auto; min-height: 0;
+    margin: calc(var(--za-y0) * 100svh) 0 0 calc(var(--za-x0) * 100vw - var(--chrome-left));
+  }
   .notes-hero.hero-zone { min-height: 0; }
   .paper-stage.zone-b {
     position: relative; left: auto; top: auto; height: auto;
-    width: calc((var(--za-x1) - var(--za-x0)) * 100vw); margin: 0 0 calc(var(--dock-h) + 48px) calc(var(--za-x0) * 100vw - var(--chrome-left));
+    width: calc((var(--za-x1) - var(--za-x0)) * 100vw); margin: 28px 0 calc(var(--dock-h) + 48px) calc(var(--za-x0) * 100vw - var(--chrome-left));
     justify-items: start;
   }
   .paper-stage.zone-b .paper-reveal { width: min(100%, 420px); }

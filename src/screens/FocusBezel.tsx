@@ -50,34 +50,49 @@ export function FocusBezel({ active, progress, state, stageRef }: { active: bool
     [stageRef],
   )
 
+  // 앵커는 숨어 있을 때도 받아 둔다(장소가 다시 보일 때 크기 변경 앵커를 놓치지 않게). 보임 = 이 장소가 보이고 + 엔진이 visible.
+  const last = useRef<{ x: number; y: number; r: number; visible: boolean } | null>(null)
   useSkyAnchor('focus-disk', (a) => {
-    if (!activeRef.current) return
-    if (a.r > 0) got.current = true
-    if (a.r > 0) place(a.x, a.y, a.r * RING_K, a.visible)
-    else svgRef.current && (svgRef.current.dataset.show = '0')
+    const svg = svgRef.current
+    if (svg) svg.dataset.anchors = String(Number(svg.dataset.anchors ?? 0) + 1)
+    if (!(a.r > 0)) {
+      if (svg) svg.dataset.show = '0'
+      return
+    }
+    got.current = true
+    last.current = a
+    place(a.x, a.y, a.r * RING_K, activeRef.current && a.visible)
   })
 
-  // 장소가 보일 때마다: 앵커를 기다리고(비행 끝), 안 오면 대체 자리. 숨으면 링도 숨김.
+  // 장소가 보일 때마다: 비행 끝 앵커를 기다린다. 3.2초 안에 보이는 앵커가 없으면 마지막 앵커(없으면 design-m1 자리)로 그린다.
   useEffect(() => {
     const svg = svgRef.current
     if (!active) {
       if (svg) svg.dataset.show = '0'
       return
     }
-    // 배치용 변수는 바로 대체값으로 채워 둔다(숫자 블록이 0,0에 뜨지 않게)
-    if (!got.current) {
+    const fallback = () => {
       const f = fallbackDisk(innerWidth, innerHeight)
-      place(f.x, f.y, f.r, false)
+      return { x: f.x, y: f.y, R: f.r }
+    }
+    const lastFits = () => {
+      const l = last.current
+      // 마지막 앵커가 지금 화면 안에 있을 때만 믿는다(크기가 바뀐 뒤 옛 값이면 대체 자리)
+      return l && l.x > 0 && l.x < innerWidth && l.y > 0 && l.y < innerHeight ? { x: l.x, y: l.y, R: l.r * RING_K } : null
+    }
+    if (!got.current) {
+      const f = fallback()
+      place(f.x, f.y, f.R, false)
     }
     const t = window.setTimeout(() => {
-      if (got.current) return
-      const f = fallbackDisk(innerWidth, innerHeight)
-      place(f.x, f.y, f.r, true)
+      if (svgRef.current?.dataset.show === '1') return
+      const g = lastFits() ?? fallback()
+      place(g.x, g.y, g.R, true)
     }, 3200)
     const onResize = () => {
       if (got.current) return
-      const f = fallbackDisk(innerWidth, innerHeight)
-      place(f.x, f.y, f.r, svg?.dataset.show === '1')
+      const f = fallback()
+      place(f.x, f.y, f.R, svg?.dataset.show === '1')
     }
     window.addEventListener('resize', onResize)
     return () => {

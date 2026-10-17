@@ -1,5 +1,45 @@
 # 개발 노트 — 앱
 
+## M1: 장소 6 · 설정 시트 · 레일 v4 · 글 구역 · 은하 시계 (2026-10-17)
+
+**장소 · 주소**
+- 장소 6: `/` 오늘 · `/notes` 노트 · `/map` 지도 · `/review` 복습 · `/plan` 계획 · `/focus` 집중 (`src/shell/spaces.ts`, preset `map`·`plan`).
+- 옛 주소: `/graph` → `/map`, `/planner` → `/plan`(replace 리다이렉트), `/settings` → 오늘(`/`) + 설정 시트(링크 미리 불러오기에서는 열지 않음). `src/app/router.tsx`.
+- 파일 이름: `screens/Graph.tsx` → `Map.tsx`(`MapScreen`), `Planner.tsx` → `Plan.tsx`(`PlanScreen`), `Settings.tsx`는 시트 본문 `SettingsBody`.
+- `useGo`가 목적지 장소를 `to: mood`로 직접 넘긴다(href 추정에 기대지 않음).
+
+**설정 = 시트** (`src/shell/SettingsSheet.tsx`, 상태 `useUi.settingsOpen/settingsOrigin`)
+- 열기: ⌘K '설정' · 상단 점 3개 · `⌘,`/`Ctrl+,`/`,`(입력 중 아닐 때) · 주소 `/settings`. 닫기: Esc · 바깥 · 닫기 버튼. Tab 가두기, 닫으면 연 자리로 포커스.
+- 가로 = 오른쪽 패널(태블릿 380 · 데스크톱 420, 높이 100%), 세로 = 아래 64%, 폰 = 아래 88%. 열려 있는 동안 `useSkySheet(true)`.
+- 머리: 설정 / `밤 · 25분 · 회전 켬` / [닫기]. 움직임 섹션에 **은하 회전 · 켬 · 느리게 · 끔**(OS 동작 줄이기면 끔 고정 + 비활성). '유성' 줄과 `settings.meteors`는 뺐다.
+
+**은하 회전** — `settings.rotation: 'on'|'slow'|'off'`(기본 on, persist) → `useEffectiveRotation()`(동작 줄이기·움직임 정지면 off) → `<FieldProvider rotation>`. ⌘K '은하 회전 켬/느리게/끔'.
+
+**독 · 레일 v4** (`Chrome.tsx`, design-m1 2-0) — 너비 ≥ 600: 왼쪽 레일 6(`--chrome-left` 72px), 폰: 아래 독 4(오늘·노트·복습·집중) + ⌘K. 폰에서 지도에 있으면 노트 칸, 계획에 있으면 오늘 칸이 켜진다. 노트·지도 위 `노트 | 지도` 토글(폰), 오늘 맨 아래 '계획 · 시험 D-n ›' 줄(폰, 글 구역 둘째 사각형). 상단 오른쪽 아바타 → 점 3개.
+
+**빈 하늘 드래그** — `ActiveMood`에 `drag` 필수 prop → 활성 장소만 `useSkyDrag(enabled)`. 값은 `SPACES[].drag`(오늘·지도·집중 켬, 노트·복습·계획 끔).
+
+**글 구역** (`src/app/zones.ts`) — 숫자는 `@/fx`의 `SKY_ZONES`만 쓴다. 시작할 때 `<style id="gyeol-zones">`를 한 번 심어 장소마다 `--za-*`·`--zb-*`, 별 정보 패널에 `--zs-*`를 준다(화면 종류는 fx `zoneLayout`과 같은 미디어 쿼리). 숨은 장소도 자기 값을 가지므로 장소를 바꿔도 배치 계산이 없다. `Hero`의 기본 variant가 `zone`(글 블록 = 첫 사각형).
+- 오늘·복습: 3줄(명사구 · 메타 · 동작), 지평선 줄(Periphery)은 뺐다. 계획: 한 구역에 머리(이번 주 / 과제 n · 시험 D-n / ＋ 추가) + 주간 격자(구역 높이를 채움). 노트: 노트 / 38개 · 물리 12 / 새 노트 + 목록, 가로는 종이를 둘째 사각형(가운데)에. 지도: 지도 / 별 54 · 선 87 / 과목 렌즈 칩, 별 정보는 오른쪽 아래(StarPress).
+
+**집중 = 은하 시계** (`screens/FocusBezel.tsx`)
+- `useSkyAnchor('focus-disk')`의 r(팔 고리 11.5u) × 1.22 = 링 R. SVG 속성과 `--ring-x/y/r`만 바꾸고 React는 다시 그리지 않는다. 비행 중 숨김, 앵커가 오면 320ms로 나타남, 3.2초 안에 앵커가 없으면 design-m1 자리로 대체.
+- 트랙 1.5px 크림 32% · 호 2.5px #F3D29A, 12시에서 시계 방향, 1초마다. 멈춤 = 호 50%, 끝 = 600ms에 트랙 색. 숫자 mono 400 64·56·48px. 가로 = 링 왼쪽 글 구역, 세로·폰 = 링 아래 24px(폰 20px). 시간 칩 15·25·50(대기 때만).
+- `useSkyClock`: 시작·멈춤·이어서·끝·초기화 때만 값이 바뀐다(매초 넘기지 않음). 달리는 중 = `{ startedAt: 처음 시작 + 멈춘 시간 합, elapsedMs: 0 }`(= 엔진 계산 elapsedMs + (지금 − startedAt)과 같은 값), 멈춤 = `{ elapsedMs: 누적, paused: true }`, 끝 = `{ elapsedMs: durationMs, paused: true }`, 대기 = null.
+
+**뺀 것** — 토스트 '기록됨'(집중 5분 이상 끝내기), 설정 '유성', 오늘·복습·계획의 지평선 줄, 노트 과목 책등(렌즈가 대신), `useToday`의 주간 통계·지난주 비교(`week`·`weekMinutes`·`lastWeekSameSpan`·`focusYesterday`, 화면에서 쓰지 않던 통계 판 잔재). 캔버스 보드 · 표·보드 보기 · 학점 계산기 · 잔디 달력 · 탭 이탈 기록 · 함께 집중방은 코드에 없었다. '카드 1장' 토스트도 없었다. `dailyStats` 테이블은 데이터라 그대로 둠(계획의 주간 회고용).
+
+**노트 → 복습 비행** (1440×900 · 앞에 띄운 탭 · 120Hz, 엔진 `g3dStats().flights` maxFrame): 5번 17.7 · 17.7 · 17.7 · 17.6 · 17.6ms(p95 16.9–17.6), 돌아오는 복습 → 노트 16.7–17.7ms. 모두 ≤ 20ms. 크롬(독·레일·알약·칩)에 블러를 되살려 3번 더 재도 17.6–17.7ms라 블러는 원인이 아니었다. 그 사이 바뀐 것은 복습 화면의 지평선 줄(LayoutGroup + layout 블록)과 hero-split 배치 제거라, 옛 상태의 24.9–35.6ms 원인은 그쪽으로 추정한다(옛 상태로 되돌려 재현하지는 않았다).
+
+**집중 직접 주소·크기 변경 확인:** `/focus`를 바로 열어도 과목 · 25:00 · 시작 · 15/25/50과 링이 뜬다. 숨어 있는 동안 온 앵커를 버리던 탓에, 다른 장소에서 창 크기가 바뀐 뒤 집중으로 오면 옛 자리의 숫자와 숨은 링이 남던 문제를 고쳤다(앵커는 늘 받아 두고, 보일 때 3.2초 안에 보이는 앵커가 없으면 마지막 앵커 또는 대체 자리로 그림).
+
+**캡처:** `team/figma-assets/m1-app/` — 장소 6 + 설정 시트 1440×900, 오늘·노트·집중 820×1180.
+
+**전력: 블러 제거** — 움직이는 하늘 위의 `backdrop-filter`를 모두 뺐다(독·레일, 상단 알약, ⌘K, 렌즈, 복습 카드, 칩, 시트 바깥 막). `--glass`를 블러 없는 반투명 단색(밤 .78 · 낮 .84)으로. 남은 곳은 설정 시트 하나(`shell.css` `.settings-sheet`, 열려 있을 때만 마운트).
+
+
+---
+
 ## 전력 최적화 (성능 엔지니어, 2026-10-17)
 
 예산·근거는 `team/power-budget.md`에 있다. 동작·시각 결과는 바꾸지 않았다.
