@@ -11,7 +11,7 @@
  * 팔은 '끌리는(trailing)' 방향: 바깥으로 갈수록 회전 반대쪽으로 휜다. 팔 안쪽(오목) 가장자리 먼지 → 분홍 HII → 청백 젊은 별 순.
  */
 
-export const ARM_PITCH_DEG = 18 // 15°는 3/4 뷰에서 고리처럼 읽혀 18°로 연다 (팔 하나가 약 190° 감김, NGC 1300·M83 쪽)
+export const ARM_PITCH_DEG = 22 // 15·18°는 3/4 뷰에서 막대를 감싼 고리로 읽혀 22°로 연다 (큰 팔 하나가 약 170° — NGC 1300 쪽)
 export const ARM_PITCH = (ARM_PITCH_DEG * Math.PI) / 180
 export const BAR_ANGLE = (32 * Math.PI) / 180 // 막대 장축 (그래프 장소 = 막대 끝 HII 복합체)
 export const BAR_LEN = 4.5
@@ -33,8 +33,8 @@ export const OMEGA_P = omega(9)
 const ARMS = [
   { a: 0, w: 1, ph: 0.3 },
   { a: 1, w: 1, ph: 2.1 },
-  { a: 0.5, w: 0.5, ph: 4.0 },
-  { a: 1.5, w: 0.45, ph: 5.2 },
+  { a: 0.5, w: 0.32, ph: 4.0 },
+  { a: 1.5, w: 0.28, ph: 5.2 },
 ]
 const sstep = (e0: number, e1: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)))
@@ -47,7 +47,7 @@ function armStr(k: number, rad: number) {
   if (rad < BAR_LEN) return 0
   const A = ARMS[k]!
   // 막대 끝에서 바로 가장 밝으면 막대를 감싼 고리처럼 읽힌다 → 6–9u에서 가장 밝게
-  return A.w * (0.3 + 0.7 * sstep(BAR_LEN, 6.8, rad)) * Math.exp(-(rad - 6) / 8) * (0.5 + 0.5 * segOf(rad, A.ph)) * spanOf(k, rad)
+  return A.w * (0.7 + 0.3 * sstep(BAR_LEN, 6.0, rad)) * Math.exp(-(rad - 5) / 7.5) * (0.5 + 0.5 * segOf(rad, A.ph)) * spanOf(k, rad)
 }
 
 /** 늙은 별의 팔 밝기 (정점 셰이더용 GLSL) — 위 armAngle·armStr과 같은 식, 단 끊김을 약하게(넓고 부드러운 밀도파) */
@@ -58,7 +58,7 @@ const float ARM_PK = ${PK.toFixed(6)};
 const float ARM_SINP = ${Math.sin(ARM_PITCH).toFixed(6)};
 const float OMEGA_P = ${OMEGA_P.toFixed(8)};
 const vec4 ARM_A = vec4(0.0, 1.0, 0.5, 1.5);
-const vec4 ARM_W = vec4(1.0, 1.0, 0.5, 0.45);
+const vec4 ARM_W = vec4(1.0, 1.0, 0.32, 0.28);
 const vec4 ARM_PH = vec4(0.3, 2.1, 4.0, 5.2);
 float wrapA(float x) { return x - 6.2831853 * floor((x + 3.14159265) / 6.2831853); }
 float oldArm(float r, float phi) {
@@ -70,7 +70,7 @@ float oldArm(float r, float phi) {
     float d = r * wrapA(phi - th) * ARM_SINP - 0.12;   // 팔 가운데보다 살짝 바깥(하류)
     float seg = 0.45 + 0.55 * smoothstep(-0.15, 0.6, sin(r * 1.9 + ph) * 0.6 + sin(r * 0.71 + ph * 1.7) * 0.4);
     float span = ARM_W[k] > 0.9 ? 1.0 - smoothstep(10.5, 14.5, r) : smoothstep(5.5, 6.5, r) * (1.0 - smoothstep(9.5, 11.5, r));
-    s += ARM_W[k] * (0.3 + 0.7 * smoothstep(BAR_L, 6.8, r)) * exp(-(r - 6.0) / 8.0) * seg * span * exp(-d * d / 1.0);
+    s += ARM_W[k] * (0.7 + 0.3 * smoothstep(BAR_L, 6.0, r)) * exp(-(r - 5.0) / 7.5) * seg * span * exp(-d * d / 1.0);
   }
   return s;
 }
@@ -264,8 +264,22 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
   }
 
   /* ---- 젊은 별 (kind 4, 패턴과 함께): 70%는 성협 안, 30%는 팔 하류에 흩어짐. 복습 성단 600 · 나의 자리 300 ---- */
+  /* HII 매듭 150–250개: 작고 또렷한 분홍 점(별처럼 반짝이는 크기) + 아주 작은 빛무리. 성협 곁(먼지띠 쪽), 몇 개만 조금 크게 */
+  const knots: Array<[number, number, number, number]> = [] // x, z, 크기, 밝기
+  for (let g = 0; g < 70; g++) {
+    const c = clumps[Math.floor(r() * clumps.length)]!
+    const nk = 2 + Math.floor(r() * 3)
+    for (let q = 0; q < nk; q++) knots.push([c.x - (c.x / c.rad) * 0.08 + gauss(r) * 0.06, c.z - (c.z / c.rad) * 0.08 + gauss(r) * 0.06, Math.pow(r(), 3), 0.6 + r() * 0.8])
+  }
+  for (let q = 0; q < 26; q++) knots.push([LANDMARKS.graph[0] + gauss(r) * 0.35, LANDMARKS.graph[2] + gauss(r) * 0.35, Math.pow(r(), 2.5), 0.8 + r()])
+  const PINK_STAR: C3 = [1.0, 0.56, 0.74]
   for (let n = 0; n < nYoung; n++) {
     const col = mix3(r() < 0.6 ? YOUNG : YOUNG2, blackbody(16000 + r() * 14000), 0.3)
+    if (n >= 900 && n < 900 + knots.length) {
+      const kn = knots[n - 900]!
+      put(kn[0], gauss(r) * 0.02, kn[1], (3 + 9 * kn[2]) * kn[3], PINK_STAR, 4)
+      continue
+    }
     if (n < 600) {
       const m = LANDMARKS.review
       put(m[0] + gauss(r) * 0.32, m[1] + gauss(r) * 0.12, m[2] + gauss(r) * 0.32, lum(0.6) * 2.4, mix3(YOUNG, [1, 1, 1], r() * 0.4), 4)
@@ -310,9 +324,8 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
   /* ================= 구름 (인스턴스 사각형, 모두 패턴과 함께) ================= */
   const nDust = Math.round(17000 * cloudScale)
   const nGlowDisk = Math.round(3600 * cloudScale)
-  const nHIIgroups = Math.round(330 * cloudScale)
-  const nBarGlow = 160
-  const C = new Float32Array((nDust + nGlowDisk + nClump + nHIIgroups * 14 + 160 + nBarGlow + 120 + 9) * 8)
+    const nBarGlow = 160
+  const C = new Float32Array((nDust + nGlowDisk + nClump + 300 + 160 + nBarGlow + 120 + 9) * 8)
   let j = 0
   const cap = C.length / 8
   const cput = (x: number, y: number, z: number, size: number, c: C3, kind: number) => {
@@ -330,34 +343,51 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
   }
   const DUST: C3 = [0.5, 0.72, 1.0] // 흡수: 파랑을 더 → 가장자리가 갈색으로
   /* 먼지: 팔 안쪽(오목) 가장자리를 따라 끊기는 가는 실 + 팔을 비스듬히 가로지르는 깃털(스퍼) + 팔 사이 성긴 먼지 조각 */
-  for (let n = 0; n < nDust; n++) {
-    const kindR = r()
-    if (kindR < 0.07) {
-      // 팔 사이·원반 전체의 성긴 먼지 조각 (원반이 너무 매끈하지 않게)
-      const rad = 2.5 + Math.pow(r(), 0.9) * 11
-      const th = r() * Math.PI * 2
-      const op = 0.05 + r() * 0.12
-      cput(rad * Math.cos(th), gauss(r) * 0.03, rad * Math.sin(th), 0.08 + r() * 0.16, [DUST[0] * op, DUST[1] * op, DUST[2] * op], 0)
-      continue
+  /* 먼지(B): 팔 안쪽 가장자리를 따라 '이어진' 가는 줄기. 짧은 조각을 팔을 따라 0.03u마다 겹쳐 놓아 끊김·둥근 끝이 없고,
+     농도·폭·위치는 fbm 노이즈로 천천히 바뀐다(주 줄기 + 가는 곁줄기 2). 팔을 비스듬히 가로지르는 가는 가시(spur) 몇 가닥(kind 0.3) */
+  const hsh = (n: number) => {
+    const v = Math.sin(n * 127.1 + 311.7) * 43758.5453
+    return v - Math.floor(v)
+  }
+  const vnoise = (x: number, sd: number) => {
+    const i0 = Math.floor(x)
+    const f = x - i0
+    const u = f * f * (3 - 2 * f)
+    return hsh(i0 + sd * 101) * (1 - u) + hsh(i0 + 1 + sd * 101) * u
+  }
+  const fbm = (x: number, sd: number) => 0.5 * vnoise(x, sd) + 0.3 * vnoise(x * 2.13 + 5.2, sd + 1) + 0.2 * vnoise(x * 4.37 + 1.7, sd + 2)
+  const dput = (rr: number, th: number, size: number, op: number, kind: number) =>
+    cput(rr * Math.cos(th), gauss(r) * 0.012, rr * Math.sin(th), size, [DUST[0] * op, DUST[1] * op, DUST[2] * op], kind)
+  const ds = 0.03 / Math.max(0.5, cloudScale)
+  const drs = ds * Math.sin(ARM_PITCH)
+  for (let k = 0; k < 4; k++) {
+    const big = ARMS[k]!.w > 0.9
+    const rMin = big ? BAR_LEN - 0.1 : 5.7
+    const rMax = big ? 13.6 : 11.2
+    for (let sub = 0; sub < 3; sub++) {
+      const off = sub === 0 ? 0 : sub === 1 ? -0.15 : 0.17
+      const sd = k * 10 + sub * 3
+      for (let rad = rMin; rad < rMax; rad += drs) {
+        const sArc = (rad - rMin) / Math.sin(ARM_PITCH)
+        const n1 = fbm(sArc * 0.32, sd)
+        const n2 = fbm(sArc * 0.55 + 7, sd)
+        const fadeEnds = sstep(rMin, rMin + 0.6, rad) * (1 - sstep(rMax - 1.5, rMax, rad))
+        const op = (sub === 0 ? 0.11 : 0.04) * sstep(0.22, 0.62, n1) * fadeEnds * Math.min(1, armStr(k, rad) * 1.8 + 0.35)
+        if (op < 0.003) continue
+        const w = (0.045 + 0.085 * n2) * (sub === 0 ? 1 : 0.55)
+        dput(rad + 0.02 + off + (n2 - 0.5) * 0.14, armAngle(rad, ARMS[k]!.a), w, op, 0) // 팔 빛의 안쪽 절반을 가르는 자리(빛이 있어야 먼지가 보인다)
+      }
     }
-    const { rad, k, branch } = armSpot(BAR_LEN - 0.3, 13.5, 0.9)
-    const ph = ARMS[k]!.ph
-    // 실을 끊는 틈: 팔마다 다른 두 주파수
-    const gap = Math.sin(rad * 2.3 + ph * 2.3) * Math.sin(rad * 0.9 + ph) + 0.25 * Math.sin(rad * 7.7 + ph * 5) // 드물고 고르지 않은 끊김 (구슬 꿴 점선이 되지 않게)
-    if (gap < -0.45) {
-      n--
-      continue
+  }
+  for (let q = 0; q < Math.round(70 * cloudScale); q++) {
+    const { rad, k } = armSpot(BAR_LEN + 0.8, 12.5)
+    const len = 0.35 + r() * 0.85
+    const th0 = armAngle(rad, ARMS[k]!.a)
+    const sk = 0.35 + r() * 0.35
+    for (let t = 0; t < len; t += ds) {
+      const op = 0.028 * (1 - t / len) * (0.5 + fbm(t * 3 + q, 50 + q))
+      dput(rad + 0.02 + t * 0.9, th0 - (t * sk) / rad, 0.025 + 0.02 * r(), op, 0.3)
     }
-    let rr = rad - 0.32 + gauss(r) * 0.12
-    let th = armTh(k, rad, branch) + (gauss(r) * 0.05) / rad
-    if (kindR < 0.36) {
-      // 깃털: 먼지띠에서 팔을 비스듬히 가로질러 바깥으로 0.3–1.1u
-      const t = r() * (0.3 + r() * 0.8)
-      rr += t * 0.85
-      th -= (t * 0.55) / rad
-    }
-    const op = (kindR < 0.36 ? 0.05 + Math.pow(r(), 2) * 0.2 : 0.08 + Math.pow(r(), 1.5) * 0.32) * Math.min(1, armStr(k, rad) * 1.4 + 0.4) // 팔 안쪽 먼지띠는 진하게, 깃털은 옅게
-    cput(rr * Math.cos(th), gauss(r) * 0.02, rr * Math.sin(th), 0.035 + Math.pow(r(), 1.5) * 0.12, [DUST[0] * op, DUST[1] * op, DUST[2] * op], 0)
   }
   const dustCount = j
   /* 분해되지 않은 별빛 ① 원반 전체의 흐린 금빛(팔 사이도 검지 않게) ② 팔을 따라 넓고 부드러운 흰빛 — 둘 다 패턴에 붙어 감기지 않는다 */
@@ -366,7 +396,7 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
       const rad = 0.8 + -3.4 * Math.log(1 - r() * 0.95)
       const th = r() * Math.PI * 2
       const c = mix3(OLD_IN, OLD_OUT, Math.min(1, rad / 15))
-      const k = 0.026 * (0.6 + r() * 0.8) * Math.exp(-rad / 7) * (0.25 + 0.75 * sstep(1.5, 5.5, rad)) // 막대 둘레는 어둡게(NGC 1300)
+      const k = 0.011 * (0.6 + r() * 0.8) * Math.exp(-rad / 7) * (0.25 + 0.75 * sstep(1.5, 5.5, rad)) // 막대 둘레는 어둡게(NGC 1300)
       cput(rad * Math.cos(th), gauss(r) * 0.08, rad * Math.sin(th), 0.8 + r() * 1.4, [c[0] * k, c[1] * k, c[2] * k], 1)
     } else {
       const { rad, k: arm, branch } = armSpot(BAR_LEN, 14)
@@ -383,30 +413,11 @@ export function makeGalaxy(starCount: number, cloudScale: number, seed = 1016): 
     const k = 0.012 * c.b
     cput(c.x, gauss(r) * 0.03, c.z, c.s * 1.4 + 0.05, [YOUNG2[0] * k, YOUNG2[1] * k, YOUNG2[2] * k], 1)
   }
-  /* HII: 작은 분홍 매듭 무리 — 성협 곁(먼지띠와 젊은 별 사이), 매듭 3–14개, 몇 개는 푸른 반사 성운 */
-  const HII = hex('#F27BA8')
-  const HII_CORE = hex('#FFC2D8')
-  const grp = (x: number, z: number, spread: number, nK: number, big: number) => {
-    for (let q = 0; q < nK; q++) {
-      // 작고·적고·채도 낮게, 크기는 거듭제곱 분포로 다양하게 (대부분 아주 작고 몇 개만 조금 크다)
-      const k = 0.22 + r() * 0.5
-      const c = mix3(r() < 0.2 ? HII_CORE : HII, [1, 0.93, 0.95], 0.35)
-      const blue = r() < 0.06
-      const cc: C3 = blue ? [0.45, 0.6, 1.0] : c
-      cput(x + gauss(r) * spread, gauss(r) * 0.03, z + gauss(r) * spread, 0.007 + Math.pow(r(), 3.2) * big, [cc[0] * k, cc[1] * 0.7 * k, cc[2] * 0.85 * k], 2)
-    }
-  }
-  for (let n = 0; n < nHIIgroups; n++) {
-    const c = clumps[Math.floor(r() * clumps.length)]!
-    // 성협에서 팔 안쪽(먼지 쪽)으로 조금
-    const ux = c.x / c.rad
-    const uz = c.z / c.rad
-    grp(c.x - ux * 0.1, c.z - uz * 0.1, 0.05 + c.s * 0.6, 2 + Math.floor(r() * 6), 0.09)
-  }
-  // 그래프 장소: 막대 끝의 큰 HII 복합체 = 작은 매듭 무리 여러 개
-  for (let g = 0; g < 9; g++) {
-    const m = LANDMARKS.graph
-    grp(m[0] + gauss(r) * 0.45, m[2] + gauss(r) * 0.45, 0.12, 13, 0.1)
+  /* HII 빛무리: 매듭 별마다 아주 작은 분홍 빛(대부분 0.015–0.04u, 몇 개만 0.1u) — 둥근 얼룩이 아니라 별 둘레의 엷은 빛 */
+  const HII: C3 = [1.0, 0.42, 0.62]
+  for (const kn of knots) {
+    const k = (0.35 + 0.4 * kn[3]) * (0.6 + 0.8 * kn[2])
+    cput(kn[0], gauss(r) * 0.02, kn[1], 0.015 + 0.09 * kn[2], [HII[0] * k, HII[1] * k, HII[2] * k], 2)
   }
   /* 막대 빛: 막대를 따라 금빛 (가운데가 하얗게 날지 않게 약하게) */
   for (let n = 0; n < nBarGlow; n++) {
@@ -464,7 +475,7 @@ export function bakeArmTex(): Uint8Array {
           const d = r * w * Math.sin(ARM_PITCH) - 0.12
           const seg = 0.45 + 0.55 * sm(-0.15, 0.6, Math.sin(r * 1.9 + A.ph) * 0.6 + Math.sin(r * 0.71 + A.ph * 1.7) * 0.4)
           const span = A.w > 0.9 ? 1 - sm(10.5, 14.5, r) : sm(5.5, 6.5, r) * (1 - sm(9.5, 11.5, r))
-          a += A.w * (0.3 + 0.7 * sm(BAR_LEN, 6.8, r)) * Math.exp(-(r - 6) / 8) * seg * span * Math.exp(-d * d)
+          a += A.w * (0.7 + 0.3 * sm(BAR_LEN, 6.0, r)) * Math.exp(-(r - 5) / 7.5) * seg * span * Math.exp(-d * d)
         }
       const qx = r * Math.cos(phi)
       const qz = r * Math.sin(phi)

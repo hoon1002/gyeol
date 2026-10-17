@@ -54,8 +54,13 @@ void main() {
   bool sky = kind > 2.5 && kind < 3.5;
   float L = (sky ? a0.w * 24.0 : a0.w) * gain;
   float dd = sky ? 30.0 : d;
-  // 빛의 양 = 밝기 / 거리² (가까이 갈수록 별은 커지지 않고 밝아진다)
-  float flux = L / (dd * dd) * uExpo;
+  // 원반 안에 들어갔을 때 가까운 별이 같은 크기 점으로 화면을 덮지 않게: 3u 안은 밀도를 줄이고(정점마다 고정 난수) 밝기를 부드럽게 묶는다
+  if (!sky) {
+    float keep = 0.15 + 0.85 * smoothstep(0.5, 6.0, d);
+    if (fract(sin(float(gl_VertexID) * 12.9898) * 43758.5453) > keep) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vCol = vec3(0.0); vSig = 1.0; vPx = 1.0; return; }
+  }
+  // 빛의 양 = 밝기 / 거리² (가까이 갈수록 별은 커지지 않고 밝아진다 — 1u 안은 완만하게)
+  float flux = L / (dd * dd + (sky ? 0.0 : 0.6)) * uExpo * (sky ? 1.0 : mix(0.3, 1.0, smoothstep(1.5, 9.0, d))); // 가까운 별은 대부분 어둡게(밝은 별만 남는다)
   // 피사계 심도: 초점에서 멀수록 번진다(빛의 총량은 같게)
   float coc = sky ? 0.0 : uDof * uPx * abs(1.0 / d - 1.0 / uFocus) * 0.004;
   float sig = max(0.5 * uDpr, min(coc, 9.0 * uDpr)); // 최소 σ 0.5px(DPR 1 기준) — 점 하나 5×5px
@@ -122,7 +127,8 @@ void main() {
     vec3 rad = vec3(cos(th), 0.0, sin(th));
     vec3 tan_ = vec3(-sin(th), 0.0, cos(th));
     // 팔 방향(접선)으로 1.8배 길게, 팔 피치만큼 비스듬히
-    vec3 along = normalize(tan_ - rad * 0.32); // 끌리는 팔(피치 18°) 방향
+    // 끌리는 팔(피치 22°) 방향. 먼지 가시(kind 0.3)는 팔을 비스듬히 가로지르는 방향
+    vec3 along = kind > 0.2 && kind < 0.45 ? normalize(rad - tan_ * 0.5) : normalize(tan_ - rad * 0.4);
     vec3 across = normalize(cross(vec3(0.0, 1.0, 0.0), along));
     // 시선 각 보정: 원반을 옆(edge-on)에서 보면 눕힌 사각형이 선이 되어 사라진다 → 시선이 원반면에 가까울수록
     // 가로축을 원반 법선 쪽으로 세워 얇은 두께(먼지띠·원반 빛)를 남기고, 빛은 겹쳐 쌓이는 만큼 낮춘다
@@ -243,7 +249,7 @@ void main() {
   // 바탕: 아주 깊은 남색
   c += vec3(0.004, 0.006, 0.014);
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  c = mix(vec3(l), c, 1.12);
+  c = mix(vec3(l), c, 1.3); // 채도: 금빛 중심 · 청백 팔 · 분홍 매듭이 씻기지 않게
   vec3 t = aces(max(c, 0.0));
   t *= mix(vec3(0.94, 0.97, 1.06), vec3(1.04, 1.0, 0.92), smoothstep(0.05, 0.6, dot(t, vec3(0.333))));
   vec2 q = (vUv - 0.5) * vec2(uAspect, 1.0) / max(uAspect, 1.0);

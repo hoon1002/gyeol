@@ -46,7 +46,7 @@ const PLACES: Place[] = [
 const SEAT: [number, number] = [0.66, 0.44] // 가로. 세로 화면은 resize에서 (0.56, 0.36)
 let EMIT = 0.3
 let STAR = 2.2
-let ARM: [number, number] = [1.25, 1.5]
+let ARM: [number, number] = [0.85, 2.0] // 팔 사이는 어둡게, 팔은 밝게 (대비 ≈ 2.5–3 : 1)
 const TILT = -57
 const FOV = 50
 
@@ -205,8 +205,8 @@ const P = {
 }
 
 /* ---------- 4층 전경 별 (design-v4 §7-2) ---------- */
-const FG_N = 3000 // 후보 — 화면에 남기는 수는 CPU가 상한으로 고른다
-const FG_R = 4
+const FG_N = 4500 // 후보 — 화면에 남기는 수는 CPU가 상한으로 고른다
+const FG_R = 3 // 상자를 줄여 가까운 별(보케)이 더 자주 지나가게
 const fgPos = new Float32Array(FG_N * 4)
 const fgKey = new Float32Array(FG_N) // 고르는 순서(고정) — 같은 별이 계속 남아 깜빡이지 않게
 const fgW = new Float32Array(FG_N) // 지금 가중치 (GPU로)
@@ -230,7 +230,7 @@ const fgVao = (() => {
     d[o] = fgPos[i * 4] = (rnd() * 2 - 1) * FG_R
     d[o + 1] = fgPos[i * 4 + 1] = (rnd() * 2 - 1) * FG_R * 0.6
     d[o + 2] = fgPos[i * 4 + 2] = (rnd() * 2 - 1) * FG_R
-    d[o + 3] = fgPos[i * 4 + 3] = 0.008 + Math.pow(rnd(), 2.5) * 0.08
+    d[o + 3] = fgPos[i * 4 + 3] = 0.004 + Math.pow(rnd(), 3.5) * 0.12 // 대부분 어둡고 작게, 소수만 밝게
     const T = rnd()
     // 흑체 팔레트, 살짝 따뜻하게
     const c = T < 0.18 ? [0.8, 0.87, 1] : T < 0.7 ? [1, 0.96, 0.9] : [1, 0.84, 0.64]
@@ -444,32 +444,35 @@ const flightLog: Array<{ to: string; ms: number; maxFrame: number; p95: number; 
  *  가장 가까운 거리 → 은하 중심 장소(오늘·플래너·설정)의 거리 배율. 오른쪽 치우침(좌석)은 유지, 세로 화면은 좌석 (0.56, 0.36) */
 let fitK = 1
 function computeFit(aspect: number) {
-  SEAT[0] = aspect < 1 ? 0.56 : 0.66
-  SEAT[1] = aspect < 1 ? 0.36 : 0.44
+  // 가로: 원반 긴 축이 화면 높이의 80%, 중심 x 0.62 · 세로: 긴 축이 화면 폭의 95%. 바깥 팔 끝·헤일로는 가장자리에서 조금 잘려도 된다
+  SEAT[0] = aspect < 1 ? 0.54 : 0.62
+  SEAT[1] = aspect < 1 ? 0.4 : 0.46
   const q = homeOrient(PLACES[0]!)
   const back = qRot(q, [0, 0, 1])
   const sv = qRot(q, [1, 0, 0])
   const uv = qRot(q, [0, 1, 0])
   const f: V3 = [-back[0], -back[1], -back[2]]
-  const pts: V3[] = [[0, 1.2, 0], [0, -1.2, 0]]
-  for (let k = 0; k < 32; k++) pts.push([14.5 * Math.cos((k / 32) * Math.PI * 2), 0, 14.5 * Math.sin((k / 32) * Math.PI * 2)])
-  const fits = (d: number) => {
+  const ring: Array<[number, number, number]> = []
+  for (let k = 0; k < 48; k++) ring.push([11.5 * Math.cos((k / 48) * Math.PI * 2), 0, 11.5 * Math.sin((k / 48) * Math.PI * 2)]) // 눈에 보이는 팔 끝(≈ 11.5u) 기준
+  const want = aspect < 1 ? 0.92 * 2 * aspect : 0.8 * 2 // NDC 높이 = 2. 세로는 폭(2·aspect) 기준
+  const longAxis = (d: number) => {
     const m = viewProj([back[0] * d, back[1] * d, back[2] * d], sv, uv, f, FOV * DEG, aspect, 0.02, 3000).m
-    for (const p of pts) {
+    const P2 = ring.map((p) => {
       const w = m[3]! * p[0] + m[7]! * p[1] + m[11]! * p[2] + m[15]!
-      if (w <= 0) return false
-      const x = (m[0]! * p[0] + m[4]! * p[1] + m[8]! * p[2] + m[12]!) / w
-      const y = (m[1]! * p[0] + m[5]! * p[1] + m[9]! * p[2] + m[13]!) / w
-      if (Math.abs(x) > 0.94 || Math.abs(y) > 0.94) return false
-    }
-    return true
+      return [((m[0]! * p[0] + m[4]! * p[1] + m[8]! * p[2] + m[12]!) / w) * aspect, (m[1]! * p[0] + m[5]! * p[1] + m[9]! * p[2] + m[13]!) / w]
+    })
+    // 가로: 긴 축 길이 · 세로: 가로 폭(기울어진 원반이 화면 폭을 채우는 정도)
+    if (aspect < 1) return Math.max(...P2.map((p) => p[0]!)) - Math.min(...P2.map((p) => p[0]!))
+    let L = 0
+    for (let a = 0; a < 24; a++) L = Math.max(L, Math.hypot(P2[a]![0]! - P2[a + 24]![0]!, P2[a]![1]! - P2[a + 24]![1]!))
+    return L
   }
   let lo = 6
   let hi = 150
   for (let i = 0; i < 32; i++) {
     const mid = (lo + hi) / 2
-    if (fits(mid)) hi = mid
-    else lo = mid
+    if (longAxis(mid) > want) lo = mid
+    else hi = mid
   }
   fitK = hi / PLACES[0]!.dist
 }
@@ -1085,7 +1088,9 @@ function draw(now: number, opt: DrawOpt = {}) {
     // 발열 추정 (design-v4 §7-4): 활동 중 프레임 p95가 예산의 1.5배를 10초 넘게 → 2분 동안 한 단계 낮춘다
     const s = frames.slice(-60).sort((a, b) => a - b)
     const p95 = s[Math.floor(0.95 * (s.length - 1))] ?? 0
-    hotSec = power === 'active' && p95 > FRAME_MS.active * 1.5 ? hotSec + 1 : 0
+    // 창이 가려지거나 탭이 느려져 생긴 긴 간격은 발열이 아니다 → 실제로 계속 그리고(초당 20장 넘게) GPU 시간이 길 때만 센다
+    const busy = fps >= 20 && (tq ? gpuMs > FRAME_MS.active : true)
+    hotSec = power === 'active' && busy && p95 > FRAME_MS.active * 1.5 ? hotSec + 1 : 0
     if (hotSec >= 10) {
       thermalUntil = now + 120_000
       hotSec = 0
@@ -1108,7 +1113,8 @@ function draw(now: number, opt: DrawOpt = {}) {
 /** 전경 별의 밀도·밝기: 원반 안에서는 1, 은하 밖(오늘·플래너)에서는 낮게 */
 function fgK(eye: V3) {
   const inDisk = Math.exp(-Math.abs(eye[1]) / 3) * Math.exp(-Math.max(0, Math.hypot(eye[0], eye[2]) - 15) / 6)
-  return 0.6 + 0.4 * inDisk
+  void inDisk
+  return 1 // 전경 별은 원반이 아니라 '카메라 주변 국소 별' — 어느 장소에서든 같은 밝기
 }
 /**
  * 전경 별 고르기 (design-v4 §7-2) — 셰이더와 같은 식으로 600개를 투영해
@@ -1139,7 +1145,7 @@ function fgUpdate(dt: number, eye: V3, m: Float32Array, sdpr: number, moving: bo
   // 가만히: 조용하게(데스크톱·iPad 12 · 폰 8) · 드래그·비행: 많이(80 · 40) — 올라갈 땐 0.3s, 내려갈 땐 1.5s에 걸쳐
   fgMoveK += ((moving ? 1 : 0) - fgMoveK) * Math.min(1, dt / (moving ? 300 : 1500))
   const idleCap = rot === 'slow' ? (phone ? 6 : 12) : phone ? 8 : 12
-  const moveCap = rot === 'slow' ? (phone ? 6 : 12) : phone ? 40 : 80
+  const moveCap = rot === 'slow' ? (phone ? 6 : 12) : phone ? 36 : 72 // 바뀌는 동안 사라지는 별까지 세어도 ≤ 80
   let cap = Math.round(idleCap + (moveCap - idleCap) * fgMoveK)
   if (reducedOS) cap = 6
   const deepK = power === 'deep' ? 0.3 : 1
@@ -1196,7 +1202,7 @@ function fgUpdate(dt: number, eye: V3, m: Float32Array, sdpr: number, moving: bo
   }
   const a = Math.min(1, dt / 250)
   const aOut = Math.min(1, dt / 600) // 사라질 땐 천천히
-  const aFast = Math.min(1, dt / 50)
+  const aFast = Math.min(1, dt / 30)
   let shown = 0
   let shownA = 0
   let vmaxPx = 0
@@ -1204,7 +1210,7 @@ function fgUpdate(dt: number, eye: V3, m: Float32Array, sdpr: number, moving: bo
     // 화면 속도: 감싸기 기준을 묶어도 시선 회전(드래그·비행)은 모든 층이 같이 받는다 → 상한을 넘는 별은 50ms 안에 감춘다
     let v = 0
     if (area[i]! > 0 && fgSeen[i] && dt > 0) v = (Math.hypot(sx[i]! - fgScr[i * 2]!, sy[i]! - fgScr[i * 2 + 1]!) * 1000) / dt
-    const fast = v > capPx
+    const fast = v > capPx * 0.8 // 상한의 80%에서 감추기 시작 — 사라지는 동안에도 상한을 넘지 않게
     const tgtW = keep[i] && !fast ? 1 : 0
     fgW[i]! += (tgtW - fgW[i]!) * (fast ? aFast : tgtW > fgW[i]! ? a : aOut)
     if (fgW[i]! < 0.002) fgW[i] = 0
